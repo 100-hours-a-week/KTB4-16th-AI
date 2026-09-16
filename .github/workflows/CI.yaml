@@ -1,0 +1,44 @@
+name: AI CI main
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  ci:
+    name: AI CI
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. 코드 체크아웃
+      - name: Checkout code
+        uses: actions/checkout@v7
+        
+      - name: Ruff 실행
+        uses: astral-sh/ruff-action@v3
+
+      
+      # 2. Python 3.11 (캐싱 포함)
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: ai/requirements.txt
+
+      # 3. 의존성 설치
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # 4. Ruff 설치 (lint)
+      - name: Install Ruff
+        run: pip install ruff
+
+      # Phase 1: Linter
+      - name: Run Ruff Linter
+        run: ruff check .
+
+      # Phase 2: Formatter
+      - name: Run Ruff Formatter Check
+        run: ruff format --check .
