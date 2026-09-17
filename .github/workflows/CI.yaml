@@ -90,7 +90,7 @@ jobs:
       # Phase 6: 버전 계산 -> image build, push -> Git 태그, Release 생성
       - name: Release AI image
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
         run: |
           npx --yes \
             --package=semantic-release@25 \
