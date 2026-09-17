@@ -14,29 +14,30 @@ jobs:
       # 1. 코드 체크아웃
       - name: Checkout code
         uses: actions/checkout@v7
-        
+            
+      # 2. Ruff 설치 + 린트 검사  
       - name: Ruff 실행
         uses: astral-sh/ruff-action@v3
+        with:
+            args: "check"
 
       
-      # 2. Python 3.11 (캐싱 포함)
+      # 3. Ruff로 포맷 검사
+      - name: Run Ruff Formatter Check
+        run: ruff format --check .
+        
+
+      # 4. Python 환경 설정
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
-      # 3. 의존성 설치
+
+      # 5. 애플리케이션 의존성 설치
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt
 
-      # 4. Ruff 설치 (lint)
-      - name: Install Ruff
-        run: pip install ruff
-
-      # Phase 1: Linter
-      - name: Run Ruff Linter
-        run: ruff check .
-
-      # Phase 2: Formatter
-      - name: Run Ruff Formatter Check
-        run: ruff format --check .
+      # 6. 컴파일
+      - name: Check Python syntax
+        run: python -m compileall .
