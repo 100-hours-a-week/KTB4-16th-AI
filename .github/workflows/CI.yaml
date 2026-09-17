@@ -18,7 +18,7 @@ jobs:
             fetch-depth: 0
             
       # 2. Ruff 설치 + 린트 검사  
-      - name: Ruff 실행
+      - name: Ruff install
         uses: astral-sh/ruff-action@v3
         with:
             args: "check"
