@@ -1,0 +1,31 @@
+{
+    "branches": ["main"],
+    "tagFormat": "v${version}",
+    "plugins": [
+      [
+        "@semantic-release/commit-analyzer",
+        {
+          "releaseRules": [
+            { "breaking": true, "release": "major" },
+            { "type": "feat", "release": "minor" },
+            { "release": "patch" }
+          ]
+        }
+      ],
+      "@semantic-release/release-notes-generator",
+      [
+        "@semantic-release/exec",
+        {
+          "prepareCmd": "docker buildx build --platform linux/amd64 --file Dockerfile --tag \"$IMAGE_BASE:${nextRelease.version}\" --push."
+        }
+      ],
+      [
+        "@semantic-release/github",
+        {
+          "successComment": false,
+          "failComment": false,
+          "releasedLabels": false
+        }
+      ]
+    ]
+  }
