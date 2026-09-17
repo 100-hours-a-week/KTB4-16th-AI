@@ -30,45 +30,46 @@ jobs:
         uses: actions/checkout@v7
         with:
             fetch-depth: 0
-        
+            
+      # 2. Ruff 설치 + 린트 검사  
       - name: Ruff 실행
         uses: astral-sh/ruff-action@v3
+        with:
+            args: "check"
 
       
-      # 2. Python 3.11 (캐싱 포함)
+      # 3. Ruff로 포맷 검사
+      - name: Run Ruff Formatter Check
+        run: ruff format --check .
+        
+
+      # 4. Python 환경 설정
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
-      # 3. 의존성 설치
+
+      # 5. 애플리케이션 의존성 설치
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: python -m pip install -r requirements.txt
 
-      # 4. Ruff 설치 (lint)
-      - name: Install Ruff
-        run: pip install ruff
-
-      # Phase 1: Linter
-      - name: Run Ruff Linter
-        run: ruff check .
-
-      # Phase 2: Formatter
-      - name: Run Ruff Formatter Check
-        run: ruff format --check .
-
-      # Phase 3: semantic-release 실행 환경 구성
+      # 6. 컴파일
+      - name: Check Python syntax
+        run: python -m compileall .
+      
+      # Phase 1: semantic-release 실행 환경 구성
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
           node-version: "24"
           package-manager-cache: false
 
-      # Phase 4: Docker Build 준비
+      # Phase 2: Docker Build 준비
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      # Phase 5: OIDC를 이용한 서비스 계정 인증
+      # Phase 3: OIDC를 이용한 서비스 계정 인증
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
@@ -76,17 +77,17 @@ jobs:
           workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER_PROVIDER }}
           service_account: ${{ secrets.SERVICE_ACCOUNT }}
 
-      # Phase 6: gcloud 명령어 사용 준비
+      # Phase 4: gcloud 명령어 사용 준비
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v3
         
 
-      # Phase 7: Docker가 GCP 인증 정보를 사용하도록 연결
+      # Phase 5: Docker가 GCP 인증 정보를 사용하도록 연결
       - name: Configure Docker authentication
         run: |
             gcloud auth configure-docker "${{ secrets.GCP_REGION }}-docker.pkg.dev" --quiet
 
-      # Phase 8: 버전 계산 -> image build, push -> Git 태그, Release 생성
+      # Phase 6: 버전 계산 -> image build, push -> Git 태그, Release 생성
       - name: Release AI image
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
