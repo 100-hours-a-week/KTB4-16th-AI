@@ -21,7 +21,7 @@ async def handle(payload: dict[str, Any]) -> None:
         service = EmbeddingService(
             clip_tagger=ClipTagger(clients.clip),
             embedder=Embedder(clients.embedding),
-            mood_tagger=MusicMoodTagger(clients.llm),
+            mood_tagger=MusicMoodTagger(clients.llm_knowledge),
             store=EmbeddingRepository(session),
         )
         await service.generate(req)

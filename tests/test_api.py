@@ -60,3 +60,23 @@ def test_string_record_id_is_400(client, record_payload):
     res = client.post("/api/embeddings/generate", json=record_payload, headers=AUTH)
     assert res.status_code == 400
     assert res.json()["field"] == "recordId"
+
+
+def test_llm_split_uses_separate_clients(monkeypatch):
+    from app import dependencies
+    from app.clients.anthropic_client import AnthropicClient
+    from app.clients.llm_client import LocalLLMClient
+    from app.config import get_settings
+
+    monkeypatch.setenv("AI_CLIENT_MODE", "real")
+    monkeypatch.setenv("LLM_KNOWLEDGE_PROVIDER", "anthropic")
+    monkeypatch.setenv("LLM_GENERAL_PROVIDER", "local")
+    get_settings.cache_clear()
+    dependencies.get_clients.cache_clear()
+    try:
+        clients = dependencies.get_clients()
+        assert isinstance(clients.llm_knowledge, AnthropicClient)
+        assert isinstance(clients.llm_general, LocalLLMClient)
+    finally:
+        get_settings.cache_clear()
+        dependencies.get_clients.cache_clear()

@@ -15,7 +15,7 @@ from app.clients.embedding_client import (
     FakeEmbeddingClient,
     OpenAIEmbeddingClient,
 )
-from app.clients.llm_client import FakeLLMClient, LLMClient
+from app.clients.llm_client import FakeLLMClient, LLMClient, LocalLLMClient
 from app.config import get_settings
 from app.db.postgres import get_session
 from app.db.repositories.job_repository import JobRepository
@@ -30,7 +30,10 @@ async def verify_internal_token(x_internal_token: str | None = Header(default=No
 
 @dataclass(frozen=True)
 class Clients:
-    llm: LLMClient
+    # 곡·가수 지식이 필요한 작업 (음악 무드 묘사, 투표 문항 생성)
+    llm_knowledge: LLMClient
+    # 언어 변환만 필요한 작업 (리라이팅, 요약, 답변, 클러스터 이름)
+    llm_general: LLMClient
     embedding: EmbeddingClient
     clip: ClipClient
 
@@ -40,17 +43,14 @@ def get_clients() -> Clients:
     s = get_settings()
     if s.ai_client_mode == "fake":
         return Clients(
-            llm=FakeLLMClient(),
+            llm_knowledge=FakeLLMClient(),
+            llm_general=FakeLLMClient(),
             embedding=FakeEmbeddingClient(dim=s.text_embedding_dim),
             clip=FakeClipClient(dim=s.clip_embedding_dim),
         )
     return Clients(
-        llm=AnthropicClient(
-            api_key=s.anthropic_api_key,
-            model=s.llm_model,
-            timeout=s.external_timeout_seconds,
-            max_retries=s.external_max_retries,
-        ),
+        llm_knowledge=_build_llm(s.llm_knowledge_provider),
+        llm_general=_build_llm(s.llm_general_provider),
         embedding=OpenAIEmbeddingClient(
             api_key=s.openai_api_key,
             model=s.text_embedding_model,
@@ -65,6 +65,18 @@ def get_clients() -> Clients:
             timeout=s.external_timeout_seconds,
             max_retries=s.external_max_retries,
         ),
+    )
+
+
+def _build_llm(provider: str) -> LLMClient:
+    s = get_settings()
+    if provider == "local":
+        return LocalLLMClient(url=s.local_llm_url, model=s.local_llm_model)
+    return AnthropicClient(
+        api_key=s.anthropic_api_key,
+        model=s.llm_model,
+        timeout=s.external_timeout_seconds,
+        max_retries=s.external_max_retries,
     )
 
 

@@ -23,11 +23,20 @@ class Settings(BaseSettings):
 
     # 모델 서빙 계획 (README 참고)
     #   V1: 전부 외부 API — Anthropic(LLM), OpenAI(텍스트 임베딩), Replicate(CLIP)
-    #   V2: GCP CPU(ONNX) — KcELECTRA, 텍스트 임베딩 / RunPod — CLIP, 로컬 LLM
+    #   V2: GCP CPU(ONNX) — KcELECTRA, 텍스트 임베딩 / RunPod — CLIP, 로컬 LLM(general 작업만)
 
-    # LLM (음악 무드 태깅 등)
+    # LLM — 작업 성격에 따라 두 갈래로 나눈다
+    #   knowledge: 곡·가수 지식이 필요한 작업 (음악 무드 묘사, 투표 문항 생성) → 프론티어 유지
+    #   general:   말 바꾸기만 하는 작업 (검색어 리라이팅, 요약, 답변, 클러스터 이름) → V2에 로컬
+    llm_knowledge_provider: Literal["anthropic", "local"] = "anthropic"
+    llm_general_provider: Literal["anthropic", "local"] = "anthropic"
+
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-5"
+
+    # 로컬 LLM (V2, RunPod) — 구현 예정
+    local_llm_url: str = ""
+    local_llm_model: str = ""
 
     # 텍스트 임베딩 (코멘트·음악 무드 텍스트) — V2에 로컬 모델로 교체 예정
     openai_api_key: str = ""
@@ -39,6 +48,10 @@ class Settings(BaseSettings):
     replicate_api_token: str = ""
     clip_model: str = "openai/clip"
     clip_embedding_dim: int = 768
+
+    # Spotify (앱 인증: 검색·곡·아티스트 조회)
+    spotify_client_id: str = ""
+    spotify_client_secret: str = ""
 
     # 외부 API 공통
     external_timeout_seconds: float = 20.0
