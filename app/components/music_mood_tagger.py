@@ -6,7 +6,7 @@ LLM이 제목·아티스트를 보고 무드를 글로 설명하고 그 텍스�
 
 from app.clients.llm_client import LLMClient
 
-PROMPT_VERSION = "music-mood-v1"
+PROMPT_VERSION = "music-mood-v2"
 
 SYSTEM_PROMPT = """너는 음악 큐레이터다. 주어진 곡의 분위기를 한국어로 설명한다.
 - 1~2문장으로 곡의 정서·템포·어울리는 상황을 묘사한다.
@@ -23,8 +23,6 @@ class MusicMoodTagger:
     def model(self) -> str:
         return self._llm.model
 
-    async def describe(self, title: str, artist: str, genre: str | None = None) -> str:
+    async def describe(self, title: str, artist: str) -> str:
         prompt = f"제목: {title}\n아티스트: {artist}"
-        if genre:
-            prompt += f"\n장르: {genre}"
         return await self._llm.complete(system=SYSTEM_PROMPT, prompt=prompt, max_tokens=512)

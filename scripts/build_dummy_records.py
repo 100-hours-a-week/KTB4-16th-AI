@@ -27,7 +27,6 @@ def to_request(seed: dict) -> dict:
             "externalTrackId": track.get("externalTrackId"),
             "title": track["title"],
             "artistName": track.get("artistName") or track["artist"],
-            "genre": track.get("genre"),
         },
         "comment": seed.get("comment"),
         "createdAt": seed["createdAt"],

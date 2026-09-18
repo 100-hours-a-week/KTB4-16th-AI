@@ -46,7 +46,7 @@ class EmbeddingService:
         )
 
     async def _embed_music(self, track: EmbeddingTrack) -> tuple[str, list[float]]:
-        mood_text = await self._mood.describe(track.title, track.artist_name, track.genre)
+        mood_text = await self._mood.describe(track.title, track.artist_name)
         return mood_text, await self._embedder.embed(mood_text)
 
     async def _embed_comment(self, comment: str | None) -> list[float] | None:

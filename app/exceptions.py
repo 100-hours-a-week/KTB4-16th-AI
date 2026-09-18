@@ -73,7 +73,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(_: Request, exc: RequestValidationError) -> JSONResponse:
         first = exc.errors()[0] if exc.errors() else {}
-        loc = [str(part) for part in first.get("loc", ()) if part != "body"]
+        loc = [str(part) for part in first.get("loc", ()) if part not in ("body", "path", "query")]
         field = ".".join(loc) or None
         return JSONResponse(
             status_code=InvalidInputError.status_code,

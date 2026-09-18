@@ -6,8 +6,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy001",
       "title": "How Sweet",
-      "artistName": "NewJeans",
-      "genre": "K-Pop"
+      "artistName": "NewJeans"
     },
     "comment": null,
     "createdAt": "2026-07-17T06:47:00Z"
@@ -19,8 +18,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy003",
       "title": "가을 아침",
-      "artistName": "아이유",
-      "genre": "Ballad"
+      "artistName": "아이유"
     },
     "comment": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가",
     "createdAt": "2026-04-30T21:07:00Z"
@@ -32,8 +30,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy005",
       "title": "사랑이 지나가면",
-      "artistName": "이문세",
-      "genre": "Ballad"
+      "artistName": "이문세"
     },
     "comment": null,
     "createdAt": "2026-04-03T17:29:00Z"
@@ -45,8 +42,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy006",
       "title": "봄날",
-      "artistName": "BTS",
-      "genre": "K-Pop"
+      "artistName": "BTS"
     },
     "comment": "퇴근길에 우연히 튼 노래인데 오늘따라 이 골목이랑 참 잘 어울렸다",
     "createdAt": "2026-03-26T08:34:00Z"
@@ -58,8 +54,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy007",
       "title": "주저하는 연인들을 위해",
-      "artistName": "잔나비",
-      "genre": "Indie"
+      "artistName": "잔나비"
     },
     "comment": "아무 생각 없이 걷다가 발견한 곳. 사람도 없고 조용해서 좋았다",
     "createdAt": "2026-06-03T17:10:00Z"
@@ -71,8 +66,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy008",
       "title": "한숨",
-      "artistName": "이하이",
-      "genre": "Ballad"
+      "artistName": "이하이"
     },
     "comment": "바다까지는 못 갔지만 강만 봐도 충분히 좋았던 하루",
     "createdAt": "2026-07-14T06:42:00Z"
@@ -84,8 +78,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy009",
       "title": "Dear My Universe",
-      "artistName": "첸",
-      "genre": "Ballad"
+      "artistName": "첸"
     },
     "comment": "오늘 하늘 진짜 예뻤다",
     "createdAt": "2026-03-30T08:47:00Z"
@@ -97,8 +90,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy010",
       "title": "팡파레",
-      "artistName": "다이나믹 듀오",
-      "genre": "Hip-Hop"
+      "artistName": "다이나믹 듀오"
     },
     "comment": "퇴근길에 우연히 튼 노래인데 오늘따라 이 골목이랑 참 잘 어울렸다",
     "createdAt": "2026-04-22T17:32:00Z"
@@ -110,8 +102,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy011",
       "title": "어떻게 이별까지 사랑하겠어",
-      "artistName": "AKMU",
-      "genre": "Ballad"
+      "artistName": "AKMU"
     },
     "comment": "비 냄새 좋았음",
     "createdAt": "2026-03-12T06:21:00Z"
@@ -123,8 +114,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy013",
       "title": "비 오는 날엔",
-      "artistName": "헤이즈",
-      "genre": "R&B"
+      "artistName": "헤이즈"
     },
     "comment": null,
     "createdAt": "2026-04-07T21:08:00Z"
@@ -136,8 +126,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy014",
       "title": "시간을 거슬러",
-      "artistName": "린",
-      "genre": "Ballad"
+      "artistName": "린"
     },
     "comment": null,
     "createdAt": "2026-03-11T19:13:00Z"
@@ -149,8 +138,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy015",
       "title": "하루살이",
-      "artistName": "윤하",
-      "genre": "Rock"
+      "artistName": "윤하"
     },
     "comment": "여기 또 와야지",
     "createdAt": "2026-06-13T11:59:00Z"
@@ -162,8 +150,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy017",
       "title": "하루살이",
-      "artistName": "윤하",
-      "genre": "Rock"
+      "artistName": "윤하"
     },
     "comment": "조용해서 좋다",
     "createdAt": "2026-03-10T23:14:00Z"
@@ -175,8 +162,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy018",
       "title": "눈의 꽃",
-      "artistName": "박효신",
-      "genre": "Ballad"
+      "artistName": "박효신"
     },
     "comment": "바다까지는 못 갔지만 강만 봐도 충분히 좋았던 하루",
     "createdAt": "2026-04-27T06:42:00Z"
@@ -188,8 +174,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy020",
       "title": "너의 모든 순간",
-      "artistName": "성시경",
-      "genre": "Ballad"
+      "artistName": "성시경"
     },
     "comment": "노을이 미쳤다",
     "createdAt": "2026-05-06T11:37:00Z"
@@ -201,8 +186,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy022",
       "title": "팡파레",
-      "artistName": "다이나믹 듀오",
-      "genre": "Hip-Hop"
+      "artistName": "다이나믹 듀오"
     },
     "comment": "생각 정리하기 좋았다",
     "createdAt": "2026-06-20T06:33:00Z"
@@ -214,8 +198,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy023",
       "title": "가을 아침",
-      "artistName": "아이유",
-      "genre": "Ballad"
+      "artistName": "아이유"
     },
     "comment": "혼자 걷기 좋은 밤",
     "createdAt": "2026-05-24T19:42:00Z"
@@ -227,8 +210,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy025",
       "title": "눈의 꽃",
-      "artistName": "박효신",
-      "genre": "Ballad"
+      "artistName": "박효신"
     },
     "comment": "여기 또 와야지",
     "createdAt": "2026-04-14T17:25:00Z"
@@ -240,8 +222,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy026",
       "title": "Dear My Universe",
-      "artistName": "첸",
-      "genre": "Ballad"
+      "artistName": "첸"
     },
     "comment": "여기 또 와야지",
     "createdAt": "2026-08-03T19:29:00Z"
@@ -253,8 +234,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy027",
       "title": "Cupid",
-      "artistName": "FIFTY FIFTY",
-      "genre": "K-Pop"
+      "artistName": "FIFTY FIFTY"
     },
     "comment": "친구랑 오랜만에 만나서 한참 걸었다. 날씨가 좋아서 더 좋았던 것 같아",
     "createdAt": "2026-04-13T08:18:00Z"
@@ -266,8 +246,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy028",
       "title": "가을 아침",
-      "artistName": "아이유",
-      "genre": "Ballad"
+      "artistName": "아이유"
     },
     "comment": null,
     "createdAt": "2026-08-20T17:14:00Z"
@@ -279,8 +258,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy029",
       "title": "How Sweet",
-      "artistName": "NewJeans",
-      "genre": "K-Pop"
+      "artistName": "NewJeans"
     },
     "comment": "노을 지는 거 보면서 이 노래 들으니까 괜히 뭉클했다",
     "createdAt": "2026-03-19T23:26:00Z"
@@ -292,8 +270,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy031",
       "title": "밤편지",
-      "artistName": "아이유",
-      "genre": "Ballad"
+      "artistName": "아이유"
     },
     "comment": "친구가 추천해준 노래인데 여기서 들으니까 더 좋게 들린다",
     "createdAt": "2026-06-27T06:35:00Z"
@@ -305,8 +282,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy032",
       "title": "주저하는 연인들을 위해",
-      "artistName": "잔나비",
-      "genre": "Indie"
+      "artistName": "잔나비"
     },
     "comment": "아무 생각 없이 걷다가 발견한 곳. 사람도 없고 조용해서 좋았다",
     "createdAt": "2026-07-22T19:48:00Z"
@@ -318,8 +294,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy034",
       "title": "눈의 꽃",
-      "artistName": "박효신",
-      "genre": "Ballad"
+      "artistName": "박효신"
     },
     "comment": "이 동네 골목은 언제 와도 좋다. 사진도 많이 찍었다",
     "createdAt": "2026-03-20T17:15:00Z"
@@ -331,8 +306,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy035",
       "title": "사랑이 지나가면",
-      "artistName": "이문세",
-      "genre": "Ballad"
+      "artistName": "이문세"
     },
     "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
     "createdAt": "2026-04-29T21:44:00Z"
@@ -344,8 +318,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy036",
       "title": "주저하는 연인들을 위해",
-      "artistName": "잔나비",
-      "genre": "Indie"
+      "artistName": "잔나비"
     },
     "comment": "여기 또 와야지",
     "createdAt": "2026-06-15T06:13:00Z"
@@ -357,8 +330,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy037",
       "title": "어떻게 이별까지 사랑하겠어",
-      "artistName": "AKMU",
-      "genre": "Ballad"
+      "artistName": "AKMU"
     },
     "comment": "여기 또 와야지",
     "createdAt": "2026-06-06T23:00:00Z"
@@ -370,8 +342,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy038",
       "title": "Love Dive",
-      "artistName": "IVE",
-      "genre": "K-Pop"
+      "artistName": "IVE"
     },
     "comment": null,
     "createdAt": "2026-07-16T02:51:00Z"
@@ -383,8 +354,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy039",
       "title": "Dear My Universe",
-      "artistName": "첸",
-      "genre": "Ballad"
+      "artistName": "첸"
     },
     "comment": null,
     "createdAt": "2026-06-08T19:42:00Z"
@@ -396,8 +366,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy040",
       "title": "Antifreeze",
-      "artistName": "검정치마",
-      "genre": "Indie"
+      "artistName": "검정치마"
     },
     "comment": "친구가 추천해준 노래인데 여기서 들으니까 더 좋게 들린다",
     "createdAt": "2026-08-07T02:01:00Z"
@@ -409,8 +378,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy041",
       "title": "이름에게",
-      "artistName": "아이유",
-      "genre": "Ballad"
+      "artistName": "아이유"
     },
     "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
     "createdAt": "2026-04-16T06:16:00Z"
@@ -422,8 +390,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy044",
       "title": "비 오는 날엔",
-      "artistName": "헤이즈",
-      "genre": "R&B"
+      "artistName": "헤이즈"
     },
     "comment": "오늘 하늘 진짜 예뻤다",
     "createdAt": "2026-04-09T14:08:00Z"
@@ -435,8 +402,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy045",
       "title": "이름에게",
-      "artistName": "아이유",
-      "genre": "Ballad"
+      "artistName": "아이유"
     },
     "comment": "노을 지는 거 보면서 이 노래 들으니까 괜히 뭉클했다",
     "createdAt": "2026-06-03T11:38:00Z"
@@ -448,8 +414,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy046",
       "title": "팡파레",
-      "artistName": "다이나믹 듀오",
-      "genre": "Hip-Hop"
+      "artistName": "다이나믹 듀오"
     },
     "comment": "혼자 걷기 좋은 밤",
     "createdAt": "2026-05-19T21:25:00Z"
@@ -461,8 +426,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy048",
       "title": "하루살이",
-      "artistName": "윤하",
-      "genre": "Rock"
+      "artistName": "윤하"
     },
     "comment": null,
     "createdAt": "2026-05-28T02:27:00Z"
@@ -474,8 +438,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy049",
       "title": "여름 안에서",
-      "artistName": "듀스",
-      "genre": "Dance"
+      "artistName": "듀스"
     },
     "comment": null,
     "createdAt": "2026-06-16T23:06:00Z"
@@ -487,8 +450,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy050",
       "title": "한숨",
-      "artistName": "이하이",
-      "genre": "Ballad"
+      "artistName": "이하이"
     },
     "comment": "친구가 추천해준 노래인데 여기서 들으니까 더 좋게 들린다",
     "createdAt": "2026-06-20T11:46:00Z"
@@ -500,8 +462,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy051",
       "title": "Dear My Universe",
-      "artistName": "첸",
-      "genre": "Ballad"
+      "artistName": "첸"
     },
     "comment": "계절이 바뀌는 게 느껴지는 밤이었다. 조금 쌀쌀했지만 걷기 좋았어",
     "createdAt": "2026-06-28T21:52:00Z"
@@ -513,8 +474,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy052",
       "title": "여름 안에서",
-      "artistName": "듀스",
-      "genre": "Dance"
+      "artistName": "듀스"
     },
     "comment": "계절이 바뀌는 게 느껴지는 밤이었다. 조금 쌀쌀했지만 걷기 좋았어",
     "createdAt": "2026-05-11T23:15:00Z"
@@ -526,8 +486,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy054",
       "title": "봄날",
-      "artistName": "BTS",
-      "genre": "K-Pop"
+      "artistName": "BTS"
     },
     "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
     "createdAt": "2026-03-03T02:12:00Z"
@@ -539,8 +498,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy057",
       "title": "하루살이",
-      "artistName": "윤하",
-      "genre": "Rock"
+      "artistName": "윤하"
     },
     "comment": null,
     "createdAt": "2026-07-19T19:22:00Z"
@@ -552,8 +510,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy058",
       "title": "여름 안에서",
-      "artistName": "듀스",
-      "genre": "Dance"
+      "artistName": "듀스"
     },
     "comment": "혼자 걷기 좋은 밤",
     "createdAt": "2026-04-19T19:07:00Z"
@@ -565,8 +522,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy059",
       "title": "한강에서",
-      "artistName": "너드커넥션",
-      "genre": "Indie"
+      "artistName": "너드커넥션"
     },
     "comment": null,
     "createdAt": "2026-07-29T02:38:00Z"
@@ -578,8 +534,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy060",
       "title": "사랑에 빠졌을 때",
-      "artistName": "커피소년",
-      "genre": "Indie"
+      "artistName": "커피소년"
     },
     "comment": null,
     "createdAt": "2026-03-04T02:08:00Z"
@@ -591,8 +546,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy061",
       "title": "봄날",
-      "artistName": "BTS",
-      "genre": "K-Pop"
+      "artistName": "BTS"
     },
     "comment": null,
     "createdAt": "2026-08-11T23:06:00Z"
@@ -604,8 +558,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy062",
       "title": "Dynamite",
-      "artistName": "BTS",
-      "genre": "K-Pop"
+      "artistName": "BTS"
     },
     "comment": "혼자 걷기 좋은 밤",
     "createdAt": "2026-03-14T17:55:00Z"
@@ -617,8 +570,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy066",
       "title": "팡파레",
-      "artistName": "다이나믹 듀오",
-      "genre": "Hip-Hop"
+      "artistName": "다이나믹 듀오"
     },
     "comment": "이 동네 골목은 언제 와도 좋다. 사진도 많이 찍었다",
     "createdAt": "2026-08-08T14:16:00Z"
@@ -630,8 +582,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy067",
       "title": "한강에서",
-      "artistName": "너드커넥션",
-      "genre": "Indie"
+      "artistName": "너드커넥션"
     },
     "comment": null,
     "createdAt": "2026-03-01T21:28:00Z"
@@ -643,8 +594,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy070",
       "title": "가을 아침",
-      "artistName": "아이유",
-      "genre": "Ballad"
+      "artistName": "아이유"
     },
     "comment": null,
     "createdAt": "2026-03-19T06:10:00Z"
@@ -656,8 +606,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy071",
       "title": "사랑이 지나가면",
-      "artistName": "이문세",
-      "genre": "Ballad"
+      "artistName": "이문세"
     },
     "comment": "바다까지는 못 갔지만 강만 봐도 충분히 좋았던 하루",
     "createdAt": "2026-06-12T17:32:00Z"
@@ -669,8 +618,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy072",
       "title": "너의 모든 순간",
-      "artistName": "성시경",
-      "genre": "Ballad"
+      "artistName": "성시경"
     },
     "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
     "createdAt": "2026-05-22T17:01:00Z"
@@ -682,8 +630,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy074",
       "title": "Dynamite",
-      "artistName": "BTS",
-      "genre": "K-Pop"
+      "artistName": "BTS"
     },
     "comment": null,
     "createdAt": "2026-04-16T21:40:00Z"
@@ -695,8 +642,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy075",
       "title": "어떻게 이별까지 사랑하겠어",
-      "artistName": "AKMU",
-      "genre": "Ballad"
+      "artistName": "AKMU"
     },
     "comment": "이 동네 골목은 언제 와도 좋다. 사진도 많이 찍었다",
     "createdAt": "2026-03-27T11:21:00Z"
@@ -708,8 +654,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy076",
       "title": "이름에게",
-      "artistName": "아이유",
-      "genre": "Ballad"
+      "artistName": "아이유"
     },
     "comment": "혼자 걷기 좋은 밤",
     "createdAt": "2026-06-25T08:20:00Z"
@@ -721,8 +666,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy077",
       "title": "사랑에 빠졌을 때",
-      "artistName": "커피소년",
-      "genre": "Indie"
+      "artistName": "커피소년"
     },
     "comment": "노을이 미쳤다",
     "createdAt": "2026-03-01T02:29:00Z"
@@ -734,8 +678,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy078",
       "title": "어떻게 이별까지 사랑하겠어",
-      "artistName": "AKMU",
-      "genre": "Ballad"
+      "artistName": "AKMU"
     },
     "comment": "오늘 하루 종일 정신없었는데 여기 오니까 좀 풀리는 것 같다",
     "createdAt": "2026-08-08T23:48:00Z"
@@ -747,8 +690,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy079",
       "title": "비 오는 날엔",
-      "artistName": "헤이즈",
-      "genre": "R&B"
+      "artistName": "헤이즈"
     },
     "comment": "오늘 하늘 진짜 예뻤다",
     "createdAt": "2026-08-26T23:07:00Z"
@@ -760,8 +702,7 @@
     "track": {
       "externalTrackId": "spotify:track:dummy080",
       "title": "Dynamite",
-      "artistName": "BTS",
-      "genre": "K-Pop"
+      "artistName": "BTS"
     },
     "comment": "조용해서 좋다",
     "createdAt": "2026-06-13T08:14:00Z"

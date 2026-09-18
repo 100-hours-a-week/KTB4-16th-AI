@@ -96,7 +96,7 @@ class JobRepository:
         await self._session.execute(
             text(
                 "UPDATE ai_jobs SET status = 'done', last_error = NULL, updated_at = now() "
-                "WHERE id = :id"
+                "WHERE id = :id AND status = 'running'"
             ),
             {"id": job_id},
         )
@@ -114,7 +114,7 @@ class JobRepository:
                     last_error = :error,
                     run_after = now() + make_interval(secs => :delay),
                     updated_at = now()
-                WHERE id = :id
+                WHERE id = :id AND status = 'running'
                 """
             ),
             {
@@ -123,5 +123,17 @@ class JobRepository:
                 "error": error[:2000],
                 "delay": delay if retry else 0,
             },
+        )
+        await self._session.commit()
+
+    async def cancel(self, *, job_type: str, dedupe_key: str) -> None:
+        """작업을 cancelled로 표시한다. 워커는 cancelled 작업을 꺼내지 않고,
+        이미 실행 중이던 작업은 저장 직전에 이 표시를 보고 저장을 건너뛴다."""
+        await self._session.execute(
+            text(
+                "UPDATE ai_jobs SET status = 'cancelled', updated_at = now() "
+                "WHERE job_type = :job_type AND dedupe_key = :key"
+            ),
+            {"job_type": job_type, "key": dedupe_key},
         )
         await self._session.commit()

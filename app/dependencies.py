@@ -18,6 +18,7 @@ from app.clients.embedding_client import (
 from app.clients.llm_client import FakeLLMClient, LLMClient, LocalLLMClient
 from app.config import get_settings
 from app.db.postgres import get_session
+from app.db.repositories.embedding_repository import EmbeddingRepository, EmbeddingStore
 from app.db.repositories.job_repository import JobRepository
 from app.exceptions import UnauthorizedError
 
@@ -84,3 +85,9 @@ async def get_job_repository(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncIterator[JobRepository]:
     yield JobRepository(session)
+
+
+async def get_embedding_store(
+    session: AsyncSession = Depends(get_session),
+) -> AsyncIterator[EmbeddingStore]:
+    yield EmbeddingRepository(session)

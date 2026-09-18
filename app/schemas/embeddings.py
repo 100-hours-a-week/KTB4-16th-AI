@@ -13,8 +13,7 @@ from app.schemas.common import CamelModel
 class EmbeddingTrack(CamelModel):
     title: str = Field(min_length=1)
     artist_name: str = Field(min_length=1)
-    # 무드 태깅 프롬프트에 넣어 LLM이 모르는 곡의 추정 정확도를 높인다
-    genre: str | None = None
+    # 스포티파이 곡 ID. 장르·오디오 특성은 스포티파이가 주지 않아 받지 않는다
     external_track_id: str | None = None
 
 

@@ -80,3 +80,26 @@ def test_llm_split_uses_separate_clients(monkeypatch):
     finally:
         get_settings.cache_clear()
         dependencies.get_clients.cache_clear()
+
+
+def test_delete_removes_pending_job_and_vectors(client, jobs, store, record_payload):
+    client.post("/api/embeddings/generate", json=record_payload, headers=AUTH)
+    store.rows[1029] = object()
+    res = client.delete("/api/embeddings/1029", headers=AUTH)
+    assert res.status_code == 204
+    assert ("embedding", "1029") not in jobs.jobs
+    assert 1029 not in store.rows
+
+
+def test_delete_unknown_record_is_still_204(client):
+    assert client.delete("/api/embeddings/999", headers=AUTH).status_code == 204
+
+
+def test_delete_invalid_id_is_400(client):
+    res = client.delete("/api/embeddings/abc", headers=AUTH)
+    assert res.status_code == 400
+    assert res.json()["field"] == "recordId"
+
+
+def test_delete_needs_token(client):
+    assert client.delete("/api/embeddings/1029").status_code == 401

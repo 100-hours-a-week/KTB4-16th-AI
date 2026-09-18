@@ -48,7 +48,7 @@ class AiJob(Base):
     job_type: Mapped[str] = mapped_column(String(32))
     dedupe_key: Mapped[str] = mapped_column(String(128))
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB)
-    # pending → running → done | failed (재시도 남으면 다시 pending)
+    # pending → running → done | failed (재시도 남으면 다시 pending) | cancelled (자물쇠 삭제)
     status: Mapped[str] = mapped_column(String(16), server_default="pending")
     attempts: Mapped[int] = mapped_column(Integer, server_default="0")
     max_attempts: Mapped[int] = mapped_column(Integer)
