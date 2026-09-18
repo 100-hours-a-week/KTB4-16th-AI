@@ -13,12 +13,13 @@
 | 역할 | V1 | V2 |
 |---|---|---|
 | LLM (무드 태깅·리라이팅·요약 등) | Claude API | 미정 |
-| 텍스트 임베딩 | OpenAI `text-embedding-3-small` | 로컬 모델, GCP CPU (ONNX INT8) |
+| 텍스트 임베딩 | OpenAI `text-embedding-3-small` | ④ Embedding Service, GCP CPU (ONNX) |
 | CLIP (사진 임베딩) | Replicate `openai/clip` | RunPod 직접 서빙 |
-| 모더레이션 | — | KcELECTRA, GCP CPU (ONNX INT8) |
+| 모더레이션 | — | ② Moderation Service, KcELECTRA, GCP CPU (ONNX) |
 
 - V1 필요 키: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `REPLICATE_API_TOKEN`
 - 모델 교체는 `app/clients/` 구현체만 바꾼다. 서비스·API 코드는 그대로
+- 정밀도(fp32/INT8)는 모델마다 실측으로 정한다. KcELECTRA는 INT8+ONNX에서 recall이 12.5%p 떨어져 fp32+ONNX 채택 (위키 2단계)
 - 임베딩 모델을 바꾸면 벡터 차원·좌표계가 달라지므로 새 마이그레이션 + 전체 재임베딩 필요 (`model_versions` 컬럼으로 추적)
 
 ## 로컬 실행
