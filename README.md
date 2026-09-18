@@ -12,7 +12,7 @@
 
 | 역할 | V1 | V2 |
 |---|---|---|
-| LLM (무드 태깅·리라이팅·요약 등) | Claude API | 미정 |
+| LLM (무드 태깅·리라이팅·요약 등) | Claude API | RunPod 로컬 LLM으로 마이그레이션 |
 | 텍스트 임베딩 | OpenAI `text-embedding-3-small` | ④ Embedding Service, GCP CPU (ONNX) |
 | CLIP (사진 임베딩) | Replicate `openai/clip` | RunPod 직접 서빙 |
 | 모더레이션 | — | ② Moderation Service, KcELECTRA, GCP CPU (ONNX) |

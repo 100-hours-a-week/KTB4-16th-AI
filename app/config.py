@@ -23,7 +23,7 @@ class Settings(BaseSettings):
 
     # 모델 서빙 계획 (README 참고)
     #   V1: 전부 외부 API — Anthropic(LLM), OpenAI(텍스트 임베딩), Replicate(CLIP)
-    #   V2: CLIP → RunPod 직접 서빙 / 텍스트 임베딩·KcELECTRA → GCP CPU(ONNX)
+    #   V2: GCP CPU(ONNX) — KcELECTRA, 텍스트 임베딩 / RunPod — CLIP, 로컬 LLM
 
     # LLM (음악 무드 태깅 등)
     anthropic_api_key: str = ""
