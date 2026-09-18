@@ -5,7 +5,7 @@
 
 from datetime import datetime
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from app.schemas.common import CamelModel
 
@@ -13,8 +13,14 @@ from app.schemas.common import CamelModel
 class EmbeddingTrack(CamelModel):
     title: str = Field(min_length=1)
     artist_name: str = Field(min_length=1)
-    # 스포티파이 곡 ID. 장르·오디오 특성은 스포티파이가 주지 않아 받지 않는다
-    external_track_id: str | None = None
+    # 스포티파이 곡 ID — 곡별 무드 묘사를 재사용하는 키. 장르·오디오 특성은 스포티파이가 주지 않는다
+    external_track_id: str = Field(min_length=1)
+
+    @field_validator("external_track_id")
+    @classmethod
+    def _strip_uri_prefix(cls, value: str) -> str:
+        # "spotify:track:xxx" 형태로 와도 ID만 남긴다
+        return value.rsplit(":", 1)[-1]
 
 
 class EmbeddingGenerateRequest(CamelModel):

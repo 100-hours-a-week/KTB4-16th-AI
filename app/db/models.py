@@ -24,6 +24,7 @@ class RecordEmbedding(Base):
 
     record_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    external_track_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     image_embedding: Mapped[list[float]] = mapped_column(Vector(_settings.clip_embedding_dim))
     music_embedding: Mapped[list[float]] = mapped_column(Vector(_settings.text_embedding_dim))
     comment_embedding: Mapped[list[float] | None] = mapped_column(
@@ -31,6 +32,23 @@ class RecordEmbedding(Base):
     )
     music_mood_text: Mapped[str] = mapped_column(Text)
     model_versions: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TrackMood(Base):
+    """곡 단위 무드 묘사 캐시. 같은 곡은 LLM을 한 번만 부른다.
+
+    곡명·가수 원문은 저장하지 않고 스포티파이 곡 ID로만 식별한다.
+    mood_version이 현재 설정(LLM·프롬프트·임베딩 모델)과 다르면 다시 만든다.
+    """
+
+    __tablename__ = "track_moods"
+
+    external_track_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    mood_text: Mapped[str] = mapped_column(Text)
+    mood_embedding: Mapped[list[float]] = mapped_column(Vector(_settings.text_embedding_dim))
+    mood_version: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

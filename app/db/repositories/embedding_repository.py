@@ -14,6 +14,7 @@ from app.db.models import RecordEmbedding
 class RecordEmbeddingData:
     record_id: int
     user_id: int
+    external_track_id: str
     image_embedding: list[float]
     music_embedding: list[float]
     comment_embedding: list[float] | None
@@ -53,6 +54,7 @@ class EmbeddingRepository:
         values = {
             "record_id": data.record_id,
             "user_id": data.user_id,
+            "external_track_id": data.external_track_id,
             "image_embedding": data.image_embedding,
             "music_embedding": data.music_embedding,
             "comment_embedding": data.comment_embedding,

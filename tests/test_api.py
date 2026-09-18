@@ -103,3 +103,10 @@ def test_delete_invalid_id_is_400(client):
 
 def test_delete_needs_token(client):
     assert client.delete("/api/embeddings/1029").status_code == 401
+
+
+def test_missing_track_id_is_400(client, record_payload):
+    del record_payload["track"]["externalTrackId"]
+    res = client.post("/api/embeddings/generate", json=record_payload, headers=AUTH)
+    assert res.status_code == 400
+    assert res.json()["field"] == "track.externalTrackId"

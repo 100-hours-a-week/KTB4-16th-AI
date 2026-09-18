@@ -5,6 +5,9 @@
 
 - case == "valid" 인 항목의 seed(DB에 저장되는 자물쇠)만 사용
 - 사진은 필수이므로 photoUrl이 없는 seed는 제외
+- 곡 ID는 fixtures/raw/spotify_track_ids.json의 실제 스포티파이 ID로 바꾼다
+  (원본은 같은 곡인데 자물쇠마다 ID가 달라 곡별 캐시를 검증할 수 없음).
+  스포티파이에서 못 찾은 곡은 곡마다 고정된 가짜 ID를 쓴다.
 
 사용법: python scripts/build_dummy_records.py
 """
@@ -14,19 +17,23 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "fixtures/raw/backend_record_cases.json"
+TRACK_IDS = ROOT / "fixtures/raw/spotify_track_ids.json"
 DST = ROOT / "fixtures/dummy_records.json"
 
 
-def to_request(seed: dict) -> dict:
+def to_request(seed: dict, track_ids: dict[str, str | None]) -> dict:
     track = seed["track"]
+    artist = track.get("artistName") or track["artist"]
+    key = f"{track['title']} | {artist}"
+    track_id = track_ids.get(key) or "dummy-" + format(sorted(track_ids).index(key), "03d")
     return {
         "recordId": seed["recordId"],
         "userId": seed["userId"],
         "photoUrl": seed["photoUrl"],
         "track": {
-            "externalTrackId": track.get("externalTrackId"),
+            "externalTrackId": track_id,
             "title": track["title"],
-            "artistName": track.get("artistName") or track["artist"],
+            "artistName": artist,
         },
         "comment": seed.get("comment"),
         "createdAt": seed["createdAt"],
@@ -36,7 +43,8 @@ def to_request(seed: dict) -> dict:
 def main() -> None:
     cases = json.loads(SRC.read_text(encoding="utf-8"))
     seeds = [c["seed"] for c in cases if c["case"] == "valid" and c.get("seed")]
-    records = [to_request(s) for s in seeds if s.get("photoUrl")]
+    track_ids = json.loads(TRACK_IDS.read_text(encoding="utf-8"))
+    records = [to_request(s, track_ids) for s in seeds if s.get("photoUrl")]
     DST.write_text(json.dumps(records, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"{len(seeds)}건 중 사진 있는 {len(records)}건 → {DST.relative_to(ROOT)}")
 
