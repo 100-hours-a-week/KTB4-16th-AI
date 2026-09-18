@@ -1,8 +1,12 @@
 """CLIP API 어댑터 — 이미지·텍스트를 같은 CLIP 공간으로 인코딩."""
 
-from typing import Protocol
+import asyncio
+from typing import Any, Protocol
+
+import httpx
 
 from app.clients.fake import fake_vector
+from app.exceptions import ClipError
 
 
 class ClipClient(Protocol):
@@ -14,25 +18,94 @@ class ClipClient(Protocol):
     async def encode_text(self, texts: list[str]) -> list[list[float]]: ...
 
 
-class HttpClipClient:
-    """CLIP 제공처 확정 후 구현.
+class ReplicateClipClient:
+    """Replicate의 openai/clip (clip-vit-large-patch14, 768차원).
 
-    이미지 벡터와 라벨(텍스트) 벡터는 반드시 같은 모델로 만들어야 비교가 성립한다.
-    실패는 ClipError로 변환해 올린다.
+    입력: {"image": url} 또는 {"text": str} / 출력: {"embedding": [...]}
+    이미지 벡터와 라벨(텍스트) 벡터가 같은 모델에서 나오므로 서로 비교할 수 있다.
     """
 
-    def __init__(self, api_url: str, api_key: str, model: str, dim: int, timeout: float):
+    BASE_URL = "https://api.replicate.com/v1"
+    RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+    POLL_INTERVAL_SECONDS = 1.0
+
+    def __init__(
+        self,
+        api_token: str,
+        model: str,
+        dim: int,
+        timeout: float,
+        max_retries: int,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
         self.model = model
         self.dim = dim
-        self._api_url = api_url
-        self._api_key = api_key
         self._timeout = timeout
+        self._max_retries = max_retries
+        self._http = httpx.AsyncClient(
+            base_url=self.BASE_URL,
+            headers={"Authorization": f"Bearer {api_token}"},
+            timeout=timeout,
+            transport=transport,
+        )
 
     async def encode_image(self, image_url: str) -> list[float]:
-        raise NotImplementedError("CLIP 제공처 확정 후 구현 (AI_CLIENT_MODE=fake로 우회 가능)")
+        return await self._predict({"image": image_url})
 
     async def encode_text(self, texts: list[str]) -> list[list[float]]:
-        raise NotImplementedError("CLIP 제공처 확정 후 구현 (AI_CLIENT_MODE=fake로 우회 가능)")
+        # 모델이 한 번에 한 입력만 받으므로 병렬 호출
+        return list(await asyncio.gather(*(self._predict({"text": t}) for t in texts)))
+
+    async def _predict(self, model_input: dict[str, str]) -> list[float]:
+        prediction = await self._create_prediction(model_input)
+        prediction = await self._wait_until_done(prediction)
+
+        if prediction.get("status") != "succeeded":
+            raise ClipError(f"CLIP 예측 실패: {prediction.get('status')} {prediction.get('error')}")
+        embedding = (prediction.get("output") or {}).get("embedding")
+        if not embedding:
+            raise ClipError("CLIP 응답에 embedding이 없어요.")
+        if len(embedding) != self.dim:
+            raise ClipError(f"CLIP 차원({len(embedding)})이 설정값({self.dim})과 달라요.")
+        return embedding
+
+    async def _create_prediction(self, model_input: dict[str, str]) -> dict[str, Any]:
+        wait = max(1, min(60, int(self._timeout)))
+        return await self._request(
+            "POST",
+            f"/models/{self.model}/predictions",
+            json={"input": model_input},
+            headers={"Prefer": f"wait={wait}"},
+        )
+
+    async def _wait_until_done(self, prediction: dict[str, Any]) -> dict[str, Any]:
+        """sync 대기 시간 안에 안 끝났으면 완료될 때까지 조회한다."""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self._timeout
+        while prediction.get("status") in ("starting", "processing"):
+            if loop.time() > deadline:
+                raise ClipError("CLIP 예측 대기 시간 초과")
+            await asyncio.sleep(self.POLL_INTERVAL_SECONDS)
+            prediction = await self._request("GET", f"/predictions/{prediction['id']}")
+        return prediction
+
+    async def _request(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+        for attempt in range(self._max_retries + 1):
+            try:
+                res = await self._http.request(method, url, **kwargs)
+            except httpx.HTTPError as e:
+                if attempt < self._max_retries:
+                    await asyncio.sleep(2**attempt)
+                    continue
+                raise ClipError(f"CLIP API 연결 실패: {type(e).__name__}") from e
+
+            if res.status_code in self.RETRYABLE_STATUS and attempt < self._max_retries:
+                await asyncio.sleep(2**attempt)
+                continue
+            if res.status_code >= 400:
+                raise ClipError(f"CLIP API 오류 (status {res.status_code})")
+            return res.json()
+        raise ClipError("CLIP API 재시도 초과")
 
 
 class FakeClipClient:

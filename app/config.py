@@ -21,20 +21,24 @@ class Settings(BaseSettings):
     # real: 실제 외부 API 호출
     ai_client_mode: Literal["fake", "real"] = "fake"
 
+    # 모델 서빙 계획 (README 참고)
+    #   V1: 전부 외부 API — Anthropic(LLM), OpenAI(텍스트 임베딩), Replicate(CLIP)
+    #   V2: CLIP → RunPod 직접 서빙 / 텍스트 임베딩·KcELECTRA → GCP CPU(ONNX INT8)
+
     # LLM (음악 무드 태깅 등)
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-5"
 
-    # 텍스트 임베딩 (코멘트·음악 무드 텍스트)
+    # 텍스트 임베딩 (코멘트·음악 무드 텍스트) — V2에 로컬 모델로 교체 예정
     openai_api_key: str = ""
     text_embedding_model: str = "text-embedding-3-small"
     text_embedding_dim: int = 1536
 
-    # CLIP 이미지 임베딩 — 제공처·모델·차원은 결정 회의 후 확정
-    clip_api_url: str = ""
-    clip_api_key: str = ""
-    clip_model: str = "clip-vit-base-patch32"
-    clip_embedding_dim: int = 512
+    # CLIP 이미지 임베딩 — Replicate openai/clip (clip-vit-large-patch14)
+    # V2에 RunPod 직접 서빙으로 교체 예정. 모델이 바뀌면 차원 변경 → 전체 재임베딩
+    replicate_api_token: str = ""
+    clip_model: str = "openai/clip"
+    clip_embedding_dim: int = 768
 
     # 외부 API 공통
     external_timeout_seconds: float = 20.0

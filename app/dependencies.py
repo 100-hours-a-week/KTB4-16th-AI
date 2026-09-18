@@ -9,7 +9,7 @@ from fastapi import Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.anthropic_client import AnthropicClient
-from app.clients.clip_client import ClipClient, FakeClipClient, HttpClipClient
+from app.clients.clip_client import ClipClient, FakeClipClient, ReplicateClipClient
 from app.clients.embedding_client import (
     EmbeddingClient,
     FakeEmbeddingClient,
@@ -58,12 +58,12 @@ def get_clients() -> Clients:
             timeout=s.external_timeout_seconds,
             max_retries=s.external_max_retries,
         ),
-        clip=HttpClipClient(
-            api_url=s.clip_api_url,
-            api_key=s.clip_api_key,
+        clip=ReplicateClipClient(
+            api_token=s.replicate_api_token,
             model=s.clip_model,
             dim=s.clip_embedding_dim,
             timeout=s.external_timeout_seconds,
+            max_retries=s.external_max_retries,
         ),
     )
 

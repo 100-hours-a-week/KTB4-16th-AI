@@ -7,7 +7,7 @@ from app.components.music_mood_tagger import PROMPT_VERSION, MusicMoodTagger
 from app.db.repositories.embedding_repository import RecordEmbeddingData
 from app.schemas.embeddings import EmbeddingGenerateRequest
 
-CLIP_DIM = 512
+CLIP_DIM = 768
 TEXT_DIM = 1536
 
 

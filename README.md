@@ -8,6 +8,19 @@
 | ② Moderation | `uvicorn app.moderation_main:app --port 8001` | 채팅 모더레이션 |
 | ③ Worker | `python -m app.worker_main` | `ai_jobs` 큐 소비 (임베딩·RECAP·클러스터) |
 
+## 모델 서빙 계획
+
+| 역할 | V1 | V2 |
+|---|---|---|
+| LLM (무드 태깅·리라이팅·요약 등) | Claude API | 미정 |
+| 텍스트 임베딩 | OpenAI `text-embedding-3-small` | 로컬 모델, GCP CPU (ONNX INT8) |
+| CLIP (사진 임베딩) | Replicate `openai/clip` | RunPod 직접 서빙 |
+| 모더레이션 | — | KcELECTRA, GCP CPU (ONNX INT8) |
+
+- V1 필요 키: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `REPLICATE_API_TOKEN`
+- 모델 교체는 `app/clients/` 구현체만 바꾼다. 서비스·API 코드는 그대로
+- 임베딩 모델을 바꾸면 벡터 차원·좌표계가 달라지므로 새 마이그레이션 + 전체 재임베딩 필요 (`model_versions` 컬럼으로 추적)
+
 ## 로컬 실행
 
 ```bash
