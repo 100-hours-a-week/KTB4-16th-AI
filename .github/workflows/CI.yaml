@@ -3,7 +3,7 @@ name: AI CI feature
 on:
   push:
     branches:
-      - develop
+      - feature
 
 jobs:
   ci:
