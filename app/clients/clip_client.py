@@ -28,6 +28,9 @@ class ReplicateClipClient:
     BASE_URL = "https://api.replicate.com/v1"
     RETRYABLE_STATUS = {429, 500, 502, 503, 504}
     POLL_INTERVAL_SECONDS = 1.0
+    # 429는 계정 호출 제한이라 잠깐 기다리면 풀린다 — 일반 오류보다 넉넉히 재시도
+    RATE_LIMIT_EXTRA_RETRIES = 6
+    RATE_LIMIT_WAIT_SECONDS = 5.0
 
     def __init__(
         self,
@@ -90,22 +93,42 @@ class ReplicateClipClient:
         return prediction
 
     async def _request(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
-        for attempt in range(self._max_retries + 1):
+        max_attempts = self._max_retries + 1 + self.RATE_LIMIT_EXTRA_RETRIES
+        errors, rate_limited = 0, 0
+        for _ in range(max_attempts):
             try:
                 res = await self._http.request(method, url, **kwargs)
             except httpx.HTTPError as e:
-                if attempt < self._max_retries:
-                    await asyncio.sleep(2**attempt)
+                errors += 1
+                if errors <= self._max_retries:
+                    await asyncio.sleep(2**errors)
                     continue
                 raise ClipError(f"CLIP API 연결 실패: {type(e).__name__}") from e
 
-            if res.status_code in self.RETRYABLE_STATUS and attempt < self._max_retries:
-                await asyncio.sleep(2**attempt)
-                continue
+            if res.status_code == 429:
+                rate_limited += 1
+                if rate_limited <= self.RATE_LIMIT_EXTRA_RETRIES:
+                    await asyncio.sleep(self._retry_after(res))
+                    continue
+            elif res.status_code in self.RETRYABLE_STATUS:
+                errors += 1
+                if errors <= self._max_retries:
+                    await asyncio.sleep(2**errors)
+                    continue
             if res.status_code >= 400:
                 raise ClipError(f"CLIP API 오류 (status {res.status_code})")
             return res.json()
-        raise ClipError("CLIP API 재시도 초과")
+        raise ClipError("CLIP API 재시도 초과 (호출 제한)")
+
+    def _retry_after(self, res: httpx.Response) -> float:
+        """Replicate가 알려준 대기 시간을 우선 따른다."""
+        header = res.headers.get("retry-after")
+        if header:
+            try:
+                return min(60.0, max(1.0, float(header)))
+            except ValueError:
+                pass
+        return self.RATE_LIMIT_WAIT_SECONDS
 
 
 class FakeClipClient:

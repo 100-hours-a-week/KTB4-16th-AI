@@ -88,3 +88,33 @@ async def test_auth_error_is_not_retried():
     with pytest.raises(ClipError):
         await make_client(handler).encode_image("https://img/x.jpg")
     assert len(calls) == 1
+
+
+async def test_rate_limit_waits_and_retries(monkeypatch):
+    monkeypatch.setattr(ReplicateClipClient, "RATE_LIMIT_WAIT_SECONDS", 0)
+    statuses = [429, 429, 201]
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        status = statuses.pop(0)
+        if status == 429:
+            return httpx.Response(429, headers={"retry-after": "0"}, json={"detail": "rate"})
+        return httpx.Response(
+            201, json={"id": "p", "status": "succeeded", "output": {"embedding": [0.5] * DIM}}
+        )
+
+    assert await make_client(handler).encode_image("https://img/1.jpg") == [0.5] * DIM
+    assert statuses == []
+
+
+async def test_rate_limit_gives_up_eventually(monkeypatch):
+    monkeypatch.setattr(ReplicateClipClient, "RATE_LIMIT_WAIT_SECONDS", 0)
+    monkeypatch.setattr(ReplicateClipClient, "RATE_LIMIT_EXTRA_RETRIES", 2)
+    calls = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append(1)
+        return httpx.Response(429, json={"detail": "rate"})
+
+    with pytest.raises(ClipError):
+        await make_client(handler).encode_image("https://img/1.jpg")
+    assert len(calls) == 3
