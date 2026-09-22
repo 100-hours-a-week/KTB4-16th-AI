@@ -15,3 +15,5 @@ class PhotoRecommendResponse(CamelModel):
     rewritten_query: str
     tracks: list[Track]
     degraded: bool = False
+    # 규칙 기반 검색어 완화로 재검색한 횟수. 0이면 첫 시도에 성공 (기능5 retryCount와 같은 규칙)
+    retry_count: int = 0

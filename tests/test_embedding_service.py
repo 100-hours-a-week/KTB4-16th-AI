@@ -1,9 +1,11 @@
 from app.clients.clip_client import FakeClipClient
 from app.clients.embedding_client import FakeEmbeddingClient
 from app.clients.llm_client import FakeLLMClient
+from app.components.category_vectors import CategoryVectors
 from app.components.clip_tagger import ClipTagger
 from app.components.embedder import Embedder
 from app.components.music_mood_tagger import PROMPT_VERSION, MusicMoodTagger
+from app.components.track_mood_resolver import TrackMoodResolver
 from app.db.repositories.embedding_repository import RecordEmbeddingData
 from app.db.repositories.track_mood_repository import CachedMood
 from app.schemas.embeddings import EmbeddingGenerateRequest
@@ -28,6 +30,10 @@ class InMemoryTrackMoods:
         row = self.rows.get(external_track_id)
         return row[1] if row and row[0] == mood_version else None
 
+    async def get_any(self, external_track_id: str) -> CachedMood | None:
+        row = self.rows.get(external_track_id)
+        return row[1] if row else None
+
     async def save(self, external_track_id: str, mood_version: str, mood: CachedMood) -> None:
         self.rows[external_track_id] = (mood_version, mood)
 
@@ -45,11 +51,16 @@ def build_service(store, track_moods=None, llm=None):
     from app.services.embedding_service import EmbeddingService
 
     return EmbeddingService(
-        clip_tagger=ClipTagger(FakeClipClient(dim=CLIP_DIM)),
+        clip_tagger=ClipTagger(
+            FakeClipClient(dim=CLIP_DIM), CategoryVectors(FakeClipClient(dim=CLIP_DIM))
+        ),
         embedder=Embedder(FakeEmbeddingClient(dim=TEXT_DIM)),
-        mood_tagger=MusicMoodTagger(llm or FakeLLMClient()),
+        track_moods=TrackMoodResolver(
+            mood_tagger=MusicMoodTagger(llm or FakeLLMClient()),
+            embedder=Embedder(FakeEmbeddingClient(dim=TEXT_DIM)),
+            store=track_moods if track_moods is not None else InMemoryTrackMoods(),
+        ),
         store=store,
-        track_moods=track_moods if track_moods is not None else InMemoryTrackMoods(),
     )
 
 
@@ -62,7 +73,7 @@ async def test_generate_without_comment(record_payload):
     assert len(row.music_embedding) == TEXT_DIM
     assert row.comment_embedding is None
     assert row.music_mood_text
-    assert row.model_versions["moodPrompt"] == PROMPT_VERSION
+    assert PROMPT_VERSION in row.model_versions["moodVersion"]
 
 
 async def test_blank_comment_is_treated_as_null(record_payload):

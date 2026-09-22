@@ -5,10 +5,11 @@ from typing import Any
 from app.components.clip_tagger import ClipTagger
 from app.components.embedder import Embedder
 from app.components.music_mood_tagger import MusicMoodTagger
+from app.components.track_mood_resolver import TrackMoodResolver
 from app.db.postgres import get_sessionmaker
 from app.db.repositories.embedding_repository import EmbeddingRepository
 from app.db.repositories.track_mood_repository import TrackMoodRepository
-from app.dependencies import get_clients
+from app.dependencies import get_category_vectors, get_clients
 from app.schemas.embeddings import EmbeddingGenerateRequest
 from app.services.embedding_service import EmbeddingService
 
@@ -20,10 +21,13 @@ async def handle(payload: dict[str, Any]) -> None:
     clients = get_clients()
     async with get_sessionmaker()() as session:
         service = EmbeddingService(
-            clip_tagger=ClipTagger(clients.clip),
+            clip_tagger=ClipTagger(clients.clip, get_category_vectors()),
             embedder=Embedder(clients.embedding),
-            mood_tagger=MusicMoodTagger(clients.llm_knowledge),
+            track_moods=TrackMoodResolver(
+                mood_tagger=MusicMoodTagger(clients.llm_knowledge),
+                embedder=Embedder(clients.embedding),
+                store=TrackMoodRepository(session),
+            ),
             store=EmbeddingRepository(session),
-            track_moods=TrackMoodRepository(session),
         )
         await service.generate(req)

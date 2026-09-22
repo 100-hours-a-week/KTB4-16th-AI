@@ -16,10 +16,24 @@ from app.clients.embedding_client import (
     OpenAIEmbeddingClient,
 )
 from app.clients.llm_client import FakeLLMClient, LLMClient, LocalLLMClient
+from app.clients.spotify_client import (
+    FakeSpotifyPlaylistClient,
+    FakeSpotifySearchClient,
+    SpotifyClient,
+    SpotifyPlaylistClient,
+    SpotifySearchClient,
+    SpotifyServiceAccountClient,
+)
+from app.components.category_vectors import CategoryVectors
+from app.components.clip_tagger import ClipTagger
+from app.components.embedder import Embedder
+from app.components.query_rewriter import QueryRewriter
+from app.components.reranker import Reranker
 from app.config import get_settings
 from app.db.postgres import get_session
 from app.db.repositories.embedding_repository import EmbeddingRepository, EmbeddingStore
 from app.db.repositories.job_repository import JobRepository
+from app.db.repositories.track_mood_repository import TrackMoodRepository
 from app.exceptions import UnauthorizedError
 
 
@@ -37,6 +51,8 @@ class Clients:
     llm_general: LLMClient
     embedding: EmbeddingClient
     clip: ClipClient
+    spotify_search: SpotifySearchClient
+    spotify_playlist: SpotifyPlaylistClient
 
 
 @lru_cache
@@ -48,6 +64,8 @@ def get_clients() -> Clients:
             llm_general=FakeLLMClient(),
             embedding=FakeEmbeddingClient(dim=s.text_embedding_dim),
             clip=FakeClipClient(dim=s.clip_embedding_dim),
+            spotify_search=FakeSpotifySearchClient(),
+            spotify_playlist=FakeSpotifyPlaylistClient(),
         )
     return Clients(
         llm_knowledge=_build_llm(s.llm_knowledge_provider),
@@ -65,6 +83,17 @@ def get_clients() -> Clients:
             dim=s.clip_embedding_dim,
             timeout=s.external_timeout_seconds,
             max_retries=s.external_max_retries,
+        ),
+        spotify_search=SpotifyClient(
+            client_id=s.spotify_client_id,
+            client_secret=s.spotify_client_secret,
+            timeout=s.external_timeout_seconds,
+        ),
+        spotify_playlist=SpotifyServiceAccountClient(
+            client_id=s.spotify_client_id,
+            client_secret=s.spotify_client_secret,
+            refresh_token=s.spotify_service_refresh_token,
+            timeout=s.external_timeout_seconds,
         ),
     )
 
@@ -91,3 +120,36 @@ async def get_embedding_store(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncIterator[EmbeddingStore]:
     yield EmbeddingRepository(session)
+
+
+def get_spotify_playlist_client() -> SpotifyPlaylistClient:
+    return get_clients().spotify_playlist
+
+
+def get_spotify_search_client() -> SpotifySearchClient:
+    return get_clients().spotify_search
+
+
+@lru_cache
+def get_category_vectors() -> CategoryVectors:
+    """태그 벡터 캐시는 프로세스당 1개. 첫 호출 때 CategoryVectors.load()가 CLIP을
+    부르고, 그 뒤로는 재사용된다."""
+    return CategoryVectors(get_clients().clip)
+
+
+def get_clip_tagger() -> ClipTagger:
+    return ClipTagger(get_clients().clip, get_category_vectors())
+
+
+def get_query_rewriter() -> QueryRewriter:
+    # 곡 지식이 필요 없는 언어 변환 작업이라 general LLM을 쓴다
+    return QueryRewriter(get_clients().llm_general)
+
+
+async def get_reranker(session: AsyncSession = Depends(get_session)) -> AsyncIterator[Reranker]:
+    clients = get_clients()
+    yield Reranker(
+        embedder=Embedder(clients.embedding),
+        track_moods=TrackMoodRepository(session),
+        jobs=JobRepository(session),
+    )
