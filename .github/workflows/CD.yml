@@ -1,0 +1,116 @@
+name: AI CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  GCP_PROJECT_ID: project-7b071b48-8637-467a-80d
+  GCP_REGION: asia-northeast3
+  ZONE: asia-northeast3-a
+  AR_REPO: ai
+  IMAGE_NAME: ai
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      image_tag: ${{ steps.vars.outputs.image_tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: vars
+        run: echo "image_tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
+
+      - run: |
+          IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.AR_REPO }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.image_tag }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - id: standby
+        run: |
+          VM=$(gcloud compute instances list \
+            --filter="labels.role=standby" \
+            --zones="${{ env.ZONE }}" \
+            --format="value(name)")
+          echo "vm=$VM" >> "$GITHUB_OUTPUT"
+
+      - run: |
+          cat > ai.env <<ENVEOF
+          APP_ENV=${{ secrets.APP_ENV }}
+          INTERNAL_TOKEN=${{ secrets.INTERNAL_TOKEN }}
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          AI_CLIENT_MODE=${{ secrets.AI_CLIENT_MODE }}
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          LLM_MODEL=${{ secrets.LLM_MODEL }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          TEXT_EMBEDDING_MODEL=${{ secrets.TEXT_EMBEDDING_MODEL }}
+          TEXT_EMBEDDING_DIM=${{ secrets.TEXT_EMBEDDING_DIM }}
+          REPLICATE_API_TOKEN=${{ secrets.REPLICATE_API_TOKEN }}
+          CLIP_MODEL=${{ secrets.CLIP_MODEL }}
+          CLIP_EMBEDDING_DIM=${{ secrets.CLIP_EMBEDDING_DIM }}
+          SPOTIFY_CLIENT_ID=${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET=${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}
+          ENVEOF
+
+      - run: |
+          gcloud compute scp ai.env "${{ steps.standby.outputs.vm }}:~/app/ai.env" \
+            --zone="${{ env.ZONE }}" --tunnel-through-iap
+
+          gcloud compute ssh "${{ steps.standby.outputs.vm }}" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
+            cd ~/app &&
+            export IMAGE_TAG=${{ needs.build-and-push.outputs.image_tag }} &&
+            docker compose pull ai &&
+            docker compose up -d ai
+          "
+
+      - run: |
+          gcloud compute ssh "${{ steps.standby.outputs.vm }}" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
+            curl -fsS http://localhost:8000/health
+          "
+
+      - run: |
+          ACTIVE_VM=$(gcloud compute instances list \
+            --filter="labels.role=active" \
+            --zones="${{ env.ZONE }}" \
+            --format="value(name)")
+
+          gcloud compute instances delete-access-config "$ACTIVE_VM" \
+            --zone="${{ env.ZONE }}" --access-config-name="External NAT"
+
+          gcloud compute instances add-access-config "${{ steps.standby.outputs.vm }}" \
+            --zone="${{ env.ZONE }}" --access-config-name="External NAT" \
+            --address="${{ secrets.MURO_PROD_IP }}"
+
+          gcloud compute instances add-labels "${{ steps.standby.outputs.vm }}" --zone="${{ env.ZONE }}" --labels=role=active
+          gcloud compute instances add-labels "$ACTIVE_VM" --zone="${{ env.ZONE }}" --labels=role=standby
