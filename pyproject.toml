@@ -1,0 +1,18 @@
+[project]
+name = "muro-ai"
+version = "0.1.0"
+requires-python = ">=3.11"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["migrations/script.py.mako"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# FastAPI의 Depends() 기본값 패턴 허용
+ignore = ["B008"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
