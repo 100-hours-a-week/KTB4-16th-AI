@@ -16,7 +16,7 @@
       [
         "@semantic-release/exec",
         {
-          "prepareCmd": "docker buildx build --platform linux/amd64 --file Dockerfile --tag \"$IMAGE_BASE:${nextRelease.version}\" --push."
+          "prepareCmd": "docker buildx build --platform linux/amd64 --file Dockerfile --tag \"$IMAGE_BASE:${nextRelease.version}\" --push ."
         }
       ],
       [
