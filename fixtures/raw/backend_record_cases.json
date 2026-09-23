@@ -1,0 +1,3686 @@
+[
+  {
+    "id": 1,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "경계값 — moodScore 상한(50)",
+    "payload": {
+      "location": {
+        "latitude": 37.564871,
+        "longitude": 126.989234
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 50,
+      "uploadId": 5000
+    },
+    "seed": {
+      "recordId": 1001,
+      "userId": 1,
+      "photoUrl": "https://picsum.photos/seed/alley_10/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy001",
+        "title": "How Sweet",
+        "artist": "NewJeans",
+        "genre": "K-Pop"
+      },
+      "moodScore": 50,
+      "comment": null,
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.564871,
+        "longitude": 126.989234
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 21,
+      "createdAt": "2026-07-17T06:47:00Z",
+      "intendedPhotoMood": "alley"
+    }
+  },
+  {
+    "id": 2,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "경계값 — moodScore 하한(-50)",
+    "payload": {
+      "location": {
+        "latitude": 37.556637,
+        "longitude": 126.923611
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy002"
+      },
+      "moodScore": -50
+    },
+    "seed": {
+      "recordId": 1002,
+      "userId": 2,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy002",
+        "title": "사랑에 빠졌을 때",
+        "artist": "커피소년",
+        "genre": "Indie"
+      },
+      "moodScore": -50,
+      "comment": null,
+      "place": {
+        "placeId": 1,
+        "regionName": "서울 마포구 와우산로",
+        "latitude": 37.556637,
+        "longitude": 126.923611
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 32,
+      "createdAt": "2026-07-14T11:03:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 3,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "경계값 — 코멘트 80자",
+    "payload": {
+      "location": {
+        "latitude": 37.54488,
+        "longitude": 127.056401
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy003"
+      },
+      "moodScore": -18,
+      "comment": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가",
+      "uploadId": 5002
+    },
+    "seed": {
+      "recordId": 1003,
+      "userId": 3,
+      "photoUrl": "https://picsum.photos/seed/nightst_04/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy003",
+        "title": "가을 아침",
+        "artist": "아이유",
+        "genre": "Ballad"
+      },
+      "moodScore": -18,
+      "comment": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가",
+      "place": {
+        "placeId": 2,
+        "regionName": "서울 성동구 연무장길",
+        "latitude": 37.54488,
+        "longitude": 127.056401
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 15,
+      "createdAt": "2026-04-30T21:07:00Z",
+      "intendedPhotoMood": "nightst"
+    }
+  },
+  {
+    "id": 4,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "경계값 — 사진 없음",
+    "payload": {
+      "location": {
+        "latitude": 37.564159,
+        "longitude": 126.989328
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy004"
+      },
+      "moodScore": 19,
+      "comment": "조용해서 좋다"
+    },
+    "seed": {
+      "recordId": 1004,
+      "userId": 4,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy004",
+        "title": "너의 모든 순간",
+        "artist": "성시경",
+        "genre": "Ballad"
+      },
+      "moodScore": 19,
+      "comment": "조용해서 좋다",
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.564159,
+        "longitude": 126.989328
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 6,
+      "createdAt": "2026-08-16T02:20:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 5,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "경계값 — 코멘트 없음",
+    "payload": {
+      "location": {
+        "latitude": 37.565257,
+        "longitude": 126.990062
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy005"
+      },
+      "moodScore": -28,
+      "uploadId": 5004
+    },
+    "seed": {
+      "recordId": 1005,
+      "userId": 5,
+      "photoUrl": "https://picsum.photos/seed/nature_01/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy005",
+        "title": "사랑이 지나가면",
+        "artist": "이문세",
+        "genre": "Ballad"
+      },
+      "moodScore": -28,
+      "comment": null,
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.565257,
+        "longitude": 126.990062
+      },
+      "weatherCondition": "SNOW",
+      "temperature": -2,
+      "createdAt": "2026-04-03T17:29:00Z",
+      "intendedPhotoMood": "nature"
+    }
+  },
+  {
+    "id": 6,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "실내 · melancholy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.544985,
+        "longitude": 127.055952
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy006"
+      },
+      "moodScore": -6,
+      "comment": "퇴근길에 우연히 튼 노래인데 오늘따라 이 골목이랑 참 잘 어울렸다",
+      "uploadId": 5005
+    },
+    "seed": {
+      "recordId": 1006,
+      "userId": 1,
+      "photoUrl": "https://picsum.photos/seed/indoor_06/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy006",
+        "title": "봄날",
+        "artist": "BTS",
+        "genre": "K-Pop"
+      },
+      "moodScore": -6,
+      "comment": "퇴근길에 우연히 튼 노래인데 오늘따라 이 골목이랑 참 잘 어울렸다",
+      "place": {
+        "placeId": 2,
+        "regionName": "서울 성동구 연무장길",
+        "latitude": 37.544985,
+        "longitude": 127.055952
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 32,
+      "createdAt": "2026-03-26T08:34:00Z",
+      "intendedPhotoMood": "indoor"
+    }
+  },
+  {
+    "id": 7,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "노을 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.561623,
+        "longitude": 126.926917
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy007"
+      },
+      "moodScore": 11,
+      "comment": "아무 생각 없이 걷다가 발견한 곳. 사람도 없고 조용해서 좋았다",
+      "uploadId": 5006
+    },
+    "seed": {
+      "recordId": 1007,
+      "userId": 2,
+      "photoUrl": "https://picsum.photos/seed/sunset_09/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy007",
+        "title": "주저하는 연인들을 위해",
+        "artist": "잔나비",
+        "genre": "Indie"
+      },
+      "moodScore": 11,
+      "comment": "아무 생각 없이 걷다가 발견한 곳. 사람도 없고 조용해서 좋았다",
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.561623,
+        "longitude": 126.926917
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 15,
+      "createdAt": "2026-06-03T17:10:00Z",
+      "intendedPhotoMood": "sunset"
+    }
+  },
+  {
+    "id": 8,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "골목 · heavy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.562035,
+        "longitude": 126.926628
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy008"
+      },
+      "moodScore": -31,
+      "comment": "바다까지는 못 갔지만 강만 봐도 충분히 좋았던 하루",
+      "uploadId": 5007
+    },
+    "seed": {
+      "recordId": 1008,
+      "userId": 3,
+      "photoUrl": "https://picsum.photos/seed/alley_07/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy008",
+        "title": "한숨",
+        "artist": "이하이",
+        "genre": "Ballad"
+      },
+      "moodScore": -31,
+      "comment": "바다까지는 못 갔지만 강만 봐도 충분히 좋았던 하루",
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.562035,
+        "longitude": 126.926628
+      },
+      "weatherCondition": null,
+      "temperature": null,
+      "createdAt": "2026-07-14T06:42:00Z",
+      "intendedPhotoMood": "alley"
+    }
+  },
+  {
+    "id": 9,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "실내 · heavy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.561856,
+        "longitude": 126.923937
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy009"
+      },
+      "moodScore": -47,
+      "comment": "오늘 하늘 진짜 예뻤다",
+      "uploadId": 5008
+    },
+    "seed": {
+      "recordId": 1009,
+      "userId": 4,
+      "photoUrl": "https://picsum.photos/seed/indoor_08/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy009",
+        "title": "Dear My Universe",
+        "artist": "첸",
+        "genre": "Ballad"
+      },
+      "moodScore": -47,
+      "comment": "오늘 하늘 진짜 예뻤다",
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.561856,
+        "longitude": 126.923937
+      },
+      "weatherCondition": "SNOW",
+      "temperature": -2,
+      "createdAt": "2026-03-30T08:47:00Z",
+      "intendedPhotoMood": "indoor"
+    }
+  },
+  {
+    "id": 10,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "자연·바다 · bright · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.534819,
+        "longitude": 126.99527
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy010"
+      },
+      "moodScore": 30,
+      "comment": "퇴근길에 우연히 튼 노래인데 오늘따라 이 골목이랑 참 잘 어울렸다",
+      "uploadId": 5009
+    },
+    "seed": {
+      "recordId": 1010,
+      "userId": 5,
+      "photoUrl": "https://picsum.photos/seed/nature_10/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy010",
+        "title": "팡파레",
+        "artist": "다이나믹 듀오",
+        "genre": "Hip-Hop"
+      },
+      "moodScore": 30,
+      "comment": "퇴근길에 우연히 튼 노래인데 오늘따라 이 골목이랑 참 잘 어울렸다",
+      "place": {
+        "placeId": 3,
+        "regionName": "서울 용산구 이태원로",
+        "latitude": 37.534819,
+        "longitude": 126.99527
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 21,
+      "createdAt": "2026-04-22T17:32:00Z",
+      "intendedPhotoMood": "nature"
+    }
+  },
+  {
+    "id": 11,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "카페 · melancholy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.560637,
+        "longitude": 126.926717
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy011"
+      },
+      "moodScore": -18,
+      "comment": "비 냄새 좋았음",
+      "uploadId": 5010
+    },
+    "seed": {
+      "recordId": 1011,
+      "userId": 1,
+      "photoUrl": "https://picsum.photos/seed/cafe_06/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy011",
+        "title": "어떻게 이별까지 사랑하겠어",
+        "artist": "AKMU",
+        "genre": "Ballad"
+      },
+      "moodScore": -18,
+      "comment": "비 냄새 좋았음",
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.560637,
+        "longitude": 126.926717
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 32,
+      "createdAt": "2026-03-12T06:21:00Z",
+      "intendedPhotoMood": "cafe"
+    }
+  },
+  {
+    "id": 12,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · bright · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.559867,
+        "longitude": 126.926223
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy012"
+      },
+      "moodScore": 44,
+      "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지"
+    },
+    "seed": {
+      "recordId": 1012,
+      "userId": 2,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy012",
+        "title": "How Sweet",
+        "artist": "NewJeans",
+        "genre": "K-Pop"
+      },
+      "moodScore": 44,
+      "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.559867,
+        "longitude": 126.926223
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 15,
+      "createdAt": "2026-07-22T06:07:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 13,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "실내 · melancholy · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.535738,
+        "longitude": 126.99473
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy013"
+      },
+      "moodScore": -19,
+      "uploadId": 5012
+    },
+    "seed": {
+      "recordId": 1013,
+      "userId": 3,
+      "photoUrl": "https://picsum.photos/seed/indoor_10/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy013",
+        "title": "비 오는 날엔",
+        "artist": "헤이즈",
+        "genre": "R&B"
+      },
+      "moodScore": -19,
+      "comment": null,
+      "place": {
+        "placeId": 3,
+        "regionName": "서울 용산구 이태원로",
+        "latitude": 37.535738,
+        "longitude": 126.99473
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 11,
+      "createdAt": "2026-04-07T21:08:00Z",
+      "intendedPhotoMood": "indoor"
+    }
+  },
+  {
+    "id": 14,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "자연·바다 · heavy · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.561832,
+        "longitude": 126.927289
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy014"
+      },
+      "moodScore": -22,
+      "uploadId": 5013
+    },
+    "seed": {
+      "recordId": 1014,
+      "userId": 4,
+      "photoUrl": "https://picsum.photos/seed/nature_09/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy014",
+        "title": "시간을 거슬러",
+        "artist": "린",
+        "genre": "Ballad"
+      },
+      "moodScore": -22,
+      "comment": null,
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.561832,
+        "longitude": 126.927289
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 17,
+      "createdAt": "2026-03-11T19:13:00Z",
+      "intendedPhotoMood": "nature"
+    }
+  },
+  {
+    "id": 15,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "골목 · heavy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.565415,
+        "longitude": 126.99124
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy015"
+      },
+      "moodScore": -47,
+      "comment": "여기 또 와야지",
+      "uploadId": 5014
+    },
+    "seed": {
+      "recordId": 1015,
+      "userId": 5,
+      "photoUrl": "https://picsum.photos/seed/alley_03/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy015",
+        "title": "하루살이",
+        "artist": "윤하",
+        "genre": "Rock"
+      },
+      "moodScore": -47,
+      "comment": "여기 또 와야지",
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.565415,
+        "longitude": 126.99124
+      },
+      "weatherCondition": "SNOW",
+      "temperature": -2,
+      "createdAt": "2026-06-13T11:59:00Z",
+      "intendedPhotoMood": "alley"
+    }
+  },
+  {
+    "id": 16,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · melancholy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.532499,
+        "longitude": 126.995346
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy016"
+      },
+      "moodScore": -7,
+      "comment": "친구랑 오랜만에 만나서 한참 걸었다. 날씨가 좋아서 더 좋았던 것 같아"
+    },
+    "seed": {
+      "recordId": 1016,
+      "userId": 1,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy016",
+        "title": "우산",
+        "artist": "윤하",
+        "genre": "Ballad"
+      },
+      "moodScore": -7,
+      "comment": "친구랑 오랜만에 만나서 한참 걸었다. 날씨가 좋아서 더 좋았던 것 같아",
+      "place": {
+        "placeId": 3,
+        "regionName": "서울 용산구 이태원로",
+        "latitude": 37.532499,
+        "longitude": 126.995346
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 15,
+      "createdAt": "2026-05-25T21:51:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 17,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "밤거리 · heavy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.567149,
+        "longitude": 126.989432
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy017"
+      },
+      "moodScore": -45,
+      "comment": "조용해서 좋다",
+      "uploadId": 5016
+    },
+    "seed": {
+      "recordId": 1017,
+      "userId": 2,
+      "photoUrl": "https://picsum.photos/seed/nightst_06/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy017",
+        "title": "하루살이",
+        "artist": "윤하",
+        "genre": "Rock"
+      },
+      "moodScore": -45,
+      "comment": "조용해서 좋다",
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.567149,
+        "longitude": 126.989432
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 21,
+      "createdAt": "2026-03-10T23:14:00Z",
+      "intendedPhotoMood": "nightst"
+    }
+  },
+  {
+    "id": 18,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "실내 · heavy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.528682,
+        "longitude": 127.030085
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy018"
+      },
+      "moodScore": -41,
+      "comment": "바다까지는 못 갔지만 강만 봐도 충분히 좋았던 하루",
+      "uploadId": 5017
+    },
+    "seed": {
+      "recordId": 1018,
+      "userId": 3,
+      "photoUrl": "https://picsum.photos/seed/indoor_07/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy018",
+        "title": "눈의 꽃",
+        "artist": "박효신",
+        "genre": "Ballad"
+      },
+      "moodScore": -41,
+      "comment": "바다까지는 못 갔지만 강만 봐도 충분히 좋았던 하루",
+      "place": {
+        "placeId": 8,
+        "regionName": "서울 강남구 압구정로",
+        "latitude": 37.528682,
+        "longitude": 127.030085
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 17,
+      "createdAt": "2026-04-27T06:42:00Z",
+      "intendedPhotoMood": "indoor"
+    }
+  },
+  {
+    "id": 19,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.584057,
+        "longitude": 126.984868
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy019"
+      },
+      "moodScore": 8,
+      "comment": "생각 정리하기 좋았다"
+    },
+    "seed": {
+      "recordId": 1019,
+      "userId": 4,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy019",
+        "title": "주저하는 연인들을 위해",
+        "artist": "잔나비",
+        "genre": "Indie"
+      },
+      "moodScore": 8,
+      "comment": "생각 정리하기 좋았다",
+      "place": {
+        "placeId": 7,
+        "regionName": "서울 종로구 북촌로",
+        "latitude": 37.584057,
+        "longitude": 126.984868
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 17,
+      "createdAt": "2026-05-11T19:41:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 20,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "노을 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.581925,
+        "longitude": 126.98111
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy020"
+      },
+      "moodScore": 17,
+      "comment": "노을이 미쳤다",
+      "uploadId": 5019
+    },
+    "seed": {
+      "recordId": 1020,
+      "userId": 5,
+      "photoUrl": "https://picsum.photos/seed/sunset_02/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy020",
+        "title": "너의 모든 순간",
+        "artist": "성시경",
+        "genre": "Ballad"
+      },
+      "moodScore": 17,
+      "comment": "노을이 미쳤다",
+      "place": {
+        "placeId": 7,
+        "regionName": "서울 종로구 북촌로",
+        "latitude": 37.581925,
+        "longitude": 126.98111
+      },
+      "weatherCondition": "SNOW",
+      "temperature": -2,
+      "createdAt": "2026-05-06T11:37:00Z",
+      "intendedPhotoMood": "sunset"
+    }
+  },
+  {
+    "id": 21,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · melancholy · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.556038,
+        "longitude": 126.924514
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy021"
+      },
+      "moodScore": -1
+    },
+    "seed": {
+      "recordId": 1021,
+      "userId": 1,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy021",
+        "title": "봄날",
+        "artist": "BTS",
+        "genre": "K-Pop"
+      },
+      "moodScore": -1,
+      "comment": null,
+      "place": {
+        "placeId": 1,
+        "regionName": "서울 마포구 와우산로",
+        "latitude": 37.556038,
+        "longitude": 126.924514
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 28,
+      "createdAt": "2026-05-20T21:38:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 22,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "실내 · bright · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.544806,
+        "longitude": 127.054719
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy022"
+      },
+      "moodScore": 49,
+      "comment": "생각 정리하기 좋았다",
+      "uploadId": 5021
+    },
+    "seed": {
+      "recordId": 1022,
+      "userId": 2,
+      "photoUrl": "https://picsum.photos/seed/indoor_04/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy022",
+        "title": "팡파레",
+        "artist": "다이나믹 듀오",
+        "genre": "Hip-Hop"
+      },
+      "moodScore": 49,
+      "comment": "생각 정리하기 좋았다",
+      "place": {
+        "placeId": 2,
+        "regionName": "서울 성동구 연무장길",
+        "latitude": 37.544806,
+        "longitude": 127.054719
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 12,
+      "createdAt": "2026-06-20T06:33:00Z",
+      "intendedPhotoMood": "indoor"
+    }
+  },
+  {
+    "id": 23,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "카페 · melancholy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.56428,
+        "longitude": 126.991657
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy023"
+      },
+      "moodScore": -7,
+      "comment": "혼자 걷기 좋은 밤",
+      "uploadId": 5022
+    },
+    "seed": {
+      "recordId": 1023,
+      "userId": 3,
+      "photoUrl": "https://picsum.photos/seed/cafe_09/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy023",
+        "title": "가을 아침",
+        "artist": "아이유",
+        "genre": "Ballad"
+      },
+      "moodScore": -7,
+      "comment": "혼자 걷기 좋은 밤",
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.56428,
+        "longitude": 126.991657
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 17,
+      "createdAt": "2026-05-24T19:42:00Z",
+      "intendedPhotoMood": "cafe"
+    }
+  },
+  {
+    "id": 24,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · heavy · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.560768,
+        "longitude": 126.924705
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy024"
+      },
+      "moodScore": -41
+    },
+    "seed": {
+      "recordId": 1024,
+      "userId": 4,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy024",
+        "title": "시간을 거슬러",
+        "artist": "린",
+        "genre": "Ballad"
+      },
+      "moodScore": -41,
+      "comment": null,
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.560768,
+        "longitude": 126.924705
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 11,
+      "createdAt": "2026-08-26T17:35:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 25,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "카페 · heavy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.567761,
+        "longitude": 126.991709
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy025"
+      },
+      "moodScore": -29,
+      "comment": "여기 또 와야지",
+      "uploadId": 5024
+    },
+    "seed": {
+      "recordId": 1025,
+      "userId": 5,
+      "photoUrl": "https://picsum.photos/seed/cafe_10/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy025",
+        "title": "눈의 꽃",
+        "artist": "박효신",
+        "genre": "Ballad"
+      },
+      "moodScore": -29,
+      "comment": "여기 또 와야지",
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.567761,
+        "longitude": 126.991709
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 12,
+      "createdAt": "2026-04-14T17:25:00Z",
+      "intendedPhotoMood": "cafe"
+    }
+  },
+  {
+    "id": 26,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "밤거리 · heavy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.555141,
+        "longitude": 126.924743
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy026"
+      },
+      "moodScore": -41,
+      "comment": "여기 또 와야지",
+      "uploadId": 5025
+    },
+    "seed": {
+      "recordId": 1026,
+      "userId": 1,
+      "photoUrl": "https://picsum.photos/seed/nightst_01/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy026",
+        "title": "Dear My Universe",
+        "artist": "첸",
+        "genre": "Ballad"
+      },
+      "moodScore": -41,
+      "comment": "여기 또 와야지",
+      "place": {
+        "placeId": 1,
+        "regionName": "서울 마포구 와우산로",
+        "latitude": 37.555141,
+        "longitude": 126.924743
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 21,
+      "createdAt": "2026-08-03T19:29:00Z",
+      "intendedPhotoMood": "nightst"
+    }
+  },
+  {
+    "id": 27,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "골목 · bright · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.527445,
+        "longitude": 127.029775
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy027"
+      },
+      "moodScore": 27,
+      "comment": "친구랑 오랜만에 만나서 한참 걸었다. 날씨가 좋아서 더 좋았던 것 같아",
+      "uploadId": 5026
+    },
+    "seed": {
+      "recordId": 1027,
+      "userId": 2,
+      "photoUrl": "https://picsum.photos/seed/alley_04/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy027",
+        "title": "Cupid",
+        "artist": "FIFTY FIFTY",
+        "genre": "K-Pop"
+      },
+      "moodScore": 27,
+      "comment": "친구랑 오랜만에 만나서 한참 걸었다. 날씨가 좋아서 더 좋았던 것 같아",
+      "place": {
+        "placeId": 8,
+        "regionName": "서울 강남구 압구정로",
+        "latitude": 37.527445,
+        "longitude": 127.029775
+      },
+      "weatherCondition": "SNOW",
+      "temperature": -2,
+      "createdAt": "2026-04-13T08:18:00Z",
+      "intendedPhotoMood": "alley"
+    }
+  },
+  {
+    "id": 28,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "골목 · melancholy · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.512174,
+        "longitude": 126.996905
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy028"
+      },
+      "moodScore": -18,
+      "uploadId": 5027
+    },
+    "seed": {
+      "recordId": 1028,
+      "userId": 3,
+      "photoUrl": "https://picsum.photos/seed/alley_08/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy028",
+        "title": "가을 아침",
+        "artist": "아이유",
+        "genre": "Ballad"
+      },
+      "moodScore": -18,
+      "comment": null,
+      "place": {
+        "placeId": 6,
+        "regionName": "서울 서초구 반포한강공원",
+        "latitude": 37.512174,
+        "longitude": 126.996905
+      },
+      "weatherCondition": null,
+      "temperature": null,
+      "createdAt": "2026-08-20T17:14:00Z",
+      "intendedPhotoMood": "alley"
+    }
+  },
+  {
+    "id": 29,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "자연·바다 · bright · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.533379,
+        "longitude": 126.994301
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy029"
+      },
+      "moodScore": 22,
+      "comment": "노을 지는 거 보면서 이 노래 들으니까 괜히 뭉클했다",
+      "uploadId": 5028
+    },
+    "seed": {
+      "recordId": 1029,
+      "userId": 4,
+      "photoUrl": "https://picsum.photos/seed/nature_04/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy029",
+        "title": "How Sweet",
+        "artist": "NewJeans",
+        "genre": "K-Pop"
+      },
+      "moodScore": 22,
+      "comment": "노을 지는 거 보면서 이 노래 들으니까 괜히 뭉클했다",
+      "place": {
+        "placeId": 3,
+        "regionName": "서울 용산구 이태원로",
+        "latitude": 37.533379,
+        "longitude": 126.994301
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 32,
+      "createdAt": "2026-03-19T23:26:00Z",
+      "intendedPhotoMood": "nature"
+    }
+  },
+  {
+    "id": 30,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · bright · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.565536,
+        "longitude": 126.990599
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy030"
+      },
+      "moodScore": 43,
+      "comment": "오늘 하루 종일 정신없었는데 여기 오니까 좀 풀리는 것 같다"
+    },
+    "seed": {
+      "recordId": 1030,
+      "userId": 5,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy030",
+        "title": "여름 안에서",
+        "artist": "듀스",
+        "genre": "Dance"
+      },
+      "moodScore": 43,
+      "comment": "오늘 하루 종일 정신없었는데 여기 오니까 좀 풀리는 것 같다",
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.565536,
+        "longitude": 126.990599
+      },
+      "weatherCondition": "SNOW",
+      "temperature": -5,
+      "createdAt": "2026-04-07T06:57:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 31,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "자연·바다 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.583816,
+        "longitude": 126.983784
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy031"
+      },
+      "moodScore": 5,
+      "comment": "친구가 추천해준 노래인데 여기서 들으니까 더 좋게 들린다",
+      "uploadId": 5030
+    },
+    "seed": {
+      "recordId": 1031,
+      "userId": 1,
+      "photoUrl": "https://picsum.photos/seed/nature_03/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy031",
+        "title": "밤편지",
+        "artist": "아이유",
+        "genre": "Ballad"
+      },
+      "moodScore": 5,
+      "comment": "친구가 추천해준 노래인데 여기서 들으니까 더 좋게 들린다",
+      "place": {
+        "placeId": 7,
+        "regionName": "서울 종로구 북촌로",
+        "latitude": 37.583816,
+        "longitude": 126.983784
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 9,
+      "createdAt": "2026-06-27T06:35:00Z",
+      "intendedPhotoMood": "nature"
+    }
+  },
+  {
+    "id": 32,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "노을 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.545706,
+        "longitude": 127.05637
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy032"
+      },
+      "moodScore": 4,
+      "comment": "아무 생각 없이 걷다가 발견한 곳. 사람도 없고 조용해서 좋았다",
+      "uploadId": 5031
+    },
+    "seed": {
+      "recordId": 1032,
+      "userId": 2,
+      "photoUrl": "https://picsum.photos/seed/sunset_08/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy032",
+        "title": "주저하는 연인들을 위해",
+        "artist": "잔나비",
+        "genre": "Indie"
+      },
+      "moodScore": 4,
+      "comment": "아무 생각 없이 걷다가 발견한 곳. 사람도 없고 조용해서 좋았다",
+      "place": {
+        "placeId": 2,
+        "regionName": "서울 성동구 연무장길",
+        "latitude": 37.545706,
+        "longitude": 127.05637
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 24,
+      "createdAt": "2026-07-22T19:48:00Z",
+      "intendedPhotoMood": "sunset"
+    }
+  },
+  {
+    "id": 33,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · bright · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.584189,
+        "longitude": 126.983975
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy033"
+      },
+      "moodScore": 35
+    },
+    "seed": {
+      "recordId": 1033,
+      "userId": 3,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy033",
+        "title": "Cupid",
+        "artist": "FIFTY FIFTY",
+        "genre": "K-Pop"
+      },
+      "moodScore": 35,
+      "comment": null,
+      "place": {
+        "placeId": 7,
+        "regionName": "서울 종로구 북촌로",
+        "latitude": 37.584189,
+        "longitude": 126.983975
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 11,
+      "createdAt": "2026-06-30T23:16:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 34,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "노을 · heavy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.560607,
+        "longitude": 126.924498
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy034"
+      },
+      "moodScore": -35,
+      "comment": "이 동네 골목은 언제 와도 좋다. 사진도 많이 찍었다",
+      "uploadId": 5033
+    },
+    "seed": {
+      "recordId": 1034,
+      "userId": 4,
+      "photoUrl": "https://picsum.photos/seed/sunset_03/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy034",
+        "title": "눈의 꽃",
+        "artist": "박효신",
+        "genre": "Ballad"
+      },
+      "moodScore": -35,
+      "comment": "이 동네 골목은 언제 와도 좋다. 사진도 많이 찍었다",
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.560607,
+        "longitude": 126.924498
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 11,
+      "createdAt": "2026-03-20T17:15:00Z",
+      "intendedPhotoMood": "sunset"
+    }
+  },
+  {
+    "id": 35,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "카페 · heavy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.511061,
+        "longitude": 126.994453
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy035"
+      },
+      "moodScore": -22,
+      "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
+      "uploadId": 5034
+    },
+    "seed": {
+      "recordId": 1035,
+      "userId": 5,
+      "photoUrl": "https://picsum.photos/seed/cafe_07/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy035",
+        "title": "사랑이 지나가면",
+        "artist": "이문세",
+        "genre": "Ballad"
+      },
+      "moodScore": -22,
+      "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
+      "place": {
+        "placeId": 6,
+        "regionName": "서울 서초구 반포한강공원",
+        "latitude": 37.511061,
+        "longitude": 126.994453
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 17,
+      "createdAt": "2026-04-29T21:44:00Z",
+      "intendedPhotoMood": "cafe"
+    }
+  },
+  {
+    "id": 36,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "자연·바다 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.56563,
+        "longitude": 126.99117
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy036"
+      },
+      "moodScore": 13,
+      "comment": "여기 또 와야지",
+      "uploadId": 5035
+    },
+    "seed": {
+      "recordId": 1036,
+      "userId": 1,
+      "photoUrl": "https://picsum.photos/seed/nature_07/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy036",
+        "title": "주저하는 연인들을 위해",
+        "artist": "잔나비",
+        "genre": "Indie"
+      },
+      "moodScore": 13,
+      "comment": "여기 또 와야지",
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.56563,
+        "longitude": 126.99117
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 28,
+      "createdAt": "2026-06-15T06:13:00Z",
+      "intendedPhotoMood": "nature"
+    }
+  },
+  {
+    "id": 37,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "밤거리 · melancholy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.584027,
+        "longitude": 126.984062
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy037"
+      },
+      "moodScore": -20,
+      "comment": "여기 또 와야지",
+      "uploadId": 5036
+    },
+    "seed": {
+      "recordId": 1037,
+      "userId": 2,
+      "photoUrl": "https://picsum.photos/seed/nightst_03/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy037",
+        "title": "어떻게 이별까지 사랑하겠어",
+        "artist": "AKMU",
+        "genre": "Ballad"
+      },
+      "moodScore": -20,
+      "comment": "여기 또 와야지",
+      "place": {
+        "placeId": 7,
+        "regionName": "서울 종로구 북촌로",
+        "latitude": 37.584027,
+        "longitude": 126.984062
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 6,
+      "createdAt": "2026-06-06T23:00:00Z",
+      "intendedPhotoMood": "nightst"
+    }
+  },
+  {
+    "id": 38,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "골목 · bright · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.561667,
+        "longitude": 126.926743
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy038"
+      },
+      "moodScore": 48,
+      "uploadId": 5037
+    },
+    "seed": {
+      "recordId": 1038,
+      "userId": 3,
+      "photoUrl": "https://picsum.photos/seed/alley_01/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy038",
+        "title": "Love Dive",
+        "artist": "IVE",
+        "genre": "K-Pop"
+      },
+      "moodScore": 48,
+      "comment": null,
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.561667,
+        "longitude": 126.926743
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 12,
+      "createdAt": "2026-07-16T02:51:00Z",
+      "intendedPhotoMood": "alley"
+    }
+  },
+  {
+    "id": 39,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "밤거리 · heavy · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.565092,
+        "longitude": 126.990943
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy039"
+      },
+      "moodScore": -43,
+      "uploadId": 5038
+    },
+    "seed": {
+      "recordId": 1039,
+      "userId": 4,
+      "photoUrl": "https://picsum.photos/seed/nightst_05/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy039",
+        "title": "Dear My Universe",
+        "artist": "첸",
+        "genre": "Ballad"
+      },
+      "moodScore": -43,
+      "comment": null,
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.565092,
+        "longitude": 126.990943
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 24,
+      "createdAt": "2026-06-08T19:42:00Z",
+      "intendedPhotoMood": "nightst"
+    }
+  },
+  {
+    "id": 40,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "노을 · melancholy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.583962,
+        "longitude": 126.984678
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy040"
+      },
+      "moodScore": -15,
+      "comment": "친구가 추천해준 노래인데 여기서 들으니까 더 좋게 들린다",
+      "uploadId": 5039
+    },
+    "seed": {
+      "recordId": 1040,
+      "userId": 5,
+      "photoUrl": "https://picsum.photos/seed/sunset_06/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy040",
+        "title": "Antifreeze",
+        "artist": "검정치마",
+        "genre": "Indie"
+      },
+      "moodScore": -15,
+      "comment": "친구가 추천해준 노래인데 여기서 들으니까 더 좋게 들린다",
+      "place": {
+        "placeId": 7,
+        "regionName": "서울 종로구 북촌로",
+        "latitude": 37.583962,
+        "longitude": 126.984678
+      },
+      "weatherCondition": "SNOW",
+      "temperature": -5,
+      "createdAt": "2026-08-07T02:01:00Z",
+      "intendedPhotoMood": "sunset"
+    }
+  },
+  {
+    "id": 41,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "노을 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.556014,
+        "longitude": 126.925067
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy041"
+      },
+      "moodScore": 20,
+      "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
+      "uploadId": 5040
+    },
+    "seed": {
+      "recordId": 1041,
+      "userId": 1,
+      "photoUrl": "https://picsum.photos/seed/sunset_07/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy041",
+        "title": "이름에게",
+        "artist": "아이유",
+        "genre": "Ballad"
+      },
+      "moodScore": 20,
+      "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
+      "place": {
+        "placeId": 1,
+        "regionName": "서울 마포구 와우산로",
+        "latitude": 37.556014,
+        "longitude": 126.925067
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 28,
+      "createdAt": "2026-04-16T06:16:00Z",
+      "intendedPhotoMood": "sunset"
+    }
+  },
+  {
+    "id": 42,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · calm · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.510207,
+        "longitude": 126.996945
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy042"
+      },
+      "moodScore": 14
+    },
+    "seed": {
+      "recordId": 1042,
+      "userId": 2,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy042",
+        "title": "이름에게",
+        "artist": "아이유",
+        "genre": "Ballad"
+      },
+      "moodScore": 14,
+      "comment": null,
+      "place": {
+        "placeId": 6,
+        "regionName": "서울 서초구 반포한강공원",
+        "latitude": 37.510207,
+        "longitude": 126.996945
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 9,
+      "createdAt": "2026-06-06T17:48:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 43,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · bright · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.558178,
+        "longitude": 126.925558
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy043"
+      },
+      "moodScore": 36
+    },
+    "seed": {
+      "recordId": 1043,
+      "userId": 3,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy043",
+        "title": "Cupid",
+        "artist": "FIFTY FIFTY",
+        "genre": "K-Pop"
+      },
+      "moodScore": 36,
+      "comment": null,
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.558178,
+        "longitude": 126.925558
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 28,
+      "createdAt": "2026-05-29T14:41:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 44,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "노을 · melancholy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.555097,
+        "longitude": 126.921682
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy044"
+      },
+      "moodScore": -13,
+      "comment": "오늘 하늘 진짜 예뻤다",
+      "uploadId": 5043
+    },
+    "seed": {
+      "recordId": 1044,
+      "userId": 4,
+      "photoUrl": "https://picsum.photos/seed/sunset_10/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy044",
+        "title": "비 오는 날엔",
+        "artist": "헤이즈",
+        "genre": "R&B"
+      },
+      "moodScore": -13,
+      "comment": "오늘 하늘 진짜 예뻤다",
+      "place": {
+        "placeId": 1,
+        "regionName": "서울 마포구 와우산로",
+        "latitude": 37.555097,
+        "longitude": 126.921682
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 32,
+      "createdAt": "2026-04-09T14:08:00Z",
+      "intendedPhotoMood": "sunset"
+    }
+  },
+  {
+    "id": 45,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "실내 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.54436,
+        "longitude": 127.054725
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy045"
+      },
+      "moodScore": 6,
+      "comment": "노을 지는 거 보면서 이 노래 들으니까 괜히 뭉클했다",
+      "uploadId": 5044
+    },
+    "seed": {
+      "recordId": 1045,
+      "userId": 5,
+      "photoUrl": "https://picsum.photos/seed/indoor_03/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy045",
+        "title": "이름에게",
+        "artist": "아이유",
+        "genre": "Ballad"
+      },
+      "moodScore": 6,
+      "comment": "노을 지는 거 보면서 이 노래 들으니까 괜히 뭉클했다",
+      "place": {
+        "placeId": 2,
+        "regionName": "서울 성동구 연무장길",
+        "latitude": 37.54436,
+        "longitude": 127.054725
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 6,
+      "createdAt": "2026-06-03T11:38:00Z",
+      "intendedPhotoMood": "indoor"
+    }
+  },
+  {
+    "id": 46,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "밤거리 · bright · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.542932,
+        "longitude": 127.053803
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy046"
+      },
+      "moodScore": 30,
+      "comment": "혼자 걷기 좋은 밤",
+      "uploadId": 5045
+    },
+    "seed": {
+      "recordId": 1046,
+      "userId": 1,
+      "photoUrl": "https://picsum.photos/seed/nightst_02/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy046",
+        "title": "팡파레",
+        "artist": "다이나믹 듀오",
+        "genre": "Hip-Hop"
+      },
+      "moodScore": 30,
+      "comment": "혼자 걷기 좋은 밤",
+      "place": {
+        "placeId": 2,
+        "regionName": "서울 성동구 연무장길",
+        "latitude": 37.542932,
+        "longitude": 127.053803
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 15,
+      "createdAt": "2026-05-19T21:25:00Z",
+      "intendedPhotoMood": "nightst"
+    }
+  },
+  {
+    "id": 47,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · melancholy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.566762,
+        "longitude": 126.991509
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy047"
+      },
+      "moodScore": -2,
+      "comment": "비 오는 날엔 역시 이 노래지. 우산도 없이 뛰어갔지만 나쁘지 않았다"
+    },
+    "seed": {
+      "recordId": 1047,
+      "userId": 2,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy047",
+        "title": "Antifreeze",
+        "artist": "검정치마",
+        "genre": "Indie"
+      },
+      "moodScore": -2,
+      "comment": "비 오는 날엔 역시 이 노래지. 우산도 없이 뛰어갔지만 나쁘지 않았다",
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.566762,
+        "longitude": 126.991509
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 28,
+      "createdAt": "2026-03-27T17:54:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 48,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "실내 · heavy · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.546435,
+        "longitude": 127.056831
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy048"
+      },
+      "moodScore": -25,
+      "uploadId": 5047
+    },
+    "seed": {
+      "recordId": 1048,
+      "userId": 3,
+      "photoUrl": "https://picsum.photos/seed/indoor_09/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy048",
+        "title": "하루살이",
+        "artist": "윤하",
+        "genre": "Rock"
+      },
+      "moodScore": -25,
+      "comment": null,
+      "place": {
+        "placeId": 2,
+        "regionName": "서울 성동구 연무장길",
+        "latitude": 37.546435,
+        "longitude": 127.056831
+      },
+      "weatherCondition": null,
+      "temperature": null,
+      "createdAt": "2026-05-28T02:27:00Z",
+      "intendedPhotoMood": "indoor"
+    }
+  },
+  {
+    "id": 49,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "카페 · bright · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.51149,
+        "longitude": 126.993951
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy049"
+      },
+      "moodScore": 37,
+      "uploadId": 5048
+    },
+    "seed": {
+      "recordId": 1049,
+      "userId": 4,
+      "photoUrl": "https://picsum.photos/seed/cafe_01/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy049",
+        "title": "여름 안에서",
+        "artist": "듀스",
+        "genre": "Dance"
+      },
+      "moodScore": 37,
+      "comment": null,
+      "place": {
+        "placeId": 6,
+        "regionName": "서울 서초구 반포한강공원",
+        "latitude": 37.51149,
+        "longitude": 126.993951
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 28,
+      "createdAt": "2026-06-16T23:06:00Z",
+      "intendedPhotoMood": "cafe"
+    }
+  },
+  {
+    "id": 50,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "골목 · heavy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.512215,
+        "longitude": 126.996729
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy050"
+      },
+      "moodScore": -22,
+      "comment": "친구가 추천해준 노래인데 여기서 들으니까 더 좋게 들린다",
+      "uploadId": 5049
+    },
+    "seed": {
+      "recordId": 1050,
+      "userId": 5,
+      "photoUrl": "https://picsum.photos/seed/alley_09/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy050",
+        "title": "한숨",
+        "artist": "이하이",
+        "genre": "Ballad"
+      },
+      "moodScore": -22,
+      "comment": "친구가 추천해준 노래인데 여기서 들으니까 더 좋게 들린다",
+      "place": {
+        "placeId": 6,
+        "regionName": "서울 서초구 반포한강공원",
+        "latitude": 37.512215,
+        "longitude": 126.996729
+      },
+      "weatherCondition": "SNOW",
+      "temperature": -2,
+      "createdAt": "2026-06-20T11:46:00Z",
+      "intendedPhotoMood": "alley"
+    }
+  },
+  {
+    "id": 51,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "노을 · heavy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.561778,
+        "longitude": 126.926499
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy051"
+      },
+      "moodScore": -25,
+      "comment": "계절이 바뀌는 게 느껴지는 밤이었다. 조금 쌀쌀했지만 걷기 좋았어",
+      "uploadId": 5050
+    },
+    "seed": {
+      "recordId": 1051,
+      "userId": 1,
+      "photoUrl": "https://picsum.photos/seed/sunset_01/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy051",
+        "title": "Dear My Universe",
+        "artist": "첸",
+        "genre": "Ballad"
+      },
+      "moodScore": -25,
+      "comment": "계절이 바뀌는 게 느껴지는 밤이었다. 조금 쌀쌀했지만 걷기 좋았어",
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.561778,
+        "longitude": 126.926499
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 6,
+      "createdAt": "2026-06-28T21:52:00Z",
+      "intendedPhotoMood": "sunset"
+    }
+  },
+  {
+    "id": 52,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "실내 · bright · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.559082,
+        "longitude": 126.927138
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy052"
+      },
+      "moodScore": 48,
+      "comment": "계절이 바뀌는 게 느껴지는 밤이었다. 조금 쌀쌀했지만 걷기 좋았어",
+      "uploadId": 5051
+    },
+    "seed": {
+      "recordId": 1052,
+      "userId": 2,
+      "photoUrl": "https://picsum.photos/seed/indoor_02/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy052",
+        "title": "여름 안에서",
+        "artist": "듀스",
+        "genre": "Dance"
+      },
+      "moodScore": 48,
+      "comment": "계절이 바뀌는 게 느껴지는 밤이었다. 조금 쌀쌀했지만 걷기 좋았어",
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.559082,
+        "longitude": 126.927138
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 17,
+      "createdAt": "2026-05-11T23:15:00Z",
+      "intendedPhotoMood": "indoor"
+    }
+  },
+  {
+    "id": 53,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.582577,
+        "longitude": 126.9823
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy053"
+      },
+      "moodScore": 0,
+      "comment": "비 냄새 좋았음"
+    },
+    "seed": {
+      "recordId": 1053,
+      "userId": 3,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy053",
+        "title": "이름에게",
+        "artist": "아이유",
+        "genre": "Ballad"
+      },
+      "moodScore": 0,
+      "comment": "비 냄새 좋았음",
+      "place": {
+        "placeId": 7,
+        "regionName": "서울 종로구 북촌로",
+        "latitude": 37.582577,
+        "longitude": 126.9823
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 17,
+      "createdAt": "2026-07-03T14:22:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 54,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "자연·바다 · melancholy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.511705,
+        "longitude": 126.995005
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy054"
+      },
+      "moodScore": -1,
+      "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
+      "uploadId": 5053
+    },
+    "seed": {
+      "recordId": 1054,
+      "userId": 4,
+      "photoUrl": "https://picsum.photos/seed/nature_08/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy054",
+        "title": "봄날",
+        "artist": "BTS",
+        "genre": "K-Pop"
+      },
+      "moodScore": -1,
+      "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
+      "place": {
+        "placeId": 6,
+        "regionName": "서울 서초구 반포한강공원",
+        "latitude": 37.511705,
+        "longitude": 126.995005
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 21,
+      "createdAt": "2026-03-03T02:12:00Z",
+      "intendedPhotoMood": "nature"
+    }
+  },
+  {
+    "id": 55,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · bright · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.565954,
+        "longitude": 126.992033
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy055"
+      },
+      "moodScore": 34
+    },
+    "seed": {
+      "recordId": 1055,
+      "userId": 5,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy055",
+        "title": "Dynamite",
+        "artist": "BTS",
+        "genre": "K-Pop"
+      },
+      "moodScore": 34,
+      "comment": null,
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.565954,
+        "longitude": 126.992033
+      },
+      "weatherCondition": "SNOW",
+      "temperature": -5,
+      "createdAt": "2026-08-24T23:41:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 56,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · bright · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.525469,
+        "longitude": 127.027777
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy056"
+      },
+      "moodScore": 46,
+      "comment": "혼자 있고 싶었던 날. 이 자리에 앉아서 한참 멍하니 있었다"
+    },
+    "seed": {
+      "recordId": 1056,
+      "userId": 1,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy056",
+        "title": "여름 안에서",
+        "artist": "듀스",
+        "genre": "Dance"
+      },
+      "moodScore": 46,
+      "comment": "혼자 있고 싶었던 날. 이 자리에 앉아서 한참 멍하니 있었다",
+      "place": {
+        "placeId": 8,
+        "regionName": "서울 강남구 압구정로",
+        "latitude": 37.525469,
+        "longitude": 127.027777
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 24,
+      "createdAt": "2026-06-12T14:19:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 57,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "밤거리 · heavy · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.511024,
+        "longitude": 126.995602
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy057"
+      },
+      "moodScore": -33,
+      "uploadId": 5056
+    },
+    "seed": {
+      "recordId": 1057,
+      "userId": 2,
+      "photoUrl": "https://picsum.photos/seed/nightst_07/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy057",
+        "title": "하루살이",
+        "artist": "윤하",
+        "genre": "Rock"
+      },
+      "moodScore": -33,
+      "comment": null,
+      "place": {
+        "placeId": 6,
+        "regionName": "서울 서초구 반포한강공원",
+        "latitude": 37.511024,
+        "longitude": 126.995602
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 24,
+      "createdAt": "2026-07-19T19:22:00Z",
+      "intendedPhotoMood": "nightst"
+    }
+  },
+  {
+    "id": 58,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "자연·바다 · bright · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.526406,
+        "longitude": 127.027083
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy058"
+      },
+      "moodScore": 30,
+      "comment": "혼자 걷기 좋은 밤",
+      "uploadId": 5057
+    },
+    "seed": {
+      "recordId": 1058,
+      "userId": 3,
+      "photoUrl": "https://picsum.photos/seed/nature_05/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy058",
+        "title": "여름 안에서",
+        "artist": "듀스",
+        "genre": "Dance"
+      },
+      "moodScore": 30,
+      "comment": "혼자 걷기 좋은 밤",
+      "place": {
+        "placeId": 8,
+        "regionName": "서울 강남구 압구정로",
+        "latitude": 37.526406,
+        "longitude": 127.027083
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 21,
+      "createdAt": "2026-04-19T19:07:00Z",
+      "intendedPhotoMood": "nature"
+    }
+  },
+  {
+    "id": 59,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "골목 · calm · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.535354,
+        "longitude": 126.993506
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy059"
+      },
+      "moodScore": 6,
+      "uploadId": 5058
+    },
+    "seed": {
+      "recordId": 1059,
+      "userId": 4,
+      "photoUrl": "https://picsum.photos/seed/alley_05/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy059",
+        "title": "한강에서",
+        "artist": "너드커넥션",
+        "genre": "Indie"
+      },
+      "moodScore": 6,
+      "comment": null,
+      "place": {
+        "placeId": 3,
+        "regionName": "서울 용산구 이태원로",
+        "latitude": 37.535354,
+        "longitude": 126.993506
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 9,
+      "createdAt": "2026-07-29T02:38:00Z",
+      "intendedPhotoMood": "alley"
+    }
+  },
+  {
+    "id": 60,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "골목 · calm · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.54341,
+        "longitude": 127.054418
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy060"
+      },
+      "moodScore": 9,
+      "uploadId": 5059
+    },
+    "seed": {
+      "recordId": 1060,
+      "userId": 5,
+      "photoUrl": "https://picsum.photos/seed/alley_02/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy060",
+        "title": "사랑에 빠졌을 때",
+        "artist": "커피소년",
+        "genre": "Indie"
+      },
+      "moodScore": 9,
+      "comment": null,
+      "place": {
+        "placeId": 2,
+        "regionName": "서울 성동구 연무장길",
+        "latitude": 37.54341,
+        "longitude": 127.054418
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 9,
+      "createdAt": "2026-03-04T02:08:00Z",
+      "intendedPhotoMood": "alley"
+    }
+  },
+  {
+    "id": 61,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "골목 · melancholy · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.555469,
+        "longitude": 126.925376
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy061"
+      },
+      "moodScore": -3,
+      "uploadId": 5060
+    },
+    "seed": {
+      "recordId": 1061,
+      "userId": 1,
+      "photoUrl": "https://picsum.photos/seed/alley_06/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy061",
+        "title": "봄날",
+        "artist": "BTS",
+        "genre": "K-Pop"
+      },
+      "moodScore": -3,
+      "comment": null,
+      "place": {
+        "placeId": 1,
+        "regionName": "서울 마포구 와우산로",
+        "latitude": 37.555469,
+        "longitude": 126.925376
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 32,
+      "createdAt": "2026-08-11T23:06:00Z",
+      "intendedPhotoMood": "alley"
+    }
+  },
+  {
+    "id": 62,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "카페 · bright · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.559862,
+        "longitude": 126.924137
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy062"
+      },
+      "moodScore": 36,
+      "comment": "혼자 걷기 좋은 밤",
+      "uploadId": 5061
+    },
+    "seed": {
+      "recordId": 1062,
+      "userId": 2,
+      "photoUrl": "https://picsum.photos/seed/cafe_03/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy062",
+        "title": "Dynamite",
+        "artist": "BTS",
+        "genre": "K-Pop"
+      },
+      "moodScore": 36,
+      "comment": "혼자 걷기 좋은 밤",
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.559862,
+        "longitude": 126.924137
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 24,
+      "createdAt": "2026-03-14T17:55:00Z",
+      "intendedPhotoMood": "cafe"
+    }
+  },
+  {
+    "id": 63,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.544467,
+        "longitude": 127.056008
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy063"
+      },
+      "moodScore": 12,
+      "comment": "노을이 미쳤다"
+    },
+    "seed": {
+      "recordId": 1063,
+      "userId": 3,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy063",
+        "title": "이름에게",
+        "artist": "아이유",
+        "genre": "Ballad"
+      },
+      "moodScore": 12,
+      "comment": "노을이 미쳤다",
+      "place": {
+        "placeId": 2,
+        "regionName": "서울 성동구 연무장길",
+        "latitude": 37.544467,
+        "longitude": 127.056008
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 28,
+      "createdAt": "2026-08-23T06:09:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 64,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · melancholy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.558574,
+        "longitude": 126.926458
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy064"
+      },
+      "moodScore": -13,
+      "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지"
+    },
+    "seed": {
+      "recordId": 1064,
+      "userId": 4,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy064",
+        "title": "우산",
+        "artist": "윤하",
+        "genre": "Ballad"
+      },
+      "moodScore": -13,
+      "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.558574,
+        "longitude": 126.926458
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 28,
+      "createdAt": "2026-08-03T14:49:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 65,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · heavy · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.582371,
+        "longitude": 126.984441
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy065"
+      },
+      "moodScore": -21
+    },
+    "seed": {
+      "recordId": 1065,
+      "userId": 5,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy065",
+        "title": "Dear My Universe",
+        "artist": "첸",
+        "genre": "Ballad"
+      },
+      "moodScore": -21,
+      "comment": null,
+      "place": {
+        "placeId": 7,
+        "regionName": "서울 종로구 북촌로",
+        "latitude": 37.582371,
+        "longitude": 126.984441
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 24,
+      "createdAt": "2026-06-18T17:36:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 66,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "밤거리 · bright · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.554697,
+        "longitude": 126.924651
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy066"
+      },
+      "moodScore": 44,
+      "comment": "이 동네 골목은 언제 와도 좋다. 사진도 많이 찍었다",
+      "uploadId": 5065
+    },
+    "seed": {
+      "recordId": 1066,
+      "userId": 1,
+      "photoUrl": "https://picsum.photos/seed/nightst_10/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy066",
+        "title": "팡파레",
+        "artist": "다이나믹 듀오",
+        "genre": "Hip-Hop"
+      },
+      "moodScore": 44,
+      "comment": "이 동네 골목은 언제 와도 좋다. 사진도 많이 찍었다",
+      "place": {
+        "placeId": 1,
+        "regionName": "서울 마포구 와우산로",
+        "latitude": 37.554697,
+        "longitude": 126.924651
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 6,
+      "createdAt": "2026-08-08T14:16:00Z",
+      "intendedPhotoMood": "nightst"
+    }
+  },
+  {
+    "id": 67,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "밤거리 · calm · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.543195,
+        "longitude": 127.054
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy067"
+      },
+      "moodScore": 7,
+      "uploadId": 5066
+    },
+    "seed": {
+      "recordId": 1067,
+      "userId": 2,
+      "photoUrl": "https://picsum.photos/seed/nightst_08/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy067",
+        "title": "한강에서",
+        "artist": "너드커넥션",
+        "genre": "Indie"
+      },
+      "moodScore": 7,
+      "comment": null,
+      "place": {
+        "placeId": 2,
+        "regionName": "서울 성동구 연무장길",
+        "latitude": 37.543195,
+        "longitude": 127.054
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 15,
+      "createdAt": "2026-03-01T21:28:00Z",
+      "intendedPhotoMood": "nightst"
+    }
+  },
+  {
+    "id": 68,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.525531,
+        "longitude": 127.027752
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy068"
+      },
+      "moodScore": 9,
+      "comment": "비 냄새 좋았음"
+    },
+    "seed": {
+      "recordId": 1068,
+      "userId": 3,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy068",
+        "title": "한강에서",
+        "artist": "너드커넥션",
+        "genre": "Indie"
+      },
+      "moodScore": 9,
+      "comment": "비 냄새 좋았음",
+      "place": {
+        "placeId": 8,
+        "regionName": "서울 강남구 압구정로",
+        "latitude": 37.525531,
+        "longitude": 127.027752
+      },
+      "weatherCondition": null,
+      "temperature": null,
+      "createdAt": "2026-05-12T23:04:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 69,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · heavy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.567165,
+        "longitude": 126.991359
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy069"
+      },
+      "moodScore": -25,
+      "comment": "이 동네 골목은 언제 와도 좋다. 사진도 많이 찍었다"
+    },
+    "seed": {
+      "recordId": 1069,
+      "userId": 4,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy069",
+        "title": "하루살이",
+        "artist": "윤하",
+        "genre": "Rock"
+      },
+      "moodScore": -25,
+      "comment": "이 동네 골목은 언제 와도 좋다. 사진도 많이 찍었다",
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.567165,
+        "longitude": 126.991359
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 21,
+      "createdAt": "2026-04-20T21:07:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 70,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "노을 · melancholy · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.567634,
+        "longitude": 126.992307
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy070"
+      },
+      "moodScore": -16,
+      "uploadId": 5069
+    },
+    "seed": {
+      "recordId": 1070,
+      "userId": 5,
+      "photoUrl": "https://picsum.photos/seed/sunset_05/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy070",
+        "title": "가을 아침",
+        "artist": "아이유",
+        "genre": "Ballad"
+      },
+      "moodScore": -16,
+      "comment": null,
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.567634,
+        "longitude": 126.992307
+      },
+      "weatherCondition": "SNOW",
+      "temperature": -2,
+      "createdAt": "2026-03-19T06:10:00Z",
+      "intendedPhotoMood": "sunset"
+    }
+  },
+  {
+    "id": 71,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "실내 · heavy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.559975,
+        "longitude": 126.924616
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy071"
+      },
+      "moodScore": -47,
+      "comment": "바다까지는 못 갔지만 강만 봐도 충분히 좋았던 하루",
+      "uploadId": 5070
+    },
+    "seed": {
+      "recordId": 1071,
+      "userId": 1,
+      "photoUrl": "https://picsum.photos/seed/indoor_05/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy071",
+        "title": "사랑이 지나가면",
+        "artist": "이문세",
+        "genre": "Ballad"
+      },
+      "moodScore": -47,
+      "comment": "바다까지는 못 갔지만 강만 봐도 충분히 좋았던 하루",
+      "place": {
+        "placeId": 5,
+        "regionName": "서울 마포구 연남로",
+        "latitude": 37.559975,
+        "longitude": 126.924616
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 24,
+      "createdAt": "2026-06-12T17:32:00Z",
+      "intendedPhotoMood": "indoor"
+    }
+  },
+  {
+    "id": 72,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "카페 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.527792,
+        "longitude": 127.030158
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy072"
+      },
+      "moodScore": 2,
+      "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
+      "uploadId": 5071
+    },
+    "seed": {
+      "recordId": 1072,
+      "userId": 2,
+      "photoUrl": "https://picsum.photos/seed/cafe_02/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy072",
+        "title": "너의 모든 순간",
+        "artist": "성시경",
+        "genre": "Ballad"
+      },
+      "moodScore": 2,
+      "comment": "여기 처음 와봤는데 생각보다 훨씬 좋았다. 다음엔 다른 사람이랑 와야지",
+      "place": {
+        "placeId": 8,
+        "regionName": "서울 강남구 압구정로",
+        "latitude": 37.527792,
+        "longitude": 127.030158
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 24,
+      "createdAt": "2026-05-22T17:01:00Z",
+      "intendedPhotoMood": "cafe"
+    }
+  },
+  {
+    "id": 73,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "사진없음 · melancholy · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.566348,
+        "longitude": 126.989083
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy073"
+      },
+      "moodScore": -2
+    },
+    "seed": {
+      "recordId": 1073,
+      "userId": 3,
+      "photoUrl": null,
+      "track": {
+        "externalTrackId": "spotify:track:dummy073",
+        "title": "비 오는 날엔",
+        "artist": "헤이즈",
+        "genre": "R&B"
+      },
+      "moodScore": -2,
+      "comment": null,
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.566348,
+        "longitude": 126.989083
+      },
+      "weatherCondition": "SNOW",
+      "temperature": -2,
+      "createdAt": "2026-08-20T17:36:00Z",
+      "intendedPhotoMood": null
+    }
+  },
+  {
+    "id": 74,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "카페 · bright · 코멘트없음",
+    "payload": {
+      "location": {
+        "latitude": 37.535006,
+        "longitude": 126.996064
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy074"
+      },
+      "moodScore": 37,
+      "uploadId": 5073
+    },
+    "seed": {
+      "recordId": 1074,
+      "userId": 4,
+      "photoUrl": "https://picsum.photos/seed/cafe_04/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy074",
+        "title": "Dynamite",
+        "artist": "BTS",
+        "genre": "K-Pop"
+      },
+      "moodScore": 37,
+      "comment": null,
+      "place": {
+        "placeId": 3,
+        "regionName": "서울 용산구 이태원로",
+        "latitude": 37.535006,
+        "longitude": 126.996064
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 24,
+      "createdAt": "2026-04-16T21:40:00Z",
+      "intendedPhotoMood": "cafe"
+    }
+  },
+  {
+    "id": 75,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "카페 · melancholy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.544133,
+        "longitude": 127.054984
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy075"
+      },
+      "moodScore": -9,
+      "comment": "이 동네 골목은 언제 와도 좋다. 사진도 많이 찍었다",
+      "uploadId": 5074
+    },
+    "seed": {
+      "recordId": 1075,
+      "userId": 5,
+      "photoUrl": "https://picsum.photos/seed/cafe_08/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy075",
+        "title": "어떻게 이별까지 사랑하겠어",
+        "artist": "AKMU",
+        "genre": "Ballad"
+      },
+      "moodScore": -9,
+      "comment": "이 동네 골목은 언제 와도 좋다. 사진도 많이 찍었다",
+      "place": {
+        "placeId": 2,
+        "regionName": "서울 성동구 연무장길",
+        "latitude": 37.544133,
+        "longitude": 127.054984
+      },
+      "weatherCondition": "CLOUDY",
+      "temperature": 24,
+      "createdAt": "2026-03-27T11:21:00Z",
+      "intendedPhotoMood": "cafe"
+    }
+  },
+  {
+    "id": 76,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "밤거리 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.528654,
+        "longitude": 127.0288
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy076"
+      },
+      "moodScore": 12,
+      "comment": "혼자 걷기 좋은 밤",
+      "uploadId": 5075
+    },
+    "seed": {
+      "recordId": 1076,
+      "userId": 1,
+      "photoUrl": "https://picsum.photos/seed/nightst_09/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy076",
+        "title": "이름에게",
+        "artist": "아이유",
+        "genre": "Ballad"
+      },
+      "moodScore": 12,
+      "comment": "혼자 걷기 좋은 밤",
+      "place": {
+        "placeId": 8,
+        "regionName": "서울 강남구 압구정로",
+        "latitude": 37.528654,
+        "longitude": 127.0288
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 21,
+      "createdAt": "2026-06-25T08:20:00Z",
+      "intendedPhotoMood": "nightst"
+    }
+  },
+  {
+    "id": 77,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "자연·바다 · calm · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.51236,
+        "longitude": 126.9972
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy077"
+      },
+      "moodScore": 12,
+      "comment": "노을이 미쳤다",
+      "uploadId": 5076
+    },
+    "seed": {
+      "recordId": 1077,
+      "userId": 2,
+      "photoUrl": "https://picsum.photos/seed/nature_02/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy077",
+        "title": "사랑에 빠졌을 때",
+        "artist": "커피소년",
+        "genre": "Indie"
+      },
+      "moodScore": 12,
+      "comment": "노을이 미쳤다",
+      "place": {
+        "placeId": 6,
+        "regionName": "서울 서초구 반포한강공원",
+        "latitude": 37.51236,
+        "longitude": 126.9972
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 28,
+      "createdAt": "2026-03-01T02:29:00Z",
+      "intendedPhotoMood": "nature"
+    }
+  },
+  {
+    "id": 78,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "자연·바다 · melancholy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.555747,
+        "longitude": 126.924626
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy078"
+      },
+      "moodScore": -4,
+      "comment": "오늘 하루 종일 정신없었는데 여기 오니까 좀 풀리는 것 같다",
+      "uploadId": 5077
+    },
+    "seed": {
+      "recordId": 1078,
+      "userId": 3,
+      "photoUrl": "https://picsum.photos/seed/nature_06/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy078",
+        "title": "어떻게 이별까지 사랑하겠어",
+        "artist": "AKMU",
+        "genre": "Ballad"
+      },
+      "moodScore": -4,
+      "comment": "오늘 하루 종일 정신없었는데 여기 오니까 좀 풀리는 것 같다",
+      "place": {
+        "placeId": 1,
+        "regionName": "서울 마포구 와우산로",
+        "latitude": 37.555747,
+        "longitude": 126.924626
+      },
+      "weatherCondition": "CLEAR",
+      "temperature": 9,
+      "createdAt": "2026-08-08T23:48:00Z",
+      "intendedPhotoMood": "nature"
+    }
+  },
+  {
+    "id": 79,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "노을 · melancholy · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.564524,
+        "longitude": 126.990152
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy079"
+      },
+      "moodScore": -3,
+      "comment": "오늘 하늘 진짜 예뻤다",
+      "uploadId": 5078
+    },
+    "seed": {
+      "recordId": 1079,
+      "userId": 4,
+      "photoUrl": "https://picsum.photos/seed/sunset_04/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy079",
+        "title": "비 오는 날엔",
+        "artist": "헤이즈",
+        "genre": "R&B"
+      },
+      "moodScore": -3,
+      "comment": "오늘 하늘 진짜 예뻤다",
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.564524,
+        "longitude": 126.990152
+      },
+      "weatherCondition": "RAIN",
+      "temperature": 21,
+      "createdAt": "2026-08-26T23:07:00Z",
+      "intendedPhotoMood": "sunset"
+    }
+  },
+  {
+    "id": 80,
+    "case": "valid",
+    "expectedStatus": 201,
+    "expectedCode": null,
+    "description": "카페 · bright · 코멘트있음",
+    "payload": {
+      "location": {
+        "latitude": 37.565243,
+        "longitude": 126.989055
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy080"
+      },
+      "moodScore": 26,
+      "comment": "조용해서 좋다",
+      "uploadId": 5079
+    },
+    "seed": {
+      "recordId": 1080,
+      "userId": 5,
+      "photoUrl": "https://picsum.photos/seed/cafe_05/800/600",
+      "track": {
+        "externalTrackId": "spotify:track:dummy080",
+        "title": "Dynamite",
+        "artist": "BTS",
+        "genre": "K-Pop"
+      },
+      "moodScore": 26,
+      "comment": "조용해서 좋다",
+      "place": {
+        "placeId": 4,
+        "regionName": "서울 중구 을지로",
+        "latitude": 37.565243,
+        "longitude": 126.989055
+      },
+      "weatherCondition": "SNOW",
+      "temperature": -5,
+      "createdAt": "2026-06-13T08:14:00Z",
+      "intendedPhotoMood": "cafe"
+    }
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "LATITUDE_REQUIRED",
+    "description": "위도 누락",
+    "payload": {
+      "location": {
+        "longitude": 126.9236
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 20,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 81
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "LONGITUDE_REQUIRED",
+    "description": "경도 누락",
+    "payload": {
+      "location": {
+        "latitude": 37.5563
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 20,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 82
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "LATITUDE_REQUIRED",
+    "description": "location 객체 전체 누락",
+    "payload": {
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 20,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 83
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "TRACK_REQUIRED",
+    "description": "곡 누락",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": 126.9236
+      },
+      "music": {},
+      "moodScore": 20,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 84
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "TRACK_REQUIRED",
+    "description": "music 객체 전체 누락",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": 126.9236
+      },
+      "moodScore": 20,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 85
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "MOOD_SCORE_REQUIRED",
+    "description": "기분 점수 누락",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": 126.9236
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 86
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "INVALID_LATITUDE",
+    "description": "위도 상한 초과(91.0)",
+    "payload": {
+      "location": {
+        "latitude": 91.0,
+        "longitude": 126.9236
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 20,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 87
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "INVALID_LATITUDE",
+    "description": "위도 하한 초과(-95.5)",
+    "payload": {
+      "location": {
+        "latitude": -95.5,
+        "longitude": 126.9236
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 20,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 88
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "INVALID_LATITUDE",
+    "description": "위도 타입 오류(문자열)",
+    "payload": {
+      "location": {
+        "latitude": "서울",
+        "longitude": 126.9236
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 20,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 89
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "INVALID_LONGITUDE",
+    "description": "경도 상한 초과(181.0)",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": 181.0
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 20,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 90
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "INVALID_LONGITUDE",
+    "description": "경도 하한 초과(-200.0)",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": -200.0
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 20,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 91
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "INVALID_LONGITUDE",
+    "description": "경도 null",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": null
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 20,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 92
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "INVALID_MOOD_SCORE",
+    "description": "기분 점수 상한 초과(51)",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": 126.9236
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 51,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 93
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "INVALID_MOOD_SCORE",
+    "description": "기분 점수 하한 미만(-51)",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": 126.9236
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": -51,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 94
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "INVALID_MOOD_SCORE",
+    "description": "기분 점수 타입 오류(문자열)",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": 126.9236
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": "높음",
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 95
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "INVALID_MOOD_SCORE",
+    "description": "기분 점수 타입 오류(소수)",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": 126.9236
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 12.5,
+      "comment": "정상 코멘트"
+    },
+    "seed": null,
+    "id": 96
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "COMMENT_TOO_LONG",
+    "description": "코멘트 81자",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": 126.9236
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 20,
+      "comment": "가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가가"
+    },
+    "seed": null,
+    "id": 97
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 400,
+    "expectedCode": "COMMENT_TOO_LONG",
+    "description": "코멘트 120자",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": 126.9236
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 20,
+      "comment": "나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나나"
+    },
+    "seed": null,
+    "id": 98
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 404,
+    "expectedCode": "UPLOAD_NOT_FOUND",
+    "description": "존재하지 않는 uploadId",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": 126.9236
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 20,
+      "comment": "정상 코멘트",
+      "uploadId": 999999
+    },
+    "seed": null,
+    "id": 99
+  },
+  {
+    "case": "invalid",
+    "expectedStatus": 404,
+    "expectedCode": "UPLOAD_NOT_FOUND",
+    "description": "타인 소유 uploadId",
+    "payload": {
+      "location": {
+        "latitude": 37.5563,
+        "longitude": 126.9236
+      },
+      "music": {
+        "externalTrackId": "spotify:track:dummy001"
+      },
+      "moodScore": 20,
+      "comment": "정상 코멘트",
+      "uploadId": 888888
+    },
+    "seed": null,
+    "id": 100
+  }
+]
