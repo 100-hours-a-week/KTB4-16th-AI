@@ -96,3 +96,50 @@ jobs:
             --package=semantic-release@25 \
             --package=@semantic-release/exec@7 \
             semantic-release
+            
+  notify:
+      name: Discord notification
+      runs-on: ubuntu-latest
+      needs: ci
+
+      # CI가 실패해도 알림 작업 실행
+      if: ${{ always() }}
+      permissions: {}
+
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+      steps:
+        - name: Send CI result to Discord
+          if: ${{ env.DISCORD_WEBHOOK != '' }}
+          uses: Ilshidur/action-discord@0.3.2
+          with:
+            args: "AI main CI 결과 알림"
+          env:
+            DISCORD_USERNAME: MURO_BOT
+            DISCORD_EMBEDS: |
+              [
+                {
+                  "title": "AI CI: ${{ needs.ci.result }}",
+                  "description": ${{ toJSON(github.event.head_commit.message || '커밋 메시지 없음') }},
+                  "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                  "color": ${{ needs.ci.result == 'success' && 3066993 || 15158332 }},
+                  "fields": [
+                    {
+                      "name": "커밋",
+                      "value": "[커밋 확인](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})",
+                      "inline": true
+                    },
+                    {
+                      "name": "푸시한 사람",
+                      "value": ${{ toJSON(github.actor) }},
+                      "inline": true
+                    },
+                    {
+                      "name": "브랜치",
+                      "value": ${{ toJSON(github.ref_name) }},
+                      "inline": true
+                    }
+                  ]
+                }
+              ]
