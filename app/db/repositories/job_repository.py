@@ -137,3 +137,63 @@ class JobRepository:
             {"job_type": job_type, "key": dedupe_key},
         )
         await self._session.commit()
+
+    async def mark_done_by_dedupe_key(self, *, job_type: str, dedupe_key: str) -> None:
+        """(job_type, dedupe_key)로 직접 done 처리. job_id를 모르는 호출부(핸들러 내부)가
+        "배치의 남은 개수"를 정확히 세려면, worker_main의 mark_done을 기다리지 않고
+        여기서 먼저 자기 상태를 반영해야 한다 (그래야 나중의 count_incomplete가 자신을
+        빼고 셀 수 있음). worker_main이 이후 호출할 mark_done(job_id)은 이미 done이라
+        조건에 안 걸려 조용히 아무 일도 안 한다."""
+        await self._session.execute(
+            text(
+                "UPDATE ai_jobs SET status = 'done', last_error = NULL, updated_at = now() "
+                "WHERE job_type = :job_type AND dedupe_key = :key AND status = 'running'"
+            ),
+            {"job_type": job_type, "key": dedupe_key},
+        )
+        await self._session.commit()
+
+    async def count_incomplete(self, *, job_type: str, dedupe_key_prefix: str) -> int:
+        """dedupe_key가 이 접두사로 시작하는 job_type 작업 중 아직 안 끝난(pending·running)
+        개수. failed는 "재시도 다 써서 포기한 것"이라 미완료로 안 센다 — 그거 하나 때문에
+        배치 완료 알림이 영원히 안 나가면 안 됨."""
+        row = await self._session.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM ai_jobs
+                WHERE job_type = :job_type AND dedupe_key LIKE :prefix
+                  AND status IN ('pending', 'running')
+                """
+            ),
+            {"job_type": job_type, "prefix": f"{dedupe_key_prefix}%"},
+        )
+        return row.scalar_one()
+
+    async def completed_user_ids(self, *, job_type: str, dedupe_key_prefix: str) -> list[str]:
+        """이 배치에서 성공(done)한 job들의 payload.user_id 목록."""
+        rows = await self._session.execute(
+            text(
+                """
+                SELECT payload ->> 'user_id' AS user_id FROM ai_jobs
+                WHERE job_type = :job_type AND dedupe_key LIKE :prefix AND status = 'done'
+                """
+            ),
+            {"job_type": job_type, "prefix": f"{dedupe_key_prefix}%"},
+        )
+        return [row.user_id for row in rows if row.user_id is not None]
+
+    async def try_claim_once(self, *, job_type: str, dedupe_key: str) -> bool:
+        """(job_type, dedupe_key) 조합의 "최초 1회 실행권"을 얻는다.
+
+        배치 완료 알림처럼 "동시에 여러 job이 끝나도 딱 한 번만 실행돼야 하는 일"의
+        중복 실행을 막는 데 쓴다. ai_jobs의 기존 유니크 제약(uq_ai_jobs_type_key)을
+        그대로 이용 — 이미 있으면 아무것도 안 하고 False, 처음이면 행을 만들고 True.
+        """
+        stmt = (
+            insert(AiJob)
+            .values(job_type=job_type, dedupe_key=dedupe_key, payload={}, status="done", max_attempts=1)
+            .on_conflict_do_nothing(constraint="uq_ai_jobs_type_key")
+        )
+        result = await self._session.execute(stmt)
+        await self._session.commit()
+        return result.rowcount > 0
