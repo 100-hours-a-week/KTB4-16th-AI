@@ -78,7 +78,7 @@ jobs:
           "
 
       # 5. 스모크 테스트 (지금은 placeholder — AI 서버 API 완성되면 실제 핵심 기능 검증으로 교체 예정)
-      - name: Smoke Test (TODO: AI API 완성되면 실제 검증 로직으로 교체)
+      - name: "Smoke Test (TODO: AI API 완성되면 실제 검증 로직으로 교체)"
         run: |
           gcloud compute ssh "${{ steps.standby.outputs.vm }}" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
             curl -fsS http://localhost:8000/health
