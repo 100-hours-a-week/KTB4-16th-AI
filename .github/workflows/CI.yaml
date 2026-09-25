@@ -41,3 +41,55 @@ jobs:
       # 6. 컴파일
       - name: Check Python syntax
         run: python -m compileall .
+        
+  notify:
+      name: Discord notification
+      runs-on: ubuntu-latest
+      needs: ci
+
+      # CI가 실패해도 알림 작업 실행
+      if: ${{ always() }}
+      permissions: {}
+
+      env:
+        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+      steps:
+        - name: Send CI result to Discord
+          if: ${{ env.DISCORD_WEBHOOK != '' }}
+          uses: Ilshidur/action-discord@0.3.2
+          with:
+            args: "AI CI 결과 알림"
+          env:
+            DISCORD_USERNAME: MURO_BOT
+            DISCORD_EMBEDS: |
+              [
+                {
+                  "title": "AI develop CI: ${{ needs.ci.result }}",
+                  "description": ${{ toJSON(github.event.pull_request.title) }},
+                  "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                  "color": ${{ needs.ci.result == 'success' && 3066993 || 15158332 }},
+                  "fields": [
+                    {
+                      "name": "PR",
+                      "value": "[#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})",
+                      "inline": true
+                    },
+                    {
+                      "name": "작성자",
+                      "value": ${{ toJSON(github.event.pull_request.user.login) }},
+                      "inline": true
+                    },
+                    {
+                      "name": "작업 브랜치",
+                      "value": ${{ toJSON(github.head_ref) }},
+                      "inline": true
+                    },
+                    {
+                      "name": "대상 브랜치",
+                      "value": ${{ toJSON(github.base_ref) }},
+                      "inline": true
+                    }
+                  ]
+                }
+              ]
