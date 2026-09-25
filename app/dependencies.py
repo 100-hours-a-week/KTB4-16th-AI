@@ -26,14 +26,13 @@ from app.clients.spotify_client import (
 )
 from app.components.category_vectors import CategoryVectors
 from app.components.clip_tagger import ClipTagger
-from app.components.embedder import Embedder
 from app.components.query_rewriter import QueryRewriter
 from app.components.reranker import Reranker
+from app.components.song_curator import SongCurator
 from app.config import get_settings
 from app.db.postgres import get_session
 from app.db.repositories.embedding_repository import EmbeddingRepository, EmbeddingStore
 from app.db.repositories.job_repository import JobRepository
-from app.db.repositories.track_mood_repository import TrackMoodRepository
 from app.exceptions import UnauthorizedError
 
 
@@ -146,10 +145,11 @@ def get_query_rewriter() -> QueryRewriter:
     return QueryRewriter(get_clients().llm_general)
 
 
-async def get_reranker(session: AsyncSession = Depends(get_session)) -> AsyncIterator[Reranker]:
-    clients = get_clients()
-    yield Reranker(
-        embedder=Embedder(clients.embedding),
-        track_moods=TrackMoodRepository(session),
-        jobs=JobRepository(session),
-    )
+def get_song_curator() -> SongCurator:
+    # 실제 존재하는 곡·가수를 지목해야 하므로 곡 지식이 있는 LLM을 쓴다
+    return SongCurator(get_clients().llm_knowledge)
+
+
+def get_reranker() -> Reranker:
+    # 태그 겹침 계산만 하는 순수 함수라 DB·외부 API 의존이 없다
+    return Reranker()

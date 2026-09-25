@@ -7,11 +7,15 @@
 # ko:   API 응답(moodTags)에 노출할 한국어 표시명. 검색어로 그대로 쓰지 않는다
 #       (예: "sunset"→"석양"으로 직역해서 검색하면 제목에 "석양" 들어간 곡만
 #       걸림). 실제 검색어는 query_rewriter가 별도로 만든다.
+#
+# 2026-09-25 실측: 14개 태그를 각각 정면으로 겨냥한 사진으로 테스트했더니
+# night street(밤거리)·narrow alley(골목)·dawn early morning(새벽)·
+# festival party lights(파티) 4개가 단 한 번도 1등을 못 함 — 개념이 겹치는
+# 다른 태그(도시야경/실내/노을/콘서트)한테 매번 밀려서 삭제. CLIP이 구분
+# 못 하는 태그는 늘려도 소용없고 줄이는 게 맞다고 판단.
 tags:
   - clip: sunset
     ko: 노을
-  - clip: night street
-    ko: 밤거리
   - clip: cafe interior
     ko: 카페
   - clip: cozy indoor room
@@ -22,16 +26,10 @@ tags:
     ko: 바다
   - clip: snow winter scene
     ko: 눈
-  - clip: narrow alley
-    ko: 골목
   - clip: city night view skyline
     ko: 도시야경
   - clip: rainy day
     ko: 비오는날
-  - clip: dawn early morning
-    ko: 새벽
-  - clip: festival party lights
-    ko: 파티
   - clip: mountain hiking trail
     ko: 산
   - clip: concert live music stage

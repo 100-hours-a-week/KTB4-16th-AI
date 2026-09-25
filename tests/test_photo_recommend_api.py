@@ -1,27 +1,20 @@
 """/api/photo-recommend 엔드포인트 배선(DI) 통합 테스트.
 
 fake 모드의 FakeClipClient·FakeLLMClient·FakeSpotifySearchClient를 그대로 태워
-get_clip_tagger·get_query_rewriter·get_spotify_search_client 등 실제 의존성
-그래프가 안 깨졌는지 확인한다. get_reranker만 예외 — 실 DB(AsyncSession)가
-필요해 테스트 환경엔 없으므로 통과형 가짜로 오버라이드한다.
+get_clip_tagger·get_song_curator·get_reranker·get_spotify_search_client 등 실제
+의존성 그래프가 안 깨졌는지 확인한다. Reranker가 태그 겹침만 계산하는 순수
+함수로 바뀌면서(2026-09-26) DB 세션이 필요 없어져, 더 이상 오버라이드가
+필요 없다 — 실제 의존성 그대로 통합 테스트가 가능해졌다.
 """
 
 from fastapi.testclient import TestClient
 
-from app.dependencies import get_reranker
 from app.main import create_app
 from tests.conftest import AUTH
 
 
-class PassthroughReranker:
-    async def rerank(self, query_text, candidates):
-        return candidates
-
-
 def _client() -> TestClient:
-    app = create_app()
-    app.dependency_overrides[get_reranker] = lambda: PassthroughReranker()
-    return TestClient(app)
+    return TestClient(create_app())
 
 
 def test_photo_recommend_returns_valid_shape():

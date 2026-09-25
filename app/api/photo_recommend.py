@@ -2,12 +2,12 @@ from fastapi import APIRouter, Depends
 
 from app.clients.spotify_client import SpotifySearchClient
 from app.components.clip_tagger import ClipTagger
-from app.components.query_rewriter import QueryRewriter
 from app.components.reranker import Reranker
+from app.components.song_curator import SongCurator
 from app.dependencies import (
     get_clip_tagger,
-    get_query_rewriter,
     get_reranker,
+    get_song_curator,
     get_spotify_search_client,
 )
 from app.schemas.photo_recommend import PhotoRecommendRequest, PhotoRecommendResponse
@@ -20,9 +20,9 @@ router = APIRouter(prefix="/api", tags=["기능3 사진 기반 추천"])
 async def photo_recommend(
     req: PhotoRecommendRequest,
     clip_tagger: ClipTagger = Depends(get_clip_tagger),
-    query_rewriter: QueryRewriter = Depends(get_query_rewriter),
+    song_curator: SongCurator = Depends(get_song_curator),
     reranker: Reranker = Depends(get_reranker),
     spotify_search: SpotifySearchClient = Depends(get_spotify_search_client),
 ) -> PhotoRecommendResponse:
-    service = PhotoRecommendService(clip_tagger, query_rewriter, reranker, spotify_search)
+    service = PhotoRecommendService(clip_tagger, song_curator, reranker, spotify_search)
     return await service.recommend(req)

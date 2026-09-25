@@ -26,8 +26,13 @@ class TrackMoodResolver:
         if cached is not None:
             return cached
 
-        mood_text = await self._mood.describe(title, artist_name)
-        mood_vec = await self._embedder.embed(mood_text)
-        mood = CachedMood(mood_text=mood_text, mood_embedding=mood_vec)
+        description = await self._mood.describe(title, artist_name)
+        mood_vec = await self._embedder.embed(description.text)
+        mood = CachedMood(
+            mood_text=description.text,
+            mood_embedding=mood_vec,
+            genre=description.genre,
+            moods=description.moods,
+        )
         await self._store.save(external_track_id, self.mood_version, mood)
         return mood

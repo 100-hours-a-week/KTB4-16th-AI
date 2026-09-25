@@ -121,7 +121,10 @@ async def test_same_track_calls_llm_once(record_payload):
 
 async def test_mood_is_rebuilt_when_version_changes(record_payload):
     moods, llm = InMemoryTrackMoods(), CountingLLM()
-    moods.rows["6rqhFgbbKwnb9MLmUQDhG6"] = ("old-version", CachedMood("옛 묘사", [0.0] * TEXT_DIM))
+    moods.rows["6rqhFgbbKwnb9MLmUQDhG6"] = (
+        "old-version",
+        CachedMood("옛 묘사", [0.0] * TEXT_DIM, genre="발라드", moods=("잔잔한",)),
+    )
     await build_service(InMemoryStore(), moods, llm).generate(
         EmbeddingGenerateRequest.model_validate(record_payload)
     )
