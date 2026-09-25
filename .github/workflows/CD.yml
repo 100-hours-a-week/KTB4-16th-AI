@@ -10,12 +10,14 @@ env:
   ZONE: asia-northeast3-a
 
 jobs:
-  deploy:
+  deploy-and-verify:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
+    outputs:
+      standby_vm: ${{ steps.standby.outputs.vm }}
     steps:
       - id: auth
         uses: google-github-actions/auth@v2
@@ -25,6 +27,7 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v2
 
+      # 1. 현재 Standby VM 판별
       - id: standby
         run: |
           VM=$(gcloud compute instances list \
@@ -33,6 +36,7 @@ jobs:
             --format="value(name)")
           echo "vm=$VM" >> "$GITHUB_OUTPUT"
 
+      # 2. CI가 방금 push한 최신 이미지 태그 조회
       - id: image
         run: |
           TAG=$(gcloud artifacts docker images list \
@@ -41,6 +45,7 @@ jobs:
             --format="value(TAGS)" | cut -d',' -f1)
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
+      # 3. ai.env 생성 (GitHub Secrets 값으로)
       - run: |
           cat > ai.env <<ENVEOF
           APP_ENV=${{ secrets.APP_ENV }}
@@ -60,6 +65,7 @@ jobs:
           YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}
           ENVEOF
 
+      # 4. Standby VM에 env 전송 + ai 컨테이너만 새 이미지로 교체
       - run: |
           gcloud compute scp ai.env "${{ steps.standby.outputs.vm }}:~/app/ai.env" \
             --zone="${{ env.ZONE }}" --tunnel-through-iap
@@ -71,23 +77,45 @@ jobs:
             docker compose up -d ai
           "
 
-      - run: |
+      # 5. 스모크 테스트 (지금은 placeholder — AI 서버 API 완성되면 실제 핵심 기능 검증으로 교체 예정)
+      - name: Smoke Test (TODO: AI API 완성되면 실제 검증 로직으로 교체)
+        run: |
           gcloud compute ssh "${{ steps.standby.outputs.vm }}" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
             curl -fsS http://localhost:8000/health
           "
+          # TODO: 실제 핵심 기능 검증 예시
+          # curl -fsS -X POST http://localhost:8000/api/chat -H 'Content-Type: application/json' -d '{...}'
 
+  switch-traffic:
+    needs: deploy-and-verify
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      # 6~8. 현재 Active VM 판별 → 고정 IP를 Standby로 이전 → 라벨 교체
       - run: |
           ACTIVE_VM=$(gcloud compute instances list \
             --filter="labels.role=active" \
             --zones="${{ env.ZONE }}" \
             --format="value(name)")
+          STANDBY_VM="${{ needs.deploy-and-verify.outputs.standby_vm }}"
 
           gcloud compute instances delete-access-config "$ACTIVE_VM" \
             --zone="${{ env.ZONE }}" --access-config-name="External NAT"
 
-          gcloud compute instances add-access-config "${{ steps.standby.outputs.vm }}" \
+          gcloud compute instances add-access-config "$STANDBY_VM" \
             --zone="${{ env.ZONE }}" --access-config-name="External NAT" \
             --address="${{ secrets.MURO_PROD_IP }}"
 
-          gcloud compute instances add-labels "${{ steps.standby.outputs.vm }}" --zone="${{ env.ZONE }}" --labels=role=active
+          gcloud compute instances add-labels "$STANDBY_VM" --zone="${{ env.ZONE }}" --labels=role=active
           gcloud compute instances add-labels "$ACTIVE_VM" --zone="${{ env.ZONE }}" --labels=role=standby
