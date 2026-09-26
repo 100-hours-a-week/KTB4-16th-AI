@@ -10,7 +10,8 @@ from app.schemas.common import CamelModel, Place, Track, Weather
 
 class ContextRecommendRequest(CamelModel):
     request_id: str = Field(min_length=1)
-    user_id: str = Field(min_length=1)
+    # 백엔드 명세(MULO_API설계): 외부 API에서도 내부 user_id(Long)를 그대로 쓴다
+    user_id: int = Field(gt=0)
     place: Place
     weather: Weather
     local_time: datetime
@@ -30,7 +31,7 @@ class ContextRecommendResponse(CamelModel):
 
 
 class PlaylistSaveRequest(CamelModel):
-    user_id: str = Field(min_length=1)
+    user_id: int = Field(gt=0)
     track_uris: list[str] = Field(min_length=1)
     platform: Literal["spotify", "youtube"]
     title: str = Field(min_length=1)

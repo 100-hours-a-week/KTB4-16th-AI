@@ -68,7 +68,7 @@ def _q(artist: str, title: str) -> str:
 
 def _curation(songs=None, genre="댄스", moods=("신나는", "화려한")) -> CurationResult:
     return CurationResult(
-        situation_genre=genre,
+        situation_genres=(genre,),
         situation_moods=moods,
         songs=list(songs) if songs is not None else [_song("아이유", "밤편지")],
     )
@@ -120,8 +120,13 @@ async def test_only_top_3_are_returned_even_if_more_resolve():
 
 
 async def test_searches_spotify_with_title_and_artist_field_filters():
-    service = build_service(curation=_curation(songs=[_song("아이유", "밤편지")]))
-    spotify = service._spotify
+    spotify = StubSpotifySearch({_q("아이유", "밤편지"): [_track_json("t1", "밤편지", "아이유")]})
+    service = PhotoRecommendService(
+        clip_tagger=StubClipTagger(tags=["카페"]),
+        song_curator=StubSongCurator(curation=_curation(songs=[_song("아이유", "밤편지")])),
+        reranker=Reranker(),
+        spotify_search=spotify,
+    )
 
     await service.recommend(_req())
 

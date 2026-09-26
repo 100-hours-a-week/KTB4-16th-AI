@@ -73,3 +73,19 @@ async def test_tag_returns_empty_when_nothing_clears_threshold():
     )
 
     assert await tagger.tag("https://img/1.jpg") == []
+
+
+async def test_tag_from_vector_uses_given_vector_without_calling_clip():
+    """기능2 RECAP이 기능4가 저장해둔 사진 벡터로 장면을 분류할 때 쓴다."""
+
+    class NoImageClient(ScriptedClipClient):
+        async def encode_image(self, image_url: str) -> list[float]:
+            raise AssertionError("저장된 벡터가 있으면 CLIP 이미지 인코딩을 부르면 안 된다")
+
+    client = NoImageClient(
+        image_vector=[],
+        tag_vectors={"sunset": [1.0, 0.0, 0.0], "night street": [0.0, 1.0, 0.0]},
+    )
+    tagger = ClipTagger(client, CategoryVectors(client, path=FIXTURE_YAML))
+
+    assert await tagger.tag_from_vector([0.0, 1.0, 0.0]) == ["밤거리"]

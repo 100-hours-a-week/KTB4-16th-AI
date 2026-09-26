@@ -6,7 +6,7 @@ from app.services.playlist_service import PlaylistService
 
 async def test_save_spotify_returns_share_url():
     req = PlaylistSaveRequest(
-        userId="u_1044",
+        userId=1044,
         trackUris=["spotify:track:aaa", "spotify:track:bbb"],
         platform="spotify",
         title="비 오는 저녁의 뮤로",
@@ -18,7 +18,7 @@ async def test_save_spotify_returns_share_url():
 
 async def test_save_youtube_not_implemented_yet():
     req = PlaylistSaveRequest(
-        userId="u_1", trackUris=["spotify:track:aaa"], platform="youtube", title="t"
+        userId=1, trackUris=["spotify:track:aaa"], platform="youtube", title="t"
     )
     try:
         await PlaylistService(FakeSpotifyPlaylistClient()).save(req)

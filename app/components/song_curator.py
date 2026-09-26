@@ -1,4 +1,7 @@
-"""사진 무드 태그 → 실제 유명 가수의 구체적인 곡 목록 + 장르·무드 태그. 기능3이 쓴다.
+"""상황 설명 → 실제 유명 가수의 구체적인 곡 목록 + 장르·무드 태그. 기능1·3이 공유한다.
+
+기능3은 사진 CLIP 태그를, 기능1은 장소·날씨·시간대(+ 비슷한 상황에서 들었던 곡)를
+상황 설명으로 넘긴다.
 
 장르 키워드로 Spotify를 검색하는 방식(query_rewriter.py)을 이걸로 대체했다. 실측 결과
 "카페 어쿠스틱" 같은 장르 키워드로 검색하면, 그 키워드를 제목에 그대로 박아둔
@@ -18,6 +21,11 @@
 같은 정해진 태그로 겹침을 세는 방식이 실측으로 더 정확했다(같은 사진 태그로 테스트 시
 신나는 곡이 정확히 상위로, 조용한 곡이 하위로 감). 태그를 별도 호출로 안 받고 이
 호출에 얹은 이유는 추가 지연/비용 없이 되기 때문이다.
+
+**상황 장르는 여러 개(1~3), 무드는 2~3개로 받는다.** 상황 장르를 1개로만 받았더니
+LLM이 거의 매번 "시티팝"을 찍어놓고 정작 다른 장르 곡을 추천해서, 장르가 딱 일치하는
+곡이 거의 없었다(실측: 한강공원 저녁 → 상황 "시티팝", 추천 8곡 중 시티팝 1곡). "맑은
+저녁 한강공원"처럼 장르 하나로 안 떨어지는 상황이 많아서 후보 장르를 여러 개로 넓혔다.
 """
 
 from dataclasses import dataclass
@@ -26,29 +34,33 @@ from app.clients.llm_client import LLMClient
 from app.components.music_tags import GENRE_VOCAB, MOOD_VOCAB
 from app.exceptions import LLMError
 
-PROMPT_VERSION = "song-curate-v2"
+PROMPT_VERSION = "song-curate-v5"
 
 # Spotify 확인 단계에서 일부가 탈락하므로 최종 3곡보다 넉넉히 받는다.
 CANDIDATE_COUNT = 8
 
-SYSTEM_PROMPT = f"""너는 사진 분위기에 어울리는 음악을 추천하는 도우미다.
+SYSTEM_PROMPT = f"""너는 주어진 상황에 어울리는 음악을 추천하는 도우미다.
 
-먼저 이 사진 상황 자체에 어울리는 장르·무드를 아래 목록에서만 골라 표시한다:
+먼저 이 상황 자체에 어울리는 장르를 1~3개, 무드를 2~3개 아래 목록에서만 고른다:
 장르 후보: {", ".join(GENRE_VOCAB)}
 무드 후보: {", ".join(MOOD_VOCAB)}
 
+그다음 곡을 추천한다.
 규칙:
+- 추천하는 곡은 위에서 고른 상황 장르·무드에 맞는 곡으로 고른다.
 - 실제로 발매됐고 대중적으로 알려진 가수의 곡만 추천한다.
 - 배경음악·플레이리스트용으로 제작된 곡, 커버·연주 편곡 계정의 곡은 추천하지 않는다.
 - 정확히 {CANDIDATE_COUNT}개를 추천한다.
 - 각 곡에도 위 목록에서만 장르 1개, 무드 1~2개를 붙인다.
 - 존재가 불확실한 곡은 추천하지 않는다.
+- 곡 제목·가수 이름은 Spotify 표기 그대로 쓴다(영어 제목을 한글로 옮기지 않는다).
+- 사용자가 예전에 들었던 곡이 주어지면 그 취향을 참고하되, 그 곡 자체는 다시 추천하지 않는다.
 
-형식(정확히 이대로, 다른 말 붙이지 않는다):
-상황: 장르=X | 무드=Y,Z
+출력 형식(꺾쇠 <> 부분만 실제 값으로 바꿔 쓰고, 다른 말은 붙이지 않는다):
+상황: 장르=<장르>,<장르> | 무드=<무드>,<무드>
 곡:
-아티스트 - 곡명 | 장르=X | 무드=Y,Z
-(위 줄을 {CANDIDATE_COUNT}번 반복)"""
+<가수> - <곡 제목> | 장르=<장르> | 무드=<무드>,<무드>
+(곡 줄을 {CANDIDATE_COUNT}번 쓴다)"""
 
 
 @dataclass(frozen=True)
@@ -73,7 +85,7 @@ class SongCandidate:
 
 @dataclass(frozen=True)
 class CurationResult:
-    situation_genre: str
+    situation_genres: tuple[str, ...]
     situation_moods: tuple[str, ...]
     songs: list[SongCandidate]
 
@@ -87,47 +99,65 @@ class SongCurator:
         return self._llm.model
 
     async def curate_from_tags(self, tags: list[str]) -> CurationResult:
+        """기능3 — 사진 CLIP 태그로 추천."""
         if not tags:
             raise LLMError("태그가 없으면 곡을 추천할 수 없어요.")
-        prompt = f"사진에서 뽑은 분위기 태그: {', '.join(tags)}"
-        response = await self._llm.complete(system=SYSTEM_PROMPT, prompt=prompt, max_tokens=768)
+        return await self.curate(f"사진에서 뽑은 분위기 태그: {', '.join(tags)}")
+
+    async def curate(self, situation: str) -> CurationResult:
+        """상황 설명 문장으로 추천. 기능1은 장소·날씨·시간대를 여기로 넘긴다."""
+        if not situation.strip():
+            raise LLMError("상황 설명이 없으면 곡을 추천할 수 없어요.")
+        response = await self._llm.complete(system=SYSTEM_PROMPT, prompt=situation, max_tokens=768)
         return _parse(response)
 
 
-def _parse_tags_field(text: str) -> tuple[str, tuple[str, ...]]:
-    genre = ""
+def _pick(values: str, vocab: list[str]) -> tuple[str, ...]:
+    """쉼표로 나열된 태그 중 어휘 목록에 있는 것만 남긴다 — 목록 밖 태그는 겹침 계산이 안 된다."""
+    picked = [v.strip() for v in values.split(",")]
+    return tuple(v for v in picked if v in vocab)
+
+
+def _parse_tags_field(text: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    genres: tuple[str, ...] = ()
     moods: tuple[str, ...] = ()
     for part in text.split("|"):
         part = part.strip()
         if part.startswith("장르="):
-            genre = part.removeprefix("장르=").strip()
+            genres = _pick(part.removeprefix("장르="), GENRE_VOCAB)
         elif part.startswith("무드="):
-            moods = tuple(m.strip() for m in part.removeprefix("무드=").split(",") if m.strip())
-    return genre, moods
+            moods = _pick(part.removeprefix("무드="), MOOD_VOCAB)
+    return genres, moods
 
 
 def _parse(text: str) -> CurationResult:
     """LLM이 형식을 어겨도 파싱되는 줄만 살린다 — 한 줄 깨졌다고 전체를 버리지 않는다."""
     lines = [raw.strip() for raw in text.strip().splitlines() if raw.strip()]
 
-    situation_genre, situation_moods = "", ()
+    situation_genres: tuple[str, ...] = ()
+    situation_moods: tuple[str, ...] = ()
     songs: list[SongCandidate] = []
     for line in lines:
         if line.startswith("상황:"):
-            situation_genre, situation_moods = _parse_tags_field(line.removeprefix("상황:"))
+            situation_genres, situation_moods = _parse_tags_field(line.removeprefix("상황:"))
             continue
-        if line == "곡:" or " - " not in line:
+        # LLM이 형식 예시 줄을 곡처럼 그대로 베끼는 경우가 있었다(실측)
+        if line == "곡:" or " - " not in line or "<" in line:
             continue
 
         name_part, _, rest = line.partition("|")
         artist, sep, title = name_part.strip().lstrip("-").strip().partition(" - ")
         if not sep:
             continue
-        genre, moods = _parse_tags_field("|" + rest)
+        genres, moods = _parse_tags_field("|" + rest)
         artist, title = artist.strip(), title.strip()
         if artist and title:
-            songs.append(SongCandidate(artist=artist, title=title, genre=genre, moods=moods))
+            songs.append(
+                SongCandidate(
+                    artist=artist, title=title, genre=genres[0] if genres else "", moods=moods
+                )
+            )
 
     return CurationResult(
-        situation_genre=situation_genre, situation_moods=situation_moods, songs=songs
+        situation_genres=situation_genres, situation_moods=situation_moods, songs=songs
     )
