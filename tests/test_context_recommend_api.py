@@ -62,3 +62,11 @@ def test_string_user_id_is_rejected():
 
     assert res.status_code == 400
     assert res.json()["field"] == "userId"
+
+
+def test_place_without_place_id_still_recommends():
+    """자물쇠가 한 번도 없던 곳이면 백엔드에 placeId가 없다. 위키 합의대로 날씨·시간대로 추천."""
+    payload = {**PAYLOAD, "place": {"name": "역삼동", "lat": 37.5, "lng": 127.03}}
+    res = _client().post("/api/context-recommend", json=payload, headers=AUTH)
+
+    assert res.status_code == 200

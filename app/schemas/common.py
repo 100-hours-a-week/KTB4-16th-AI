@@ -22,8 +22,9 @@ class Track(CamelModel):
 
 
 class Place(CamelModel):
-    # 백엔드 명세(MULO_API설계)상 placeId는 Long
-    place_id: int
+    # 백엔드 명세(MULO_API설계)상 placeId는 Long. 자물쇠가 한 번도 없던 곳이면 백엔드
+    # places에 행이 없어 비어 온다 — 그래도 날씨·시간대로 추천한다(GENERIC)
+    place_id: int | None = None
     # 백엔드 places엔 법정동 이름(legal_dong_name)만 있고, 그마저 비어 있을 수 있다
     name: str | None = None
     lat: float | None = None
