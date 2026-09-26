@@ -24,4 +24,11 @@ class FakeLLMClient:
     model = "fake-llm"
 
     async def complete(self, *, system: str, prompt: str, max_tokens: int = 1024) -> str:
-        return f"[fake] {prompt[:80]} 에 어울리는 잔잔하고 따뜻한 분위기. 태그: 잔잔함, 따뜻함"
+        # music_mood_tagger.py의 "설명:/장르:/무드:" 형식에 맞춰둔다 — 이 클라이언트를
+        # 쓰는 다른 컴포넌트(song_curator 등)는 이 형식에서 자기가 원하는 줄을 못 찾으면
+        # 그냥 빈 결과로 처리하도록 이미 설계돼 있다(할루시네이션 방어와 같은 경로).
+        return (
+            f"설명: [fake] {prompt[:80]} 에 어울리는 잔잔하고 따뜻한 분위기\n"
+            "장르: 발라드\n"
+            "무드: 잔잔한,따뜻한"
+        )

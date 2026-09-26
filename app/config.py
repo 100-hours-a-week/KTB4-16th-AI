@@ -49,9 +49,11 @@ class Settings(BaseSettings):
     clip_model: str = "openai/clip"
     clip_embedding_dim: int = 768
 
-    # Spotify (앱 인증: 검색·곡·아티스트 조회)
+    # Spotify — 앱 인증(검색용, 무제한)과 서비스 계정(플레이리스트 저장, B안) 분리
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
+    # scripts/spotify_service_account_setup.py로 1회 발급. 뮤로 팀 계정 1개 전용
+    spotify_service_refresh_token: str = ""
 
     # 외부 API 공통
     external_timeout_seconds: float = 20.0
