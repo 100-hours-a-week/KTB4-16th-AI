@@ -8,6 +8,14 @@ from pydantic import Field
 from app.schemas.common import CamelModel, Place, Track, Weather
 
 
+class NearbyTrack(CamelModel):
+    """현재 위치 주변 자물쇠에 많이 달린 곡 — 백엔드 장소별 인기 음악 집계 그대로."""
+
+    title: str = Field(min_length=1)
+    artist_name: str = Field(min_length=1)
+    count: int | None = None
+
+
 class ContextRecommendRequest(CamelModel):
     # 백엔드 추천 플레이리스트 생성 흐름은 요청 ID를 따로 만들지 않는다 — 오면 응답에 그대로 돌려줌
     request_id: str | None = None
@@ -17,6 +25,8 @@ class ContextRecommendRequest(CamelModel):
     place: Place | None = None
     weather: Weather
     local_time: datetime
+    # 백엔드 명세: 주변 자물쇠도 백엔드가 모아서 넘긴다. 없으면(주변 자물쇠 없음) 빈 목록
+    nearby_tracks: list[NearbyTrack] = Field(default_factory=list)
     limit: int = Field(default=3, ge=1, le=10)
 
 

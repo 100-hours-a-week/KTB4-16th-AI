@@ -9,6 +9,7 @@ from app.components.vector_search import SimilarRecord
 from app.exceptions import LLMError
 from app.schemas.context_recommend import ContextRecommendRequest
 from app.services.context_recommend_service import (
+    NEARBY_REFERENCE_COUNT,
     PERSONAL_SIMILARITY_THRESHOLD,
     ContextRecommendService,
     _time_bucket,
@@ -155,6 +156,51 @@ async def test_personal_when_similar_past_record_passes_threshold():
 
     assert res.recommendation_basis == "PERSONAL"
     assert "이 사용자가 비슷한 상황에서 들었던 곡(취향 참고용): BTS - 봄날" in curator.situations[0]
+
+
+NEARBY = [
+    {"title": "밤양갱", "artistName": "비비", "count": 12},
+    {"title": "Hype Boy", "artistName": "NewJeans", "count": 7},
+]
+
+
+async def test_regional_when_no_personal_record_but_nearby_tracks():
+    curator = StubSongCurator(_curation([BALLAD]))
+
+    res = await _service(curator=curator, spotify=StubSpotify(DEFAULT_SEARCH)).recommend(
+        _req(nearbyTracks=NEARBY)
+    )
+
+    assert res.recommendation_basis == "REGIONAL"
+    nearby_line = "이 근처 사람들이 최근 자물쇠에 많이 단 곡(분위기 참고용)"
+    assert f"{nearby_line}: 비비 - 밤양갱, NewJeans - Hype Boy" in curator.situations[0]
+
+
+async def test_personal_wins_basis_but_nearby_tracks_still_in_prompt():
+    records = StubRecordSearch([SimilarRecord(1, "t_old", PERSONAL_SIMILARITY_THRESHOLD + 0.1)])
+    spotify = StubSpotify(DEFAULT_SEARCH, tracks={"t_old": _track_json("t_old", "봄날", "BTS")})
+    curator = StubSongCurator(_curation([BALLAD]))
+
+    res = await _service(curator=curator, records=records, spotify=spotify).recommend(
+        _req(nearbyTracks=NEARBY)
+    )
+
+    assert res.recommendation_basis == "PERSONAL"
+    assert "BTS - 봄날" in curator.situations[0]
+    assert "비비 - 밤양갱" in curator.situations[0]
+
+
+async def test_only_top_nearby_tracks_go_into_prompt():
+    top = NEARBY_REFERENCE_COUNT
+    many = [{"title": f"곡{i}", "artistName": f"가수{i}"} for i in range(top + 3)]
+    curator = StubSongCurator(_curation([BALLAD]))
+
+    await _service(curator=curator, spotify=StubSpotify(DEFAULT_SEARCH)).recommend(
+        _req(nearbyTracks=many)
+    )
+
+    assert f"가수{top - 1} - 곡{top - 1}" in curator.situations[0]
+    assert f"가수{top} - 곡{top}" not in curator.situations[0]
 
 
 async def test_past_record_below_threshold_is_generic():

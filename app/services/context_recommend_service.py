@@ -5,11 +5,12 @@
 배경음악·컴필레이션 채널 곡만 걸리고 재랭킹 순서도 거꾸로 나오는 걸 실측으로 확인해서
 기능3과 같은 구조(LLM이 곡 지목 → track:/artist:로 확인 → 태그 겹침)로 만들었다.
 
-개인화(PERSONAL): 이 사용자의 과거 자물쇠 코멘트 중 지금 상황("비 오는 저녁")과 비슷한 게
-있으면, 그때 들은 곡을 LLM에 취향 참고용으로 넘긴다. 없으면 GENERIC.
-
-※ REGIONAL(장소 인기곡)은 백엔드 /places/{placeId}/top-tracks 조회가 있어야 하는데
-  아직 없어서 미구현 — 개인 기록이 없으면 바로 GENERIC으로 간다.
+추천 근거(recommendationBasis)는 3단계:
+  PERSONAL — 이 사용자의 과거 자물쇠 코멘트 중 지금 상황("비 오는 저녁")과 비슷한 게 있으면
+             그때 들은 곡을 LLM에 취향 참고용으로 넘긴다
+  REGIONAL — 개인 기록은 없고, 백엔드가 넘긴 주변 자물쇠 인기곡(nearbyTracks)이 있을 때
+  GENERIC  — 둘 다 없으면 날씨·시간대만으로
+주변 인기곡은 개인 기록이 있어도 프롬프트에 같이 넣는다(근거 표기만 PERSONAL이 우선).
 """
 
 import asyncio
@@ -39,6 +40,8 @@ logger = logging.getLogger("muro.context_recommend")
 PERSONAL_SIMILARITY_THRESHOLD = 0.40
 SIMILAR_SEARCH_LIMIT = 5
 REFERENCE_COUNT = 3
+# 백엔드가 인기순으로 보내므로 앞에서부터. 너무 많으면 LLM이 인기곡만 따라 뽑는다
+NEARBY_REFERENCE_COUNT = 5
 
 # 장르도 무드도 하나도 안 겹치는 곡만 뺀다(상황 무드 3개 중 1개만 겹쳐도 0.117).
 # 위키 설계상 임계값은 실측 후 튜닝.
@@ -82,7 +85,7 @@ class ContextRecommendService:
     async def recommend(self, req: ContextRecommendRequest) -> ContextRecommendResponse:
         moment = f"{_weather_phrase(req.weather.condition)} {_time_bucket(req.local_time)}"
         references = await self._personal_references(req.user_id, moment)
-        basis = "PERSONAL" if references else "GENERIC"
+        basis = _basis(references, req)
 
         try:
             curation = await self._song_curator.curate(_situation_prompt(req, moment, references))
@@ -159,6 +162,14 @@ class ContextRecommendService:
         return references
 
 
+def _basis(references: list[ReferenceTrack], req: ContextRecommendRequest) -> str:
+    if references:
+        return "PERSONAL"
+    if req.nearby_tracks:
+        return "REGIONAL"
+    return "GENERIC"
+
+
 def _weather_phrase(condition: str) -> str:
     return WEATHER_PHRASES.get(condition.strip().upper(), condition.strip())
 
@@ -189,6 +200,11 @@ def _situation_prompt(
     if references:
         heard = ", ".join(f"{r.artist} - {r.title}" for r in references)
         prompt += f"\n이 사용자가 비슷한 상황에서 들었던 곡(취향 참고용): {heard}"
+    if req.nearby_tracks:
+        nearby = ", ".join(
+            f"{t.artist_name} - {t.title}" for t in req.nearby_tracks[:NEARBY_REFERENCE_COUNT]
+        )
+        prompt += f"\n이 근처 사람들이 최근 자물쇠에 많이 단 곡(분위기 참고용): {nearby}"
     return prompt
 
 
