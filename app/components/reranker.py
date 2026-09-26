@@ -37,7 +37,7 @@ class TrackCandidate:
     spotify_uri: str
     genre: str
     moods: tuple[str, ...]
-    album_art_url: str | None = None
+    album_image_url: str | None = None
     external_url: str | None = None
     popularity: int = 0  # Spotify 제공값 0~100, 못 받으면 0(가장 불리하게)
 

@@ -112,7 +112,7 @@ def _to_candidate(track_json: dict, song: SongCandidate) -> TrackCandidate:
         spotify_uri=track_json["uri"],
         genre=song.genre,
         moods=song.moods,
-        album_art_url=images[0]["url"] if images else None,
+        album_image_url=images[0]["url"] if images else None,
         external_url=track_json.get("external_urls", {}).get("spotify")
         or f"https://open.spotify.com/track/{track_json['id']}",
         popularity=track_json.get("popularity", 0),

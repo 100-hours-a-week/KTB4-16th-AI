@@ -183,7 +183,7 @@ def _situation_prompt(
     parts = [moment]
     if req.weather.temperature is not None:
         parts.append(f"기온 {req.weather.temperature:g}도")
-    if req.place.name:
+    if req.place and req.place.name:
         parts.append(f"장소: {req.place.name}")
     prompt = f"상황: {', '.join(parts)}"
     if references:
@@ -199,10 +199,10 @@ def _tags_label(genres: tuple[str, ...], moods: tuple[str, ...]) -> str:
 def _to_ranked_track(c: TrackCandidate, score: float) -> RankedTrack:
     return RankedTrack(
         title=c.title,
-        artist=c.artist_name,
+        artist_name=c.artist_name,
         external_track_id=c.external_track_id,
         spotify_uri=c.spotify_uri,
-        album_art_url=c.album_art_url,
+        album_image_url=c.album_image_url,
         external_url=c.external_url,
         rerank_score=round(score, 3),
     )

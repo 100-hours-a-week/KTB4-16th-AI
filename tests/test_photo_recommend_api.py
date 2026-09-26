@@ -32,7 +32,7 @@ def test_photo_recommend_returns_valid_shape():
     assert len(body["tracks"]) <= 3
     assert isinstance(body["degraded"], bool)
     for track in body["tracks"]:
-        assert {"title", "artist", "externalTrackId"} <= track.keys()
+        assert {"title", "artistName", "externalTrackId"} <= track.keys()
 
 
 def test_photo_recommend_needs_token():

@@ -11,12 +11,13 @@ class CamelModel(BaseModel):
 
 
 class Track(CamelModel):
+    # 필드 이름은 백엔드 music_tracks 컬럼과 같게 맞춘다 (artistName, albumImageUrl)
     title: str
-    artist: str
+    artist_name: str
     # 백엔드는 곡을 Spotify 곡 ID(music_tracks.external_track_id)로 식별한다
     external_track_id: str
     spotify_uri: str | None = None
-    album_art_url: str | None = None
+    album_image_url: str | None = None
     # 백엔드 music_tracks.external_url (open.spotify.com 링크)
     external_url: str | None = None
 

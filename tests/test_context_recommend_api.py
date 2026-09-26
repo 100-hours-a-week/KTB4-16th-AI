@@ -43,7 +43,7 @@ def test_context_recommend_returns_valid_shape():
     assert len(body["tracks"]) <= 3
     assert isinstance(body["degraded"], bool)
     for track in body["tracks"]:
-        assert {"title", "artist", "externalTrackId", "rerankScore"} <= track.keys()
+        assert {"title", "artistName", "externalTrackId", "rerankScore"} <= track.keys()
 
 
 def test_context_recommend_missing_user_id_is_400():
@@ -70,3 +70,16 @@ def test_place_without_place_id_still_recommends():
     res = _client().post("/api/context-recommend", json=payload, headers=AUTH)
 
     assert res.status_code == 200
+
+
+def test_backend_playlist_flow_payload_is_accepted():
+    """백엔드 추천 플레이리스트 흐름은 requestId·place 없이 userId·날씨·시각만 보낸다."""
+    payload = {
+        "userId": 7,
+        "weather": {"condition": "CLEAR", "temperature": 20},
+        "localTime": "2026-09-26T21:00:00+09:00",
+    }
+    res = _client().post("/api/context-recommend", json=payload, headers=AUTH)
+
+    assert res.status_code == 200
+    assert res.json()["requestId"] is None

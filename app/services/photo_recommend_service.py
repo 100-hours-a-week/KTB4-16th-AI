@@ -103,9 +103,9 @@ class PhotoRecommendService:
 def _to_track(c: TrackCandidate) -> Track:
     return Track(
         title=c.title,
-        artist=c.artist_name,
+        artist_name=c.artist_name,
         external_track_id=c.external_track_id,
         spotify_uri=c.spotify_uri,
-        album_art_url=c.album_art_url,
+        album_image_url=c.album_image_url,
         external_url=c.external_url,
     )

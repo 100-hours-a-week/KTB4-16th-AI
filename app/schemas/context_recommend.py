@@ -9,10 +9,12 @@ from app.schemas.common import CamelModel, Place, Track, Weather
 
 
 class ContextRecommendRequest(CamelModel):
-    request_id: str = Field(min_length=1)
+    # 백엔드 추천 플레이리스트 생성 흐름은 요청 ID를 따로 만들지 않는다 — 오면 응답에 그대로 돌려줌
+    request_id: str | None = None
     # 백엔드 명세(MULO_API설계): 외부 API에서도 내부 user_id(Long)를 그대로 쓴다
     user_id: int = Field(gt=0)
-    place: Place
+    # 백엔드는 날씨 조회에만 좌표를 쓰고 장소는 안 넘긴다. 오면 장소 이름을 프롬프트에 넣는다
+    place: Place | None = None
     weather: Weather
     local_time: datetime
     limit: int = Field(default=3, ge=1, le=10)
@@ -23,7 +25,7 @@ class RankedTrack(Track):
 
 
 class ContextRecommendResponse(CamelModel):
-    request_id: str
+    request_id: str | None = None
     rewritten_query: str
     recommendation_basis: Literal["PERSONAL", "REGIONAL", "GENERIC"]
     tracks: list[RankedTrack]
