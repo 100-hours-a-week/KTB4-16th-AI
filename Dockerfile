@@ -12,7 +12,9 @@ COPY app ./app
 COPY migrations ./migrations
 COPY alembic.ini .
 
-EXPOSE 8000
+EXPOSE 8000 8001
 
-# 같은 이미지로 command만 바꿔 ① gateway ② moderation ③ worker를 띄운다
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 마이그레이션 → ① gateway(8000) ② moderation(8001) ③ worker 를 한 번에 띄운다 (app/launcher.py)
+# 따로 띄우고 싶으면 command만 바꾸면 된다: uvicorn app.main:app / uvicorn app.moderation_main:app
+# / python -m app.worker_main
+CMD ["python", "-m", "app.main"]

@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     external_timeout_seconds: float = 20.0
     external_max_retries: int = 2
 
+    # python -m app.main (전체 실행)이 띄우는 두 API 서버 포트
+    gateway_port: int = 8000
+    moderation_port: int = 8001
+
     # 워커 (Postgres 기반 작업 큐)
     worker_poll_interval_seconds: float = 1.0
     job_max_attempts: int = 3
