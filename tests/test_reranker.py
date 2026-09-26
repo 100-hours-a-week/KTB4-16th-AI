@@ -14,7 +14,7 @@ def _candidate(track_id, genre, moods, popularity=0) -> TrackCandidate:
 
 
 def test_empty_candidates_short_circuits():
-    assert Reranker().rerank("댄스", ("신나는", "화려한"), []) == []
+    assert Reranker().rerank(("댄스",), ("신나는", "화려한"), []) == []
 
 
 def test_exact_genre_and_mood_match_ranks_first():
@@ -26,7 +26,7 @@ def test_exact_genre_and_mood_match_ranks_first():
     party_song = _candidate("upbeat", genre="댄스", moods=("신나는", "화려한"))
     calm_song = _candidate("calm", genre="발라드", moods=("그리운", "따뜻한"))
 
-    ranked = Reranker().rerank("댄스", ("신나는", "화려한"), [calm_song, party_song])
+    ranked = Reranker().rerank(("댄스",), ("신나는", "화려한"), [calm_song, party_song])
 
     assert [c.external_track_id for c in ranked] == ["upbeat", "calm"]
 
@@ -36,7 +36,9 @@ def test_partial_mood_overlap_ranks_between_full_and_no_match():
     partial_match = _candidate("partial", genre="힙합", moods=("신나는", "그리운"))
     no_match = _candidate("none", genre="발라드", moods=("그리운", "따뜻한"))
 
-    ranked = Reranker().rerank("댄스", ("신나는", "화려한"), [no_match, partial_match, full_match])
+    ranked = Reranker().rerank(
+        ("댄스",), ("신나는", "화려한"), [no_match, partial_match, full_match]
+    )
 
     assert [c.external_track_id for c in ranked] == ["full", "partial", "none"]
 
@@ -45,7 +47,7 @@ def test_genre_match_alone_beats_no_match_at_all():
     genre_only = _candidate("genre_only", genre="댄스", moods=("그리운",))
     nothing = _candidate("nothing", genre="발라드", moods=("그리운",))
 
-    ranked = Reranker().rerank("댄스", ("신나는",), [nothing, genre_only])
+    ranked = Reranker().rerank(("댄스",), ("신나는",), [nothing, genre_only])
 
     assert [c.external_track_id for c in ranked] == ["genre_only", "nothing"]
 
@@ -54,12 +56,30 @@ def test_popularity_breaks_ties_between_equal_tag_matches():
     unpopular = _candidate("unpopular", genre="댄스", moods=("신나는",), popularity=0)
     popular = _candidate("popular", genre="댄스", moods=("신나는",), popularity=100)
 
-    ranked = Reranker().rerank("댄스", ("신나는",), [unpopular, popular])
+    ranked = Reranker().rerank(("댄스",), ("신나는",), [unpopular, popular])
 
     assert [c.external_track_id for c in ranked] == ["popular", "unpopular"]
 
 
 def test_no_situation_moods_does_not_crash_and_uses_genre_only():
     song = _candidate("a", genre="댄스", moods=("신나는",))
-    ranked = Reranker().rerank("댄스", (), [song])
+    ranked = Reranker().rerank(("댄스",), (), [song])
     assert [c.external_track_id for c in ranked] == ["a"]
+
+
+def test_rank_returns_scores_highest_first():
+    full = _candidate("full", genre="댄스", moods=("신나는",))
+    none = _candidate("none", genre="발라드", moods=("그리운",))
+
+    ranked = Reranker().rank(("댄스",), ("신나는",), [none, full])
+
+    assert [(c.external_track_id, round(s, 2)) for c, s in ranked] == [("full", 0.7), ("none", 0.0)]
+
+
+def test_genre_matches_if_it_is_any_of_the_situation_genres():
+    indie = _candidate("indie", genre="인디", moods=("그리운",))
+    trot = _candidate("trot", genre="트로트", moods=("그리운",))
+
+    ranked = Reranker().rerank(("시티팝", "인디", "어쿠스틱"), ("따뜻한",), [trot, indie])
+
+    assert [c.external_track_id for c in ranked] == ["indie", "trot"]

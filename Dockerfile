@@ -1,18 +1,34 @@
-FROM python:3.11-slim
+# 멀티 스테이지 빌드일때
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+# 1. 빌드 스테이지
+FROM python:3.11 AS builder
 
 WORKDIR /app
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app ./app
-COPY migrations ./migrations
-COPY alembic.ini .
 
-EXPOSE 8000
+# 2. 런타임 스테이지
+FROM python:3.11-slim
 
-# 같은 이미지로 command만 바꿔 ① gateway ② moderation ③ worker를 띄운다
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENV PYTHONDONTWRITEBYTECODE=1 
+ENV PYTHONUNBUFFERED=1 
+ENV PATH="/opt/venv/bin:$PATH"
+
+RUN groupadd -r app && useradd -r -g app appuser
+
+WORKDIR /app
+
+COPY --from=builder /opt/venv /opt/venv
+COPY . .
+
+USER appuser
+
+EXPOSE 8000 8001
+
+# 마이그레이션 → ① gateway(8000) ② moderation(8001) ③ worker 를 한 번에 띄운다 (app/launcher.py)
+CMD ["python", "-m", "app.main"]

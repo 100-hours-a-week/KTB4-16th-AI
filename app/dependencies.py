@@ -26,9 +26,11 @@ from app.clients.spotify_client import (
 )
 from app.components.category_vectors import CategoryVectors
 from app.components.clip_tagger import ClipTagger
+from app.components.embedder import Embedder
 from app.components.query_rewriter import QueryRewriter
 from app.components.reranker import Reranker
 from app.components.song_curator import SongCurator
+from app.components.vector_search import RecordSearch, VectorSearch
 from app.config import get_settings
 from app.db.postgres import get_session
 from app.db.repositories.embedding_repository import EmbeddingRepository, EmbeddingStore
@@ -153,3 +155,13 @@ def get_song_curator() -> SongCurator:
 def get_reranker() -> Reranker:
     # 태그 겹침 계산만 하는 순수 함수라 DB·외부 API 의존이 없다
     return Reranker()
+
+
+def get_embedder() -> Embedder:
+    return Embedder(get_clients().embedding)
+
+
+async def get_record_search(
+    session: AsyncSession = Depends(get_session),
+) -> AsyncIterator[RecordSearch]:
+    yield VectorSearch(session)

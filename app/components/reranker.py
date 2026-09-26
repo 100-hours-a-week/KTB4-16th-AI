@@ -37,29 +37,35 @@ class TrackCandidate:
     spotify_uri: str
     genre: str
     moods: tuple[str, ...]
-    album_art_url: str | None = None
+    album_image_url: str | None = None
+    external_url: str | None = None
     popularity: int = 0  # Spotify 제공값 0~100, 못 받으면 0(가장 불리하게)
 
 
 class Reranker:
     def rerank(
         self,
-        situation_genre: str,
+        situation_genres: tuple[str, ...],
         situation_moods: tuple[str, ...],
         candidates: list[TrackCandidate],
     ) -> list[TrackCandidate]:
-        if not candidates:
-            return []
-        return sorted(
-            candidates,
-            key=lambda c: self._score(situation_genre, situation_moods, c),
-            reverse=True,
-        )
+        return [c for c, _ in self.rank(situation_genres, situation_moods, candidates)]
+
+    def rank(
+        self,
+        situation_genres: tuple[str, ...],
+        situation_moods: tuple[str, ...],
+        candidates: list[TrackCandidate],
+    ) -> list[tuple[TrackCandidate, float]]:
+        """점수까지 같이 돌려준다 — 기능1은 응답에 rerankScore를 넣고 임계값으로 거른다."""
+        scored = [(c, self._score(situation_genres, situation_moods, c)) for c in candidates]
+        return sorted(scored, key=lambda pair: pair[1], reverse=True)
 
     def _score(
-        self, situation_genre: str, situation_moods: tuple[str, ...], c: TrackCandidate
+        self, situation_genres: tuple[str, ...], situation_moods: tuple[str, ...], c: TrackCandidate
     ) -> float:
-        genre_score = 1.0 if situation_genre and situation_genre == c.genre else 0.0
+        # 상황은 장르가 여러 개일 수 있다(맑은 저녁 한강공원 → 시티팝·인디·어쿠스틱)
+        genre_score = 1.0 if c.genre and c.genre in situation_genres else 0.0
         mood_overlap = len(set(situation_moods) & set(c.moods))
         mood_score = mood_overlap / len(situation_moods) if situation_moods else 0.0
         popularity_score = c.popularity / 100
