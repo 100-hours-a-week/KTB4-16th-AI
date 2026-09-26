@@ -2,16 +2,15 @@
 
 import logging
 from collections import Counter
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
-
-from dataclasses import dataclass
 
 from app.components.report_summarizer import ReportSummarizer
 from app.db.mysql import get_sessionmaker as get_mysql_sessionmaker
 from app.db.postgres import get_sessionmaker as get_postgres_sessionmaker
 from app.db.repositories.job_repository import JobRepository
-from app.db.repositories.report_repository import RecordSummary, ReportRepository, ReportStats
+from app.db.repositories.report_repository import RecordSummary, ReportRepository
 from app.dependencies import Clients, get_clients
 
 JOB_TYPE = "report"
@@ -27,20 +26,24 @@ class MonthlyReportResult:
     top_place: str | None
     avg_mood: float | None
     photo_category_distribution: dict[str, float]
+
+
 # "이 배치(year-month) 알림을 이미 보냈는지"를 ai_jobs의 기존 유니크 제약으로
 # 체크하기 위한 전용 job_type. 실제 처리 작업이 아니라 "알림 1회 전송권" 표식일 뿐이다.
 BATCH_NOTIFY_JOB_TYPE = "report_batch_notify"
 
 logger = logging.getLogger("muro.worker.report")
 
-# weatherCondition 표기가 API 명세 안에서도 불일치함 — 자물쇠 상세 조회 예시는
-# 영어 enum("RAIN"), 추천 플레이리스트 예시는 한국어("흐림")로 되어 있음.
-# 실제 DB 저장 형식은 백엔드 확인 필요. 모르는 값은 원본 그대로 써서 방어한다.
+# 백엔드 records.weather_condition ENUM(Flyway V1) 7종, 기상청 단기예보 기준 표현.
+# CLOUDY는 "구름 많음", OVERCAST가 "흐림"이다. 모르는 값은 원본 그대로 쓴다.
 WEATHER_KO = {
     "CLEAR": "맑음",
-    "CLOUDY": "흐림",
+    "CLOUDY": "구름 많음",
+    "OVERCAST": "흐림",
     "RAIN": "비",
     "SNOW": "눈",
+    "RAIN_SNOW": "진눈깨비",
+    "SHOWER": "소나기",
 }
 
 
@@ -53,7 +56,10 @@ async def handle(payload: dict[str, Any]) -> None:
     year: int = payload["year"]
     month: int = payload["month"]
 
-    async with get_mysql_sessionmaker()() as mysql_session, get_postgres_sessionmaker()() as pg_session:
+    async with (
+        get_mysql_sessionmaker()() as mysql_session,
+        get_postgres_sessionmaker()() as pg_session,
+    ):
         repo = ReportRepository(mysql_session, pg_session)
         records = await repo.get_records(user_id=user_id, year=year, month=month)
         record_ids = [r.record_id for r in records]
@@ -84,7 +90,9 @@ async def handle(payload: dict[str, Any]) -> None:
     await _notify_if_batch_complete(clients, year=year, month=month, user_id=user_id)
 
 
-async def _notify_if_batch_complete(clients: Clients, *, year: int, month: int, user_id: int) -> None:
+async def _notify_if_batch_complete(
+    clients: Clients, *, year: int, month: int, user_id: int
+) -> None:
     """이 job으로 배치가 다 끝났으면 백엔드에 딱 한 번 알린다.
 
     1. 내 job을 먼저 done으로 표시한다 — worker_main의 mark_done을 기다리면
@@ -142,7 +150,7 @@ def _build_record_lines(
         if r.weather_condition:
             weather = _describe_weather(r.weather_condition)
             if r.temperature is not None:
-                weather += f" {r.temperature}도"
+                weather += f" {r.temperature:g}도"
             parts.append(f"날씨: {weather}")
         if r.place_name:
             parts.append(f"장소: {r.place_name}")

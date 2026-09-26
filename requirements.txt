@@ -5,6 +5,8 @@ pydantic-settings>=2.15,<3
 sqlalchemy[asyncio]>=2.0.54,<2.1
 asyncpg>=0.31,<1
 aiomysql>=0.2,<1
+# MySQL 8 기본 인증(caching_sha2_password)으로 접속할 때 aiomysql이 요구한다
+cryptography>=43,<47
 pgvector>=0.5,<1
 alembic>=1.20,<2
 openai>=3.15,<4
