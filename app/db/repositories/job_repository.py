@@ -169,7 +169,7 @@ class JobRepository:
         )
         return row.scalar_one()
 
-    async def completed_user_ids(self, *, job_type: str, dedupe_key_prefix: str) -> list[str]:
+    async def completed_user_ids(self, *, job_type: str, dedupe_key_prefix: str) -> list[int]:
         """이 배치에서 성공(done)한 job들의 payload.user_id 목록."""
         rows = await self._session.execute(
             text(
@@ -180,7 +180,8 @@ class JobRepository:
             ),
             {"job_type": job_type, "prefix": f"{dedupe_key_prefix}%"},
         )
-        return [row.user_id for row in rows if row.user_id is not None]
+        # payload ->> 'user_id'는 문자열로 나온다. 백엔드 userId는 숫자(Long)라 되돌린다.
+        return [int(row.user_id) for row in rows if row.user_id is not None]
 
     async def try_claim_once(self, *, job_type: str, dedupe_key: str) -> bool:
         """(job_type, dedupe_key) 조합의 "최초 1회 실행권"을 얻는다.
@@ -191,7 +192,9 @@ class JobRepository:
         """
         stmt = (
             insert(AiJob)
-            .values(job_type=job_type, dedupe_key=dedupe_key, payload={}, status="done", max_attempts=1)
+            .values(
+                job_type=job_type, dedupe_key=dedupe_key, payload={}, status="done", max_attempts=1
+            )
             .on_conflict_do_nothing(constraint="uq_ai_jobs_type_key")
         )
         result = await self._session.execute(stmt)

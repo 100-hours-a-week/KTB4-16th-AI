@@ -33,10 +33,12 @@ class ReportService:
         )
 
     async def _resolve_target_user_ids(self, req: ReportBatchGenerateRequest) -> list[int]:
-        # user_ids는 list[str]로 들어오지만 ai_jobs payload/DB의 user_id는 int라서 변환한다.
         if req.user_ids is not None:
-            return [int(uid) for uid in req.user_ids]
+            return req.user_ids
 
-        async with get_mysql_sessionmaker()() as mysql_session, get_postgres_sessionmaker()() as pg_session:
+        async with (
+            get_mysql_sessionmaker()() as mysql_session,
+            get_postgres_sessionmaker()() as pg_session,
+        ):
             repo = ReportRepository(mysql_session, pg_session)
             return await repo.get_active_user_ids(year=req.year, month=req.month)
