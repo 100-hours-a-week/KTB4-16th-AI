@@ -10,8 +10,8 @@ from app.schemas.common import CamelModel
 class ReportBatchGenerateRequest(CamelModel):
     year: int = Field(ge=2026)
     month: int = Field(ge=1, le=12)
-    # 생략 시 전체 사용자
-    user_ids: list[str] | None = None
+    # 생략 시 전체 사용자. 백엔드 명세상 userId는 숫자(Long)
+    user_ids: list[int] | None = None
 
 
 class ReportBatchQueuedResponse(CamelModel):

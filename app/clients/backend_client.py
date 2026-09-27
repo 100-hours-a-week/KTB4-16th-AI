@@ -22,7 +22,7 @@ class BackendCallbackError(UpstreamError):
 
 class ReportBackendClient(Protocol):
     async def notify_report_ready(
-        self, *, year: int, month: int, user_ids: list[str], generated_at: str
+        self, *, year: int, month: int, user_ids: list[int], generated_at: str
     ) -> None: ...
 
 
@@ -32,7 +32,7 @@ class BackendClient:
         self._http = httpx.AsyncClient(base_url=base_url, timeout=timeout)
 
     async def notify_report_ready(
-        self, *, year: int, month: int, user_ids: list[str], generated_at: str
+        self, *, year: int, month: int, user_ids: list[int], generated_at: str
     ) -> None:
         """RECAP 배치 생성 완료를 백엔드에 알린다 (AI API 시트 "AI -> BE" 탭 기준)."""
         try:
@@ -61,7 +61,7 @@ class FakeBackendClient:
         self.calls: list[dict] = []
 
     async def notify_report_ready(
-        self, *, year: int, month: int, user_ids: list[str], generated_at: str
+        self, *, year: int, month: int, user_ids: list[int], generated_at: str
     ) -> None:
         self.calls.append(
             {"year": year, "month": month, "user_ids": user_ids, "generated_at": generated_at}

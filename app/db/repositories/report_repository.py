@@ -16,9 +16,9 @@ class RecordSummary:
     자물쇠 생성 시 저장되는 값 중 요약에 쓸 수 있는 것들을 그대로 가져온다.
     music_mood_text·사진 카테고리는 AI 자체 DB(record_embeddings)에서 별도 조회한다.
 
-    TODO: 위키 모델 API 설계 확정 후 실제 컬럼에 맞춰 필드 조정.
-    artist_name·place_name은 records 자체가 아니라 music/place 테이블에 있다고
-    추정하고 JOIN으로 가져옴 — 실제 테이블/FK명은 백엔드 확인 필요.
+    테이블·컬럼명은 백엔드 Flyway 마이그레이션(V1~V4) 기준: records, music_tracks, places.
+    places엔 장소 이름 컬럼이 없고(V4에서 place_name 삭제) 법정동 이름(legal_dong_name)만
+    있어서 place_name은 그 값이다. 비어 있을 수 있다.
     """
 
     record_id: int
@@ -26,7 +26,7 @@ class RecordSummary:
     created_at: datetime
     mood_score: int | None  # 사용자가 직접 입력한 기분 점수 (-50~50)
     weather_condition: str | None
-    temperature: int | None
+    temperature: float | None  # DECIMAL(3,1) — 18.5도처럼 소수가 온다
     comment: str | None
     artist_name: str | None
     place_name: str | None
@@ -50,14 +50,15 @@ class ReportRepository:
         """이번 달(year, month)에 자물쇠 기록이 있는 전체 사용자 ID. (백엔드 MySQL)
 
         user_ids 생략 요청 시 배치 대상 전체를 정하는 데 쓴다.
-        TODO: 실제 테이블/컬럼명은 백엔드 records 스키마 확정 후 채운다.
+        자물쇠 삭제는 소프트 삭제(deleted_at)라 삭제된 기록은 뺀다.
         """
         rows = await self._mysql.execute(
             text(
                 """
                 SELECT DISTINCT user_id
                 FROM records
-                WHERE YEAR(created_at) = :year AND MONTH(created_at) = :month
+                WHERE deleted_at IS NULL
+                  AND YEAR(created_at) = :year AND MONTH(created_at) = :month
                 """
             ),
             {"year": year, "month": month},
@@ -67,21 +68,18 @@ class ReportRepository:
     async def get_records(self, *, user_id: int, year: int, month: int) -> list[RecordSummary]:
         """특정 사용자의 해당 달 자물쇠 목록. (백엔드 MySQL)
 
-        TODO: 실제 테이블/컬럼명은 백엔드 records 스키마 확정 후 채운다.
-        music/place는 records에 직접 컬럼이 없고 FK로 연결된다고 추정(records.music_track_id
-        -> music.id, records.place_id -> place.id). LEFT JOIN이라 추정이 틀려도 records
-        자체는 그대로 나오고 artist_name/place_name만 NULL로 빠진다.
+        records.music_track_id·place_id는 NOT NULL FK라 JOIN으로 곡·장소를 붙인다.
         """
         rows = await self._mysql.execute(
             text(
                 """
-                SELECT r.id AS record_id, m.external_track_id, r.created_at,
+                SELECT r.record_id, m.external_track_id, r.created_at,
                        r.mood_score, r.weather_condition, r.temperature, r.comment,
-                       m.artist_name, p.name AS place_name
+                       m.artist_name, p.legal_dong_name AS place_name
                 FROM records r
-                LEFT JOIN music m ON r.music_track_id = m.id
-                LEFT JOIN place p ON r.place_id = p.id
-                WHERE r.user_id = :user_id
+                JOIN music_tracks m ON r.music_track_id = m.music_track_id
+                JOIN places p ON r.place_id = p.place_id
+                WHERE r.user_id = :user_id AND r.deleted_at IS NULL
                   AND YEAR(r.created_at) = :year AND MONTH(r.created_at) = :month
                 ORDER BY r.created_at
                 """
@@ -95,7 +93,7 @@ class ReportRepository:
                 created_at=row.created_at,
                 mood_score=row.mood_score,
                 weather_condition=row.weather_condition,
-                temperature=row.temperature,
+                temperature=float(row.temperature) if row.temperature is not None else None,
                 comment=row.comment,
                 artist_name=row.artist_name,
                 place_name=row.place_name,
@@ -108,14 +106,13 @@ class ReportRepository:
 
         TOP 아티스트/장소는 기록 수 DESC, 동률이면 최근 기록 시각 DESC로 정렬한다
         (MULO API 스펙의 "장소별 인기 음악 조회"가 쓰는 동률 처리 규칙과 동일하게 맞춤).
-        TODO: get_records와 동일한 music/place 스키마 추정.
         """
         avg_row = await self._mysql.execute(
             text(
                 """
                 SELECT AVG(mood_score) AS avg_mood
                 FROM records
-                WHERE user_id = :user_id
+                WHERE user_id = :user_id AND deleted_at IS NULL
                   AND YEAR(created_at) = :year AND MONTH(created_at) = :month
                 """
             ),
@@ -129,10 +126,9 @@ class ReportRepository:
                     """
                     SELECT m.artist_name AS name, COUNT(*) AS cnt, MAX(r.created_at) AS latest
                     FROM records r
-                    LEFT JOIN music m ON r.music_track_id = m.id
-                    WHERE r.user_id = :user_id
+                    JOIN music_tracks m ON r.music_track_id = m.music_track_id
+                    WHERE r.user_id = :user_id AND r.deleted_at IS NULL
                       AND YEAR(r.created_at) = :year AND MONTH(r.created_at) = :month
-                      AND m.artist_name IS NOT NULL
                     GROUP BY m.artist_name
                     ORDER BY cnt DESC, latest DESC
                     LIMIT 1
@@ -146,13 +142,14 @@ class ReportRepository:
             await self._mysql.execute(
                 text(
                     """
-                    SELECT p.name AS name, COUNT(*) AS cnt, MAX(r.created_at) AS latest
+                    SELECT p.legal_dong_name AS name, COUNT(*) AS cnt,
+                           MAX(r.created_at) AS latest
                     FROM records r
-                    LEFT JOIN place p ON r.place_id = p.id
-                    WHERE r.user_id = :user_id
+                    JOIN places p ON r.place_id = p.place_id
+                    WHERE r.user_id = :user_id AND r.deleted_at IS NULL
                       AND YEAR(r.created_at) = :year AND MONTH(r.created_at) = :month
-                      AND p.name IS NOT NULL
-                    GROUP BY p.name
+                      AND p.legal_dong_name IS NOT NULL
+                    GROUP BY p.legal_dong_name
                     ORDER BY cnt DESC, latest DESC
                     LIMIT 1
                     """
