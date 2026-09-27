@@ -66,13 +66,24 @@ async def test_tag_loads_categories_lazily_once():
     assert len(categories.tags) == 2
 
 
-async def test_tag_returns_empty_when_nothing_clears_threshold():
+async def test_tag_uses_top_label_when_nothing_clears_threshold():
+    """만화 짤·셀카처럼 장소 태그가 전부 미달이어도 사진 추천이 통째로 실패하지 않게 1등은 쓴다."""
+    tagger = _tagger(
+        image_vector=[0.1, 1.0, 0.0],  # sunset 유사도 ≈ 0.0995, night street 0 — 둘 다 임계치 미달
+        tag_vectors={"sunset": [1.0, 0.0, 0.0], "night street": [0.0, 0.0, 1.0]},
+    )
+
+    assert await tagger.tag("https://img/1.jpg") == ["노을"]
+
+
+async def test_tag_from_vector_stays_empty_when_nothing_clears_threshold():
+    """기능2 RECAP 사진 분류는 억지로 붙이지 않는다 (분포가 왜곡되지 않게)."""
     tagger = _tagger(
         image_vector=[0.0, 0.0, 1.0],
         tag_vectors={"sunset": [1.0, 0.0, 0.0], "night street": [0.0, 1.0, 0.0]},
     )
 
-    assert await tagger.tag("https://img/1.jpg") == []
+    assert await tagger.tag_from_vector([0.0, 0.0, 1.0]) == []
 
 
 async def test_tag_from_vector_uses_given_vector_without_calling_clip():
