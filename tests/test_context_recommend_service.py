@@ -78,7 +78,7 @@ def _track_json(track_id: str, title: str, artist: str) -> dict:
         "name": title,
         "artists": [{"name": artist}],
         "uri": f"spotify:track:{track_id}",
-        "album": {"images": []},
+        "album": {"images": [{"url": f"https://i.scdn.co/image/{track_id}"}]},
     }
 
 
