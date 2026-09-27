@@ -1,19 +1,35 @@
-name: AI CI develop
+name: AI CI main
 
 on:
-  pull_request:
+  push:
     branches:
-      - develop
+      - main
+
+# 버전 작업 동시에 실행되지 않게 
+concurrency:
+  group: ai-main-release
+  cancel-in-progress: false
+
 
 jobs:
   ci:
     name: AI CI
     runs-on: ubuntu-latest
-
+    
+    # 워크플로우 권한 정의
+    permissions:
+      contents: write      # Git 태그, Release 생성
+      id-token: write      # GCP Workload Identity와 통신하기 위한 OIDC 토큰 발행 권한
+      
+    env:
+      IMAGE_BASE: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.PROJECT_REPOSITORY }}/${{ secrets.IMAGE_NAME }}
+    
     steps:
       # 1. 코드 체크아웃
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+            fetch-depth: 0
             
       # 2. Ruff 설치 + 린트 검사  
       - name: Ruff 실행
@@ -41,7 +57,46 @@ jobs:
       # 6. 컴파일
       - name: Check Python syntax
         run: python -m compileall .
+      
+      # Phase 1: semantic-release 실행 환경 구성
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      # Phase 2: Docker Build 준비
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Phase 3: OIDC를 이용한 서비스 계정 인증
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      # Phase 4: gcloud 명령어 사용 준비
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
         
+
+      # Phase 5: Docker가 GCP 인증 정보를 사용하도록 연결
+      - name: Configure Docker authentication
+        run: |
+            gcloud auth configure-docker "${{ secrets.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      # Phase 6: 버전 계산 -> image build, push -> Git 태그, Release 생성
+      - name: Release AI image
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
+        run: |
+          npx --yes \
+            --package=semantic-release@25 \
+            --package=@semantic-release/exec@7 \
+            semantic-release
+            
   notify:
       name: Discord notification
       runs-on: ubuntu-latest
@@ -59,35 +114,30 @@ jobs:
           if: ${{ env.DISCORD_WEBHOOK != '' }}
           uses: Ilshidur/action-discord@0.3.2
           with:
-            args: "AI CI 결과 알림"
+            args: "AI main CI 결과 알림"
           env:
             DISCORD_USERNAME: MURO_BOT
             DISCORD_EMBEDS: |
               [
                 {
-                  "title": "AI develop CI: ${{ needs.ci.result }}",
-                  "description": ${{ toJSON(github.event.pull_request.title) }},
+                  "title": "AI CI: ${{ needs.ci.result }}",
+                  "description": ${{ toJSON(github.event.head_commit.message || '커밋 메시지 없음') }},
                   "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
                   "color": ${{ needs.ci.result == 'success' && 3066993 || 15158332 }},
                   "fields": [
                     {
-                      "name": "PR",
-                      "value": "[#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})",
+                      "name": "커밋",
+                      "value": "[커밋 확인](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})",
                       "inline": true
                     },
                     {
-                      "name": "작성자",
-                      "value": ${{ toJSON(github.event.pull_request.user.login) }},
+                      "name": "푸시한 사람",
+                      "value": ${{ toJSON(github.actor) }},
                       "inline": true
                     },
                     {
-                      "name": "작업 브랜치",
-                      "value": ${{ toJSON(github.head_ref) }},
-                      "inline": true
-                    },
-                    {
-                      "name": "대상 브랜치",
-                      "value": ${{ toJSON(github.base_ref) }},
+                      "name": "브랜치",
+                      "value": ${{ toJSON(github.ref_name) }},
                       "inline": true
                     }
                   ]
