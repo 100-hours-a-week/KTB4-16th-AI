@@ -124,3 +124,9 @@ jobs:
 
           gcloud compute instances add-labels "$STANDBY_VM" --zone="${{ env.ZONE }}" --labels=role=active
           gcloud compute instances add-labels "$ACTIVE_VM" --zone="${{ env.ZONE }}" --labels=role=standby
+
+          # 방금 standby가 된 VM(옛 active)은 고정 IP를 뗀 채로 남는다.
+          # Cloud NAT이 없는 상태라 이대로 두면 다음 배포 때 이미지 pull이 안 되므로,
+          # 임시(ephemeral) 외부 IP를 다시 붙여서 인터넷 접속을 유지시켜준다.
+          gcloud compute instances add-access-config "$ACTIVE_VM" \
+            --zone="${{ env.ZONE }}" --access-config-name="External NAT"
