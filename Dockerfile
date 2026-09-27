@@ -28,6 +28,7 @@ COPY . .
 
 USER appuser
 
-EXPOSE 8000
+EXPOSE 8000 8001
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# 마이그레이션 → ① gateway(8000) ② moderation(8001) ③ worker 를 한 번에 띄운다 (app/launcher.py)
+CMD ["python", "-m", "app.main"]

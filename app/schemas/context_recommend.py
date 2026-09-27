@@ -8,12 +8,25 @@ from pydantic import Field
 from app.schemas.common import CamelModel, Place, Track, Weather
 
 
+class NearbyTrack(CamelModel):
+    """현재 위치 주변 자물쇠에 많이 달린 곡 — 백엔드 장소별 인기 음악 집계 그대로."""
+
+    title: str = Field(min_length=1)
+    artist_name: str = Field(min_length=1)
+    count: int | None = None
+
+
 class ContextRecommendRequest(CamelModel):
-    request_id: str = Field(min_length=1)
-    user_id: str = Field(min_length=1)
-    place: Place
+    # 백엔드 추천 플레이리스트 생성 흐름은 요청 ID를 따로 만들지 않는다 — 오면 응답에 그대로 돌려줌
+    request_id: str | None = None
+    # 백엔드 명세(MULO_API설계): 외부 API에서도 내부 user_id(Long)를 그대로 쓴다
+    user_id: int = Field(gt=0)
+    # 백엔드는 날씨 조회에만 좌표를 쓰고 장소는 안 넘긴다. 오면 장소 이름을 프롬프트에 넣는다
+    place: Place | None = None
     weather: Weather
     local_time: datetime
+    # 백엔드 명세: 주변 자물쇠도 백엔드가 모아서 넘긴다. 없으면(주변 자물쇠 없음) 빈 목록
+    nearby_tracks: list[NearbyTrack] = Field(default_factory=list)
     limit: int = Field(default=3, ge=1, le=10)
 
 
@@ -22,7 +35,7 @@ class RankedTrack(Track):
 
 
 class ContextRecommendResponse(CamelModel):
-    request_id: str
+    request_id: str | None = None
     rewritten_query: str
     recommendation_basis: Literal["PERSONAL", "REGIONAL", "GENERIC"]
     tracks: list[RankedTrack]
@@ -30,7 +43,7 @@ class ContextRecommendResponse(CamelModel):
 
 
 class PlaylistSaveRequest(CamelModel):
-    user_id: str = Field(min_length=1)
+    user_id: int = Field(gt=0)
     track_uris: list[str] = Field(min_length=1)
     platform: Literal["spotify", "youtube"]
     title: str = Field(min_length=1)

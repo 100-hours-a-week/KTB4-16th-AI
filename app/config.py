@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     # AI 전용 PostgreSQL (pgvector)
     database_url: str = "postgresql+asyncpg://muro:muro@localhost:5432/muro_ai"
 
+    # 백엔드 MySQL (읽기 전용) — 기능2 RECAP용 records 조회
+    backend_mysql_url: str = ""
+
+    # 백엔드 콜백 (AI → 백엔드, RECAP 완료 알림) — 경로·인증 방식 확정 전 추측값
+    backend_internal_url: str = ""
+
     # fake: 키 없이 결정적 가짜 벡터·텍스트로 동작 (로컬 개발·테스트용)
     # real: 실제 외부 API 호출
     ai_client_mode: Literal["fake", "real"] = "fake"
@@ -49,13 +55,19 @@ class Settings(BaseSettings):
     clip_model: str = "openai/clip"
     clip_embedding_dim: int = 768
 
-    # Spotify (앱 인증: 검색·곡·아티스트 조회)
+    # Spotify — 앱 인증(검색용, 무제한)과 서비스 계정(플레이리스트 저장, B안) 분리
     spotify_client_id: str = ""
     spotify_client_secret: str = ""
+    # scripts/spotify_service_account_setup.py로 1회 발급. 뮤로 팀 계정 1개 전용
+    spotify_service_refresh_token: str = ""
 
     # 외부 API 공통
     external_timeout_seconds: float = 20.0
     external_max_retries: int = 2
+
+    # python -m app.main (전체 실행)이 띄우는 두 API 서버 포트
+    gateway_port: int = 8000
+    moderation_port: int = 8001
 
     # 워커 (Postgres 기반 작업 큐)
     worker_poll_interval_seconds: float = 1.0

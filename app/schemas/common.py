@@ -11,15 +11,25 @@ class CamelModel(BaseModel):
 
 
 class Track(CamelModel):
+    # 필드 이름은 백엔드 music_tracks 컬럼과 같게 맞춘다 (artistName, albumImageUrl)
     title: str
-    artist: str
-    spotify_uri: str | None = None
-    album_art_url: str | None = None
+    artist_name: str
+    # 백엔드는 곡을 Spotify 곡 ID(music_tracks.external_track_id)로 식별한다
+    external_track_id: str
+    # spotify_uri/external_url은 Spotify가 못 줘도 클라이언트가 직접 만들어 채워서 항상 값 있음
+    spotify_uri: str
+    # Spotify 앨범 커버. 커버 없는 곡은 추천 단계에서 빼서 항상 값이 있다 (music_tracks NOT NULL)
+    album_image_url: str
+    # 백엔드 music_tracks.external_url (open.spotify.com 링크)
+    external_url: str
 
 
 class Place(CamelModel):
-    place_id: str
-    name: str
+    # 백엔드 명세(MULO_API설계)상 placeId는 Long. 자물쇠가 한 번도 없던 곳이면 백엔드
+    # places에 행이 없어 비어 온다 — 그래도 날씨·시간대로 추천한다(GENERIC)
+    place_id: int | None = None
+    # 백엔드 places엔 법정동 이름(legal_dong_name)만 있고, 그마저 비어 있을 수 있다
+    name: str | None = None
     lat: float | None = None
     lng: float | None = None
 

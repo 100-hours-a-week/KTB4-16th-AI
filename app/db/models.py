@@ -4,7 +4,17 @@ from datetime import datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import BigInteger, DateTime, Index, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    ARRAY,
+    BigInteger,
+    DateTime,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -48,6 +58,9 @@ class TrackMood(Base):
     external_track_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     mood_text: Mapped[str] = mapped_column(Text)
     mood_embedding: Mapped[list[float]] = mapped_column(Vector(_settings.text_embedding_dim))
+    # 2026-09-26: 기능3 재랭킹이 임베딩 유사도 대신 이 태그 겹침으로 바뀌면서 추가.
+    genre: Mapped[str] = mapped_column(String(20), server_default="")
+    moods: Mapped[list[str]] = mapped_column(ARRAY(String(20)), server_default="{}")
     mood_version: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
