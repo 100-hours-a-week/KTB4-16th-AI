@@ -63,6 +63,8 @@ jobs:
           SPOTIFY_CLIENT_ID=${{ secrets.SPOTIFY_CLIENT_ID }}
           SPOTIFY_CLIENT_SECRET=${{ secrets.SPOTIFY_CLIENT_SECRET }}
           YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}
+          BACKEND_MYSQL_URL=${{ secrets.BACKEND_MYSQL_URL }}
+          BACKEND_INTERNAL_URL=${{ secrets.BACKEND_INTERNAL_URL }}
           ENVEOF
 
       # 4. Standby VM에 env 전송 + ai 컨테이너만 새 이미지로 교체
