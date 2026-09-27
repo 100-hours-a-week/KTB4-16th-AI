@@ -22,7 +22,7 @@ def _track(track_id: str, title: str, *artists: str) -> dict:
         "name": title,
         "artists": [{"name": a} for a in artists],
         "uri": f"spotify:track:{track_id}",
-        "album": {"images": []},
+        "album": {"images": [{"url": f"https://i.scdn.co/image/{track_id}"}]},
     }
 
 
@@ -156,3 +156,23 @@ async def test_external_url_comes_from_spotify_or_is_built_from_the_id():
         "https://open.spotify.com/track/t1?si=abc",
         "https://open.spotify.com/track/t2",
     ]
+
+
+async def test_version_without_album_cover_is_treated_as_not_found():
+    """백엔드 music_tracks.album_image_url이 NOT NULL이라 커버 없는 곡은 추천하지 않는다."""
+    song = _song("아이유", "밤편지")
+    no_cover = {**_track("t_nocover", "밤편지", "아이유"), "album": {"images": []}}
+    spotify = StubSpotify({song.search_query: [no_cover]})
+
+    assert await TrackResolver(spotify).resolve([song]) == []
+
+
+async def test_prefers_version_with_album_cover():
+    song = _song("아이유", "밤편지")
+    no_cover = {**_track("t_nocover", "밤편지", "아이유"), "album": {"images": []}}
+    spotify = StubSpotify({song.search_query: [no_cover, _track("t_cover", "밤편지", "아이유")]})
+
+    resolved = await TrackResolver(spotify).resolve([song])
+
+    assert [c.external_track_id for c in resolved] == ["t_cover"]
+    assert resolved[0].album_image_url == "https://i.scdn.co/image/t_cover"

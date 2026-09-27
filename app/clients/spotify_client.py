@@ -208,7 +208,11 @@ class FakeSpotifySearchClient:
                 "uri": f"spotify:track:fake_{i}",
                 "name": f"{query} 결과 {i}",
                 "artists": [{"name": "Fake Artist", "id": "fake_artist"}],
-                "album": {"name": "Fake Album", "images": [], "release_date": "2024-01-01"},
+                "album": {
+                    "name": "Fake Album",
+                    "images": [{"url": f"https://i.scdn.co/image/fake_{i}"}],
+                    "release_date": "2024-01-01",
+                },
             }
             for i in range(min(limit, 3))
         ]

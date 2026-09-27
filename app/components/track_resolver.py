@@ -6,6 +6,9 @@
 필드 필터는 띄어쓰기가 다르면 0건을 준다(실측: LLM "아닐 거야" vs Spotify "아닐거야" —
 실제로 있는 백예린 곡이 탈락). 그래서 0건이면 일반 검색을 한 번 더 하되, 띄어쓰기·대소문자·
 괄호 부가표기를 빼고 비교했을 때 제목과 가수가 둘 다 같은 곡만 받는다.
+
+앨범 커버가 없는 버전은 없는 곡으로 친다. 백엔드 music_tracks.album_image_url이 NOT NULL이라
+null을 넘기면 저장이 깨지고, 커버 없는 곡은 대개 정식 발매본이 아니라서 빼도 잃는 게 거의 없다.
 """
 
 import asyncio
@@ -73,18 +76,26 @@ class TrackResolver:
         return resolved
 
     async def _find(self, song: SongCandidate) -> dict[str, Any] | None:
-        items = await self._spotify.search_tracks(song.search_query, limit=SEARCH_LIMIT)
+        items = _with_album_image(
+            await self._spotify.search_tracks(song.search_query, limit=SEARCH_LIMIT)
+        )
         if items:
             exact = next((i for i in items if _same_title(i["name"], song.title)), None)
             # 제목이 똑같은 게 없으면 필드 필터 1위를 믿는다 — "크러쉬"/"Crush"처럼 표기가
             # 달라도 Spotify가 같은 곡으로 맞춰준 경우라서.
             return exact or items[0]
 
-        items = await self._spotify.search_tracks(f"{song.title} {song.artist}", limit=SEARCH_LIMIT)
+        items = _with_album_image(
+            await self._spotify.search_tracks(f"{song.title} {song.artist}", limit=SEARCH_LIMIT)
+        )
         for item in items:
             if _same_title(item["name"], song.title) and _same_artist(item, song.artist):
                 return item
         return None
+
+
+def _with_album_image(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [i for i in items if (i.get("album") or {}).get("images")]
 
 
 def _normalize(text: str) -> str:
@@ -104,7 +115,6 @@ def _same_artist(track_json: dict[str, Any], llm_artist: str) -> bool:
 
 
 def _to_candidate(track_json: dict, song: SongCandidate) -> TrackCandidate:
-    images = track_json.get("album", {}).get("images") or []
     return TrackCandidate(
         external_track_id=track_json["id"],
         title=track_json["name"],
@@ -112,7 +122,7 @@ def _to_candidate(track_json: dict, song: SongCandidate) -> TrackCandidate:
         spotify_uri=track_json["uri"],
         genre=song.genre,
         moods=song.moods,
-        album_image_url=images[0]["url"] if images else None,
+        album_image_url=track_json["album"]["images"][0]["url"],
         external_url=track_json.get("external_urls", {}).get("spotify")
         or f"https://open.spotify.com/track/{track_json['id']}",
         popularity=track_json.get("popularity", 0),
