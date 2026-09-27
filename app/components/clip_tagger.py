@@ -26,15 +26,18 @@ class ClipTagger:
         return await self._client.encode_text(texts)
 
     async def tag(self, image_url: str, top_k: int = TOP_K) -> list[str]:
-        """이미지 벡터와 무드 라벨 벡터의 유사도로 태그(한국어 표시명) 산출.
+        """기능3 사진 추천용 태깅 — 이미지와 무드 라벨 벡터의 유사도로 태그(한국어 표시명) 산출.
 
-        임계치 미달 후보는 제외 — 사진과 무관한 태그가 섞여 들어가는 것을
-        막는다. 전부 미달이면 빈 리스트(호출부가 폴백 처리).
+        임계치 넘는 태그를 쓰되, 하나도 없으면 1등 태그 하나는 쓴다. 태그가 전부 장소·풍경이라
+        만화 짤·셀카·음식 사진은 전부 미달이 되는데(실측: 픽셀 만화 짤 1등 콘서트 0.1497),
+        그때 추천이 통째로 실패하는 것보다 가장 가까운 분위기로라도 추천하는 게 낫다.
         """
         image_vector = await self._client.encode_image(image_url)
-        return await self.tag_from_vector(image_vector, top_k)
+        return await self.tag_from_vector(image_vector, top_k, at_least_one=True)
 
-    async def tag_from_vector(self, image_vector: list[float], top_k: int = TOP_K) -> list[str]:
+    async def tag_from_vector(
+        self, image_vector: list[float], top_k: int = TOP_K, *, at_least_one: bool = False
+    ) -> list[str]:
         """이미 만들어둔 CLIP 이미지 벡터로 태깅 — CLIP을 다시 부르지 않는다.
 
         기능2 RECAP이 기능4가 저장해둔 사진 벡터(record_embeddings.image_embedding)로
@@ -47,4 +50,7 @@ class ClipTagger:
             (tag.ko, cosine_similarity(image_vector, tag.vector)) for tag in self._categories.tags
         ]
         scored.sort(key=lambda pair: pair[1], reverse=True)
-        return [ko for ko, score in scored[:top_k] if score >= THRESHOLD]
+        tags = [ko for ko, score in scored[:top_k] if score >= THRESHOLD]
+        if not tags and at_least_one and scored:
+            return [scored[0][0]]
+        return tags
