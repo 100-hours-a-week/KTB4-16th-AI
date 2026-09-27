@@ -17,7 +17,8 @@ class Track(CamelModel):
     # 백엔드는 곡을 Spotify 곡 ID(music_tracks.external_track_id)로 식별한다
     external_track_id: str
     spotify_uri: str | None = None
-    album_image_url: str | None = None
+    # Spotify 앨범 커버. 커버 없는 곡은 추천 단계에서 빼서 항상 값이 있다 (music_tracks NOT NULL)
+    album_image_url: str
     # 백엔드 music_tracks.external_url (open.spotify.com 링크)
     external_url: str | None = None
 
