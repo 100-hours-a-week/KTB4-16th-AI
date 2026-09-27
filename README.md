@@ -8,6 +8,21 @@
 | ② Moderation | `uvicorn app.moderation_main:app --port 8001` | 채팅 모더레이션 |
 | ③ Worker | `python -m app.worker_main` | `ai_jobs` 큐 소비 (임베딩·RECAP·클러스터) |
 
+## 배포 (한 번에 전체 실행)
+
+```bash
+python -m app.main
+```
+
+도커 이미지의 기본 실행 명령이 이것이라, 컨테이너만 띄우면 아래 순서로 알아서 올라간다.
+
+1. DB 마이그레이션 (`alembic upgrade head`) — DB가 늦게 뜨면 3초 간격으로 최대 10번 재시도
+2. ① gateway(8000) ② moderation(8001) ③ worker 동시 실행
+
+셋 중 하나가 죽으면 나머지도 내리고 컨테이너가 종료된다 (재시작 정책 `restart: always` 권장).
+컨테이너에 넣어야 할 환경변수는 `.env.example` 참고 (`DATABASE_URL`, `INTERNAL_TOKEN`, API 키들).
+포트는 `GATEWAY_PORT`, `MODERATION_PORT`로 바꿀 수 있다.
+
 ## 모델 서빙 계획
 
 | 역할 | V1 | V2 |

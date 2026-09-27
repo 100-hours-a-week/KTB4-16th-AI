@@ -56,8 +56,10 @@ class ReplicateClipClient:
         return await self._predict({"image": image_url})
 
     async def encode_text(self, texts: list[str]) -> list[list[float]]:
-        # 모델이 한 번에 한 입력만 받으므로 병렬 호출
-        return list(await asyncio.gather(*(self._predict({"text": t}) for t in texts)))
+        # 순차 호출 — 병렬로 여러 개를 한꺼번에 보내면 계정 요청 제한(429)에
+        # 걸리기 쉽다(실측: 태그 14개 동시 호출 시 429 다발). 카테고리 벡터
+        # 캐싱처럼 여러 텍스트를 한 번에 인코딩할 때가 유일한 다건 호출 지점.
+        return [await self._predict({"text": t}) for t in texts]
 
     async def _predict(self, model_input: dict[str, str]) -> list[float]:
         prediction = await self._create_prediction(model_input)

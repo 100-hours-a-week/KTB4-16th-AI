@@ -11,7 +11,7 @@ from app.db.mysql import get_sessionmaker as get_mysql_sessionmaker
 from app.db.postgres import get_sessionmaker as get_postgres_sessionmaker
 from app.db.repositories.job_repository import JobRepository
 from app.db.repositories.report_repository import RecordSummary, ReportRepository
-from app.dependencies import Clients, get_clients
+from app.dependencies import Clients, get_clients, get_clip_tagger
 
 JOB_TYPE = "report"
 
@@ -167,13 +167,21 @@ OTHER_CATEGORY = "기타"  # 카테고리 목록 자체가 비어있는 등, 정
 
 
 async def _classify_photos(image_vectors: dict[int, list[float]]) -> dict[int, list[str]]:
-    """TODO: 기능3(CLIP 제로샷 사진 태깅)이 develop에 merge된 후 실제 구현으로 교체 예정.
+    """레코드별 사진 카테고리 태그(최대 1개). CLIP을 다시 호출하지 않는다.
 
-    현재 develop엔 ClipTagger.tag_from_vector()/get_clip_tagger()가 없어(기능3 미병합)
-    임시로 빈 결과를 반환한다. 실제 구현은 로컬 stash("recap 전체버전")에 보관되어 있음
-    — 기능3 병합 후 이 함수만 복원하면 된다.
+    ClipTagger.tag_from_vector()는 이미 계산된 벡터와 캐싱된 카테고리 라벨
+    벡터의 코사인 유사도만 비교한다. develop 병합본엔 임계치를 끄는 옵션이
+    없어져서(항상 THRESHOLD 적용), 임계치 미달이면 빈 리스트가 올 수 있다 —
+    그 경우 _category_distribution이 OTHER_CATEGORY("기타")로 처리한다.
     """
-    return {}
+    if not image_vectors:
+        return {}
+
+    tagger = get_clip_tagger()
+    result: dict[int, list[str]] = {}
+    for record_id, vector in image_vectors.items():
+        result[record_id] = await tagger.tag_from_vector(vector, top_k=1)
+    return result
 
 
 def _category_distribution(photo_tags_by_record: dict[int, list[str]]) -> dict[str, float]:

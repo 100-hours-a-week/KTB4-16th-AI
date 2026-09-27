@@ -110,3 +110,11 @@ def test_missing_track_id_is_400(client, record_payload):
     res = client.post("/api/embeddings/generate", json=record_payload, headers=AUTH)
     assert res.status_code == 400
     assert res.json()["field"] == "track.externalTrackId"
+
+
+def test_root_health_for_deploy_smoke_test(client):
+    """CD 스모크 테스트가 curl http://localhost:8000/health 로 확인한다."""
+    res = client.get("/health")
+
+    assert res.status_code == 200
+    assert res.json()["status"] == "ok"
