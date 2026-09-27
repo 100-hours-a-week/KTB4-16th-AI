@@ -10,13 +10,14 @@ import signal
 from app.config import get_settings
 from app.db.postgres import get_engine, get_sessionmaker
 from app.db.repositories.job_repository import ClaimedJob, JobRepository
-from app.workers import embedding_worker
+from app.workers import embedding_worker, report_worker
 from app.workers.types import JobHandler
 
 logger = logging.getLogger("muro.worker")
 
 HANDLERS: dict[str, JobHandler] = {
     embedding_worker.JOB_TYPE: embedding_worker.handle,
+    report_worker.JOB_TYPE: report_worker.handle,
 }
 
 

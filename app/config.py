@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     # AI 전용 PostgreSQL (pgvector)
     database_url: str = "postgresql+asyncpg://muro:muro@localhost:5432/muro_ai"
 
+    # 백엔드 MySQL (읽기 전용) — 기능2 RECAP용 records 조회
+    backend_mysql_url: str = ""
+
+    # 백엔드 콜백 (AI → 백엔드, RECAP 완료 알림) — 경로·인증 방식 확정 전 추측값
+    backend_internal_url: str = ""
+
     # fake: 키 없이 결정적 가짜 벡터·텍스트로 동작 (로컬 개발·테스트용)
     # real: 실제 외부 API 호출
     ai_client_mode: Literal["fake", "real"] = "fake"

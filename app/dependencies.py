@@ -9,6 +9,7 @@ from fastapi import Depends, Header
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.anthropic_client import AnthropicClient
+from app.clients.backend_client import BackendClient, FakeBackendClient, ReportBackendClient
 from app.clients.clip_client import ClipClient, FakeClipClient, ReplicateClipClient
 from app.clients.embedding_client import (
     EmbeddingClient,
@@ -52,6 +53,7 @@ class Clients:
     llm_general: LLMClient
     embedding: EmbeddingClient
     clip: ClipClient
+    backend: ReportBackendClient
     spotify_search: SpotifySearchClient
     spotify_playlist: SpotifyPlaylistClient
 
@@ -65,6 +67,7 @@ def get_clients() -> Clients:
             llm_general=FakeLLMClient(),
             embedding=FakeEmbeddingClient(dim=s.text_embedding_dim),
             clip=FakeClipClient(dim=s.clip_embedding_dim),
+            backend=FakeBackendClient(),
             spotify_search=FakeSpotifySearchClient(),
             spotify_playlist=FakeSpotifyPlaylistClient(),
         )
@@ -84,6 +87,11 @@ def get_clients() -> Clients:
             dim=s.clip_embedding_dim,
             timeout=s.external_timeout_seconds,
             max_retries=s.external_max_retries,
+        ),
+        backend=BackendClient(
+            base_url=s.backend_internal_url,
+            internal_token=s.internal_token,
+            timeout=s.external_timeout_seconds,
         ),
         spotify_search=SpotifyClient(
             client_id=s.spotify_client_id,
