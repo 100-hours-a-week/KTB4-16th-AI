@@ -104,8 +104,19 @@ jobs:
             --format="value(name)")
           STANDBY_VM="${{ needs.deploy.outputs.standby_vm }}"
 
+          # ACTIVE와 STANDBY가 같으면 이미 전환됐거나 오래된 승인 요청이다 — 라벨/IP를 망가뜨리지 않도록 중단한다.
+          if [ "$ACTIVE_VM" = "$STANDBY_VM" ]; then
+            echo "ACTIVE_VM과 STANDBY_VM이 동일합니다 ($ACTIVE_VM). 이미 전환되었거나 오래된 승인 요청일 수 있어 중단합니다."
+            exit 1
+          fi
+
           gcloud compute instances delete-access-config "$ACTIVE_VM" \
             --zone="${{ env.ZONE }}" --access-config-name="External NAT"
+
+          # Cloud NAT 미도입 상태라 standby가 자체 임시 외부 IP를 갖고 있을 수 있다.
+          # 고정 IP를 붙이기 전에 기존 access-config를 먼저 제거한다 (없으면 무시하고 진행).
+          gcloud compute instances delete-access-config "$STANDBY_VM" \
+            --zone="${{ env.ZONE }}" --access-config-name="External NAT" || true
 
           gcloud compute instances add-access-config "$STANDBY_VM" \
             --zone="${{ env.ZONE }}" --access-config-name="External NAT" \
