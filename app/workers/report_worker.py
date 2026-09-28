@@ -2,7 +2,6 @@
 
 import logging
 from collections import Counter
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
@@ -10,22 +9,14 @@ from app.components.report_summarizer import ReportSummarizer
 from app.db.mysql import get_sessionmaker as get_mysql_sessionmaker
 from app.db.postgres import get_sessionmaker as get_postgres_sessionmaker
 from app.db.repositories.job_repository import JobRepository
-from app.db.repositories.report_repository import RecordSummary, ReportRepository
+from app.db.repositories.report_repository import (
+    MonthlyReportRepository,
+    RecordSummary,
+    ReportRepository,
+)
 from app.dependencies import Clients, get_clients, get_clip_tagger
 
 JOB_TYPE = "report"
-
-
-@dataclass(frozen=True)
-class MonthlyReportResult:
-    """이번 달 RECAP 결과 묶음. 저장 위치(AI 소유 테이블? 백엔드 콜백?)는 아직 미정 —
-    지금은 이 형태로 로그에만 남긴다."""
-
-    ai_recap: str
-    top_artist: str | None
-    top_place: str | None
-    avg_mood: float | None
-    photo_category_distribution: dict[str, float]
 
 
 # "이 배치(year-month) 알림을 이미 보냈는지"를 ai_jobs의 기존 유니크 제약으로
@@ -75,17 +66,17 @@ async def handle(payload: dict[str, Any]) -> None:
     summarizer = ReportSummarizer(clients.llm_general)
     summary = await summarizer.summarize(record_lines, stats, photo_category_distribution)
 
-    result = MonthlyReportResult(
-        ai_recap=summary,
-        top_artist=stats.top_artist,
-        top_place=stats.top_place,
-        avg_mood=stats.avg_mood_score,
-        photo_category_distribution=photo_category_distribution,
-    )
-    # TODO: result를 실제로 어디에 저장/전달할지는 아직 미정
-    # (AI 소유 monthly_reports 테이블? 백엔드가 가져갈 조회 API?) —
-    # 확정 전이라 지금은 로그로만 남긴다. 콜백에는 이 내용이 안 실린다(AI API 시트 기준).
-    logger.info("report 완료 user=%s %s-%s: %s", user_id, year, month, result)
+    # stats(기분·아티스트·장소)는 저장 안 함 — 백엔드가 자기 MySQL 원본으로 직접 계산하기로
+    # 협의됨. 위에서 요약 텍스트를 쓸 때만 내부적으로 썼다.
+    async with get_postgres_sessionmaker()() as pg_session:
+        await MonthlyReportRepository(pg_session).save(
+            user_id=user_id,
+            year=year,
+            month=month,
+            ai_recap_text=summary,
+            photo_scenes=_scene_list(photo_category_distribution),
+        )
+    logger.info("report 저장 완료 user=%s %s-%s", user_id, year, month)
 
     await _notify_if_batch_complete(clients, year=year, month=month, user_id=user_id)
 
@@ -194,3 +185,8 @@ def _category_distribution(photo_tags_by_record: dict[int, list[str]]) -> dict[s
     counts = Counter(tags[0] if tags else OTHER_CATEGORY for tags in photo_tags_by_record.values())
     total = sum(counts.values())
     return {category: count / total for category, count in counts.items()}
+
+
+def _scene_list(distribution: dict[str, float]) -> list[str]:
+    """백엔드 photoScenes — 비중 높은 순으로 카테고리 이름만 나열한다."""
+    return sorted(distribution, key=distribution.get, reverse=True)

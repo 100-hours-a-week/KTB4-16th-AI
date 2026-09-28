@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from sqlalchemy import select, text
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import RecordEmbedding
+from app.db.models import MonthlyReport, RecordEmbedding
 
 
 @dataclass(frozen=True)
@@ -193,3 +194,69 @@ class ReportRepository:
             )
         )
         return {row.record_id: list(row.image_embedding) for row in rows}
+
+
+@dataclass(frozen=True)
+class MonthlyReportRecord:
+    """저장된 RECAP 스냅샷 1건. 조회 API 응답을 만드는 데 쓴다.
+
+    기분·아티스트·장소 통계는 안 담는다 — 백엔드가 자기 MySQL 원본으로 직접 계산하기로
+    협의됨(AI는 요약 텍스트를 쓸 때만 내부적으로 계산해 쓰고 저장은 안 함).
+    """
+
+    ai_recap_text: str
+    photo_scenes: list[str]
+
+
+class MonthlyReportRepository:
+    """RECAP 결과 저장·조회. AI 자체 Postgres(monthly_reports)에만 접근한다.
+
+    백엔드 MySQL은 안 건드린다 — 배치 생성(ReportRepository)과는 별개 관심사라 분리했다.
+    """
+
+    def __init__(self, session: AsyncSession):
+        self._session = session
+
+    async def save(
+        self,
+        *,
+        user_id: int,
+        year: int,
+        month: int,
+        ai_recap_text: str,
+        photo_scenes: list[str],
+    ) -> None:
+        """이미 있으면 덮어쓴다 — job 재시도로 같은 달이 다시 들어올 수 있다."""
+        stmt = insert(MonthlyReport).values(
+            user_id=user_id,
+            year=year,
+            month=month,
+            ai_recap_text=ai_recap_text,
+            photo_scenes=photo_scenes,
+        )
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["user_id", "year", "month"],
+            set_={
+                "ai_recap_text": stmt.excluded.ai_recap_text,
+                "photo_scenes": stmt.excluded.photo_scenes,
+            },
+        )
+        await self._session.execute(stmt)
+        await self._session.commit()
+
+    async def get(self, *, user_id: int, year: int, month: int) -> MonthlyReportRecord | None:
+        row = (
+            await self._session.execute(
+                select(MonthlyReport).where(
+                    MonthlyReport.user_id == user_id,
+                    MonthlyReport.year == year,
+                    MonthlyReport.month == month,
+                )
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        return MonthlyReportRecord(
+            ai_recap_text=row.ai_recap_text,
+            photo_scenes=list(row.photo_scenes),
+        )
