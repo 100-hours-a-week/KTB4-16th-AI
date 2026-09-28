@@ -57,7 +57,7 @@ class InMemoryMonthlyReportRepository:
         year: int,
         month: int,
         ai_recap_text: str,
-        photo_scenes: list[str],
+        photo_scenes: list[dict[str, Any]],
     ) -> None:
         self.rows[(user_id, year, month)] = {
             "ai_recap_text": ai_recap_text,
@@ -69,6 +69,15 @@ class InMemoryMonthlyReportRepository:
 
         row = self.rows.get((user_id, year, month))
         return None if row is None else MonthlyReportRecord(**row)
+
+    async def get_many(self, *, user_ids: list[int], year: int, month: int) -> dict[int, Any]:
+        from app.db.repositories.report_repository import MonthlyReportRecord
+
+        return {
+            uid: MonthlyReportRecord(**row)
+            for uid in user_ids
+            if (row := self.rows.get((uid, year, month))) is not None
+        }
 
 
 @pytest.fixture

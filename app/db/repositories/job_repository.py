@@ -183,6 +183,19 @@ class JobRepository:
         # payload ->> 'user_id'는 문자열로 나온다. 백엔드 userId는 숫자(Long)라 되돌린다.
         return [int(row.user_id) for row in rows if row.user_id is not None]
 
+    async def failed_user_ids(self, *, job_type: str, dedupe_key_prefix: str) -> list[int]:
+        """이 배치에서 재시도를 다 써서 포기(failed)한 job들의 payload.user_id 목록."""
+        rows = await self._session.execute(
+            text(
+                """
+                SELECT payload ->> 'user_id' AS user_id FROM ai_jobs
+                WHERE job_type = :job_type AND dedupe_key LIKE :prefix AND status = 'failed'
+                """
+            ),
+            {"job_type": job_type, "prefix": f"{dedupe_key_prefix}%"},
+        )
+        return [int(row.user_id) for row in rows if row.user_id is not None]
+
     async def try_claim_once(self, *, job_type: str, dedupe_key: str) -> bool:
         """(job_type, dedupe_key) 조합의 "최초 1회 실행권"을 얻는다.
 

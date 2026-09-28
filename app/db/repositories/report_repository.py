@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
@@ -205,7 +206,7 @@ class MonthlyReportRecord:
     """
 
     ai_recap_text: str
-    photo_scenes: list[str]
+    photo_scenes: list[dict[str, Any]]
 
 
 class MonthlyReportRepository:
@@ -224,7 +225,7 @@ class MonthlyReportRepository:
         year: int,
         month: int,
         ai_recap_text: str,
-        photo_scenes: list[str],
+        photo_scenes: list[dict[str, Any]],
     ) -> None:
         """이미 있으면 덮어쓴다 — job 재시도로 같은 달이 다시 들어올 수 있다."""
         stmt = insert(MonthlyReport).values(
@@ -260,3 +261,23 @@ class MonthlyReportRepository:
             ai_recap_text=row.ai_recap_text,
             photo_scenes=list(row.photo_scenes),
         )
+
+    async def get_many(
+        self, *, user_ids: list[int], year: int, month: int
+    ) -> dict[int, MonthlyReportRecord]:
+        """배치 완료 콜백에 여러 유저 결과를 한 번에 실어 보낼 때 쓴다."""
+        if not user_ids:
+            return {}
+        rows = await self._session.execute(
+            select(MonthlyReport).where(
+                MonthlyReport.user_id.in_(user_ids),
+                MonthlyReport.year == year,
+                MonthlyReport.month == month,
+            )
+        )
+        return {
+            row.user_id: MonthlyReportRecord(
+                ai_recap_text=row.ai_recap_text, photo_scenes=list(row.photo_scenes)
+            )
+            for row in rows.scalars()
+        }

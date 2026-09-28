@@ -14,7 +14,10 @@ async def test_monthly_report_returns_saved_content(client, monthly_reports):
         year=2026,
         month=9,
         ai_recap_text="당신은 주로 카페에서 잔잔한 음악을 들으며 편안한 시간을 보냈어요.",
-        photo_scenes=["카페", "노을"],
+        photo_scenes=[
+            {"tag": "카페", "count": 6, "ratio": 60},
+            {"tag": "노을", "count": 4, "ratio": 40},
+        ],
     )
 
     res = client.get("/api/reports/12?year=2026&month=9", headers=AUTH)
@@ -24,7 +27,10 @@ async def test_monthly_report_returns_saved_content(client, monthly_reports):
         "userId": 12,
         "year": 2026,
         "month": 9,
-        "photoScenes": ["카페", "노을"],
+        "photoScenes": [
+            {"tag": "카페", "count": 6, "ratio": 60},
+            {"tag": "노을", "count": 4, "ratio": 40},
+        ],
         "aiRecap": {
             "status": "COMPLETED",
             "text": "당신은 주로 카페에서 잔잔한 음악을 들으며 편안한 시간을 보냈어요.",
