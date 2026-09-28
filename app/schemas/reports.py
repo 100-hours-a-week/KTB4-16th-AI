@@ -26,11 +26,17 @@ class AiRecapOut(CamelModel):
     text: str
 
 
+class PhotoSceneOut(CamelModel):
+    tag: str
+    count: int
+    ratio: int
+
+
 class MonthlyReportDetailResponse(CamelModel):
     """기분·아티스트·장소 통계는 안 담는다 — 백엔드가 자기 MySQL로 직접 계산하기로 협의됨."""
 
     user_id: int
     year: int
     month: int
-    photo_scenes: list[str]
+    photo_scenes: list[PhotoSceneOut]
     ai_recap: AiRecapOut

@@ -92,8 +92,9 @@ class AiJob(Base):
 class MonthlyReport(Base):
     """기능2 RECAP 결과 스냅샷. 월 종료 후 배치가 사용자당 1행만 만들고 이후 안 바뀐다.
 
-    백엔드가 배치 완료 콜백을 받은 뒤 이 내용을 조회 API로 가져가서 자기 DB에 저장·서빙한다
-    (AI API 시트 "월간 리포트(RECAP) 생성" 협의: 콜백은 완료 알림만, 내용은 AI 조회 API로 전달).
+    배치가 끝나면 이 내용을 백엔드 콜백(MonthlyReportAiCallbackRequest)에 실어서
+    바로 전달한다 — 별도 조회 API 없이 콜백 하나로 백엔드가 필요한 내용을 다 받는다.
+    이 테이블은 콜백 전송 시점까지의 임시 보관 + 이후 재확인용 스냅샷 역할이다.
 
     기분·아티스트·장소 통계는 여기 안 둔다 — 백엔드가 자기 MySQL 원본으로 직접 계산하기로
     협의됨. AI는 요약 텍스트를 쓸 때만 내부적으로 그 값들을 계산해 쓰고 저장은 안 한다.
@@ -109,6 +110,6 @@ class MonthlyReport(Base):
     year: Mapped[int] = mapped_column(Integer)
     month: Mapped[int] = mapped_column(Integer)
     ai_recap_text: Mapped[str] = mapped_column(Text)
-    # 백엔드 photoScenes — 이번 달 사진에서 나온 장면 카테고리, 빈도 높은 순
-    photo_scenes: Mapped[list[str]] = mapped_column(ARRAY(String(20)), server_default="{}")
+    # 백엔드 photoScenes — [{"tag": "카페", "count": 6, "ratio": 43}, ...] 형태, 비중 높은 순
+    photo_scenes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
