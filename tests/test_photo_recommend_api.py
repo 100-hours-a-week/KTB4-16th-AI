@@ -46,3 +46,18 @@ def test_photo_recommend_missing_image_url_is_400():
     res = _client().post("/api/photo-recommend", json={}, headers=AUTH)
     assert res.status_code == 400
     assert res.json()["field"] == "imageUrl"
+
+
+def test_validation_failure_is_logged_without_values(caplog):
+    """400만 보이면 원인을 못 찾는다 — 필드·이유·Content-Type은 남기고 보낸 값은 남기지 않는다."""
+    secret_url = "https://storage.googleapis.com/b/a.jpg?X-Goog-Signature=secret"
+    with caplog.at_level("WARNING", logger="muro.api"):
+        res = _client().post(
+            "/api/photo-recommend",
+            content=f'{{"imageUrl": "{secret_url}"}}',
+            headers={**AUTH, "Content-Type": "text/plain"},
+        )
+
+    assert res.status_code == 400
+    assert "요청 검증 실패 POST /api/photo-recommend (Content-Type: text/plain)" in caplog.text
+    assert "secret" not in caplog.text
