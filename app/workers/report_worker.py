@@ -83,30 +83,33 @@ async def handle(payload: dict[str, Any]) -> None:
         )
     logger.info("report 저장 완료 user=%s %s-%s", user_id, year, month)
 
-    await _notify_if_batch_complete(clients, year=year, month=month, user_id=user_id)
+
+async def on_finished(payload: dict[str, Any]) -> None:
+    """worker_main이 이 job을 done 또는 failed로 확정한 뒤 부른다.
+
+    완료 알림을 handle() 끝(성공 경로)에만 두면, 배치에서 마지막으로 끝난 job이
+    실패(재시도 소진)일 때 아무도 알림을 안 보낸다 — 앞서 성공한 job들은 그때
+    "아직 남은 job 있음"을 보고 넘어갔기 때문. 그래서 성공·실패 양쪽이 지나는 여기로 뺐다.
+    """
+    await _notify_if_batch_complete(get_clients(), year=payload["year"], month=payload["month"])
 
 
-async def _notify_if_batch_complete(
-    clients: Clients, *, year: int, month: int, user_id: int
-) -> None:
+async def _notify_if_batch_complete(clients: Clients, *, year: int, month: int) -> None:
     """이 job으로 배치가 다 끝났으면 백엔드에 딱 한 번, 완성된 내용과 함께 알린다.
 
-    1. 내 job을 먼저 done으로 표시한다 — worker_main의 mark_done을 기다리면
-       "남은 개수 세기"가 나 자신을 아직 미완료로 착각한다.
-    2. 남은(pending·running) job이 0개면 배치가 끝난 것.
-    3. 그래도 여러 job이 동시에 끝나 동시에 0개를 볼 수 있으니, 유니크 제약으로
+    1. 남은(pending·running) job이 0개면 배치가 끝난 것. 이 job의 상태는
+       worker_main이 이미 done/failed로 확정해뒀으므로 자기 자신은 안 세어진다.
+    2. 그래도 여러 job이 동시에 끝나 동시에 0개를 볼 수 있으니, 유니크 제약으로
        "알림 전송권"을 한 번만 발급해서 실제로는 그중 하나만 진짜로 보낸다.
-    4. 콜백엔 완료 알림만이 아니라 각 유저의 실제 리포트 내용(aiRecap, photoScenes)도
+    3. 콜백엔 완료 알림만이 아니라 각 유저의 실제 리포트 내용(aiRecap, photoScenes)도
        실어서 보낸다 — 백엔드 DTO(MonthlyReportAiCallbackRequest) 협의 결과.
        재시도를 다 써서 포기(failed)한 유저도 results에 포함한다 — status만
        FAILED로 다르고 errorCode를 채운다(백엔드: 코드 값 자체는 안 정해짐, 구분만 필요).
     """
-    dedupe_key = f"{year}-{month}-{user_id}"
     dedupe_prefix = f"{year}-{month}-"
 
     async with get_postgres_sessionmaker()() as session:
         jobs = JobRepository(session)
-        await jobs.mark_done_by_dedupe_key(job_type=JOB_TYPE, dedupe_key=dedupe_key)
         remaining = await jobs.count_incomplete(job_type=JOB_TYPE, dedupe_key_prefix=dedupe_prefix)
         if remaining > 0:
             return  # 아직 다른 사용자 job이 처리 중 — 마지막 job이 알림을 보낼 것
