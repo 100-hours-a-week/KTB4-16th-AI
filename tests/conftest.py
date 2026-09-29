@@ -9,7 +9,11 @@ from typing import Any  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-from app.dependencies import get_embedding_store, get_job_repository  # noqa: E402
+from app.dependencies import (  # noqa: E402
+    get_embedding_store,
+    get_job_repository,
+    get_monthly_report_repository,
+)
 from app.main import create_app  # noqa: E402
 
 AUTH = {"X-Internal-Token": "test-token"}
@@ -42,6 +46,40 @@ class InMemoryEmbeddingStore:
         self.rows.pop(record_id, None)
 
 
+class InMemoryMonthlyReportRepository:
+    def __init__(self) -> None:
+        self.rows: dict[tuple[int, int, int], dict[str, Any]] = {}
+
+    async def save(
+        self,
+        *,
+        user_id: int,
+        year: int,
+        month: int,
+        ai_recap_text: str,
+        photo_scenes: list[dict[str, Any]],
+    ) -> None:
+        self.rows[(user_id, year, month)] = {
+            "ai_recap_text": ai_recap_text,
+            "photo_scenes": photo_scenes,
+        }
+
+    async def get(self, *, user_id: int, year: int, month: int) -> Any:
+        from app.db.repositories.report_repository import MonthlyReportRecord
+
+        row = self.rows.get((user_id, year, month))
+        return None if row is None else MonthlyReportRecord(**row)
+
+    async def get_many(self, *, user_ids: list[int], year: int, month: int) -> dict[int, Any]:
+        from app.db.repositories.report_repository import MonthlyReportRecord
+
+        return {
+            uid: MonthlyReportRecord(**row)
+            for uid in user_ids
+            if (row := self.rows.get((uid, year, month))) is not None
+        }
+
+
 @pytest.fixture
 def jobs() -> InMemoryJobRepository:
     return InMemoryJobRepository()
@@ -53,10 +91,20 @@ def store() -> InMemoryEmbeddingStore:
 
 
 @pytest.fixture
-def client(jobs: InMemoryJobRepository, store: InMemoryEmbeddingStore) -> TestClient:
+def monthly_reports() -> InMemoryMonthlyReportRepository:
+    return InMemoryMonthlyReportRepository()
+
+
+@pytest.fixture
+def client(
+    jobs: InMemoryJobRepository,
+    store: InMemoryEmbeddingStore,
+    monthly_reports: InMemoryMonthlyReportRepository,
+) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_job_repository] = lambda: jobs
     app.dependency_overrides[get_embedding_store] = lambda: store
+    app.dependency_overrides[get_monthly_report_repository] = lambda: monthly_reports
     return TestClient(app)
 
 
