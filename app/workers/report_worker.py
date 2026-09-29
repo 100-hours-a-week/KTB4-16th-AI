@@ -10,27 +10,22 @@ from app.components.report_summarizer import ReportSummarizer
 from app.db.mysql import get_sessionmaker as get_mysql_sessionmaker
 from app.db.postgres import get_sessionmaker as get_postgres_sessionmaker
 from app.db.repositories.job_repository import JobRepository
-from app.db.repositories.report_repository import RecordSummary, ReportRepository
+from app.db.repositories.report_repository import (
+    MonthlyReportRepository,
+    RecordSummary,
+    ReportRepository,
+)
 from app.dependencies import Clients, get_clients, get_clip_tagger
 
 JOB_TYPE = "report"
 
 
-@dataclass(frozen=True)
-class MonthlyReportResult:
-    """이번 달 RECAP 결과 묶음. 저장 위치(AI 소유 테이블? 백엔드 콜백?)는 아직 미정 —
-    지금은 이 형태로 로그에만 남긴다."""
-
-    ai_recap: str
-    top_artist: str | None
-    top_place: str | None
-    avg_mood: float | None
-    photo_category_distribution: dict[str, float]
-
-
 # "이 배치(year-month) 알림을 이미 보냈는지"를 ai_jobs의 기존 유니크 제약으로
 # 체크하기 위한 전용 job_type. 실제 처리 작업이 아니라 "알림 1회 전송권" 표식일 뿐이다.
 BATCH_NOTIFY_JOB_TYPE = "report_batch_notify"
+
+# 백엔드: errorCode 값 자체는 정해진 목록 없음, COMPLETED/FAILED 구분만 필요하다고 확인됨.
+FAILED_ERROR_CODE = "GENERATION_FAILED"
 
 logger = logging.getLogger("muro.worker.report")
 
@@ -75,17 +70,18 @@ async def handle(payload: dict[str, Any]) -> None:
     summarizer = ReportSummarizer(clients.llm_general)
     summary = await summarizer.summarize(record_lines, stats, photo_category_distribution)
 
-    result = MonthlyReportResult(
-        ai_recap=summary,
-        top_artist=stats.top_artist,
-        top_place=stats.top_place,
-        avg_mood=stats.avg_mood_score,
-        photo_category_distribution=photo_category_distribution,
-    )
-    # TODO: result를 실제로 어디에 저장/전달할지는 아직 미정
-    # (AI 소유 monthly_reports 테이블? 백엔드가 가져갈 조회 API?) —
-    # 확정 전이라 지금은 로그로만 남긴다. 콜백에는 이 내용이 안 실린다(AI API 시트 기준).
-    logger.info("report 완료 user=%s %s-%s: %s", user_id, year, month, result)
+    # stats(기분·아티스트·장소)는 저장 안 함 — 백엔드가 자기 MySQL 원본으로 직접 계산하기로
+    # 협의됨. 위에서 요약 텍스트를 쓸 때만 내부적으로 썼다.
+    scene_stats = _photo_scene_stats(photo_tags_by_record)
+    async with get_postgres_sessionmaker()() as pg_session:
+        await MonthlyReportRepository(pg_session).save(
+            user_id=user_id,
+            year=year,
+            month=month,
+            ai_recap_text=summary,
+            photo_scenes=[_scene_stat_dict(s) for s in scene_stats],
+        )
+    logger.info("report 저장 완료 user=%s %s-%s", user_id, year, month)
 
     await _notify_if_batch_complete(clients, year=year, month=month, user_id=user_id)
 
@@ -93,13 +89,17 @@ async def handle(payload: dict[str, Any]) -> None:
 async def _notify_if_batch_complete(
     clients: Clients, *, year: int, month: int, user_id: int
 ) -> None:
-    """이 job으로 배치가 다 끝났으면 백엔드에 딱 한 번 알린다.
+    """이 job으로 배치가 다 끝났으면 백엔드에 딱 한 번, 완성된 내용과 함께 알린다.
 
     1. 내 job을 먼저 done으로 표시한다 — worker_main의 mark_done을 기다리면
        "남은 개수 세기"가 나 자신을 아직 미완료로 착각한다.
     2. 남은(pending·running) job이 0개면 배치가 끝난 것.
     3. 그래도 여러 job이 동시에 끝나 동시에 0개를 볼 수 있으니, 유니크 제약으로
        "알림 전송권"을 한 번만 발급해서 실제로는 그중 하나만 진짜로 보낸다.
+    4. 콜백엔 완료 알림만이 아니라 각 유저의 실제 리포트 내용(aiRecap, photoScenes)도
+       실어서 보낸다 — 백엔드 DTO(MonthlyReportAiCallbackRequest) 협의 결과.
+       재시도를 다 써서 포기(failed)한 유저도 results에 포함한다 — status만
+       FAILED로 다르고 errorCode를 채운다(백엔드: 코드 값 자체는 안 정해짐, 구분만 필요).
     """
     dedupe_key = f"{year}-{month}-{user_id}"
     dedupe_prefix = f"{year}-{month}-"
@@ -117,15 +117,48 @@ async def _notify_if_batch_complete(
         if not claimed:
             return  # 다른 job이 이미 이 배치의 알림을 보냈음(동시 완료 레이스)
 
-        user_ids = await jobs.completed_user_ids(job_type=JOB_TYPE, dedupe_key_prefix=dedupe_prefix)
+        completed_ids = await jobs.completed_user_ids(
+            job_type=JOB_TYPE, dedupe_key_prefix=dedupe_prefix
+        )
+        failed_ids = await jobs.failed_user_ids(job_type=JOB_TYPE, dedupe_key_prefix=dedupe_prefix)
+        reports = await MonthlyReportRepository(session).get_many(
+            user_ids=completed_ids, year=year, month=month
+        )
+
+    results = [
+        {
+            "userId": uid,
+            "status": "COMPLETED",
+            "aiRecap": {"text": record.ai_recap_text},
+            "photoScenes": record.photo_scenes,
+            "errorCode": None,
+        }
+        for uid, record in reports.items()
+    ] + [
+        {
+            "userId": uid,
+            "status": "FAILED",
+            "aiRecap": {"text": None},
+            "photoScenes": [],
+            "errorCode": FAILED_ERROR_CODE,
+        }
+        for uid in failed_ids
+    ]
 
     await clients.backend.notify_report_ready(
+        job_id=f"report_batch_{year}-{month}",
         year=year,
         month=month,
-        user_ids=user_ids,
         generated_at=datetime.now(UTC).isoformat(),
+        results=results,
     )
-    logger.info("배치 완료 알림 전송 %s-%s: 대상 %d명", year, month, len(user_ids))
+    logger.info(
+        "배치 완료 알림 전송 %s-%s: 성공 %d명, 실패 %d명",
+        year,
+        month,
+        len(reports),
+        len(failed_ids),
+    )
 
 
 def _build_record_lines(
@@ -194,3 +227,26 @@ def _category_distribution(photo_tags_by_record: dict[int, list[str]]) -> dict[s
     counts = Counter(tags[0] if tags else OTHER_CATEGORY for tags in photo_tags_by_record.values())
     total = sum(counts.values())
     return {category: count / total for category, count in counts.items()}
+
+
+@dataclass(frozen=True)
+class PhotoSceneStat:
+    tag: str
+    count: int
+    ratio: int  # 백분율, 반올림
+
+
+def _photo_scene_stats(photo_tags_by_record: dict[int, list[str]]) -> list[PhotoSceneStat]:
+    """백엔드 photoScenes — 카테고리별 개수·비중(%)을 비중 높은 순으로 정리한다."""
+    if not photo_tags_by_record:
+        return []
+    counts = Counter(tags[0] if tags else OTHER_CATEGORY for tags in photo_tags_by_record.values())
+    total = sum(counts.values())
+    return [
+        PhotoSceneStat(tag=tag, count=count, ratio=round(count / total * 100))
+        for tag, count in counts.most_common()
+    ]
+
+
+def _scene_stat_dict(stat: PhotoSceneStat) -> dict[str, Any]:
+    return {"tag": stat.tag, "count": stat.count, "ratio": stat.ratio}

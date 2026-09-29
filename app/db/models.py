@@ -87,3 +87,29 @@ class AiJob(Base):
     run_after: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MonthlyReport(Base):
+    """기능2 RECAP 결과 스냅샷. 월 종료 후 배치가 사용자당 1행만 만들고 이후 안 바뀐다.
+
+    배치가 끝나면 이 내용을 백엔드 콜백(MonthlyReportAiCallbackRequest)에 실어서
+    바로 전달한다 — 별도 조회 API 없이 콜백 하나로 백엔드가 필요한 내용을 다 받는다.
+    이 테이블은 콜백 전송 시점까지의 임시 보관 + 이후 재확인용 스냅샷 역할이다.
+
+    기분·아티스트·장소 통계는 여기 안 둔다 — 백엔드가 자기 MySQL 원본으로 직접 계산하기로
+    협의됨. AI는 요약 텍스트를 쓸 때만 내부적으로 그 값들을 계산해 쓰고 저장은 안 한다.
+    """
+
+    __tablename__ = "monthly_reports"
+    __table_args__ = (
+        UniqueConstraint("user_id", "year", "month", name="uq_monthly_reports_user_year_month"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    year: Mapped[int] = mapped_column(Integer)
+    month: Mapped[int] = mapped_column(Integer)
+    ai_recap_text: Mapped[str] = mapped_column(Text)
+    # 백엔드 photoScenes — [{"tag": "카페", "count": 6, "ratio": 43}, ...] 형태, 비중 높은 순
+    photo_scenes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

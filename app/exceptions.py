@@ -38,6 +38,12 @@ class NotImplementedFeatureError(AppError):
     message = "아직 구현되지 않은 기능이에요."
 
 
+class MonthlyReportNotFoundError(AppError):
+    status_code = 404
+    code = "MONTHLY_REPORT_NOT_FOUND"
+    message = "해당 월의 리포트를 찾을 수 없어요."
+
+
 class UpstreamError(AppError):
     status_code = 503
     code = "UPSTREAM_UNAVAILABLE"
