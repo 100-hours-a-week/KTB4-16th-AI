@@ -2,7 +2,7 @@
 
 순서:
   1. DB 마이그레이션 (alembic upgrade head). DB가 아직 안 떴으면 잠깐 기다렸다 다시 시도
-  2. ① gateway ② moderation ③ worker 를 동시에 띄움
+  2. ① gateway ② moderation ③ worker 를 동시에 띄움 (RUN_WORKER=false면 ③은 빼고)
 
 셋 중 하나라도 죽으면 나머지도 내리고 컨테이너를 종료한다. 반쯤 살아있는 컨테이너로
 남으면 밖에서는 정상처럼 보이는데 기능 일부만 안 되는 상태가 되기 때문이다 — 종료되면
@@ -28,7 +28,7 @@ STOP_TIMEOUT_SECONDS = 10
 def commands() -> dict[str, list[str]]:
     settings = get_settings()
     uvicorn = [sys.executable, "-m", "uvicorn", "--host", "0.0.0.0"]
-    return {
+    cmds = {
         "gateway": [*uvicorn, "app.main:app", "--port", str(settings.gateway_port)],
         "moderation": [
             *uvicorn,
@@ -36,8 +36,12 @@ def commands() -> dict[str, list[str]]:
             "--port",
             str(settings.moderation_port),
         ],
-        "worker": [sys.executable, "-m", "app.worker_main"],
     }
+    if settings.run_worker:
+        cmds["worker"] = [sys.executable, "-m", "app.worker_main"]
+    else:
+        logger.info("RUN_WORKER=false — 워커 없이 API 서버만 띄운다 (블루그린 대기 VM)")
+    return cmds
 
 
 def migrate() -> None:
