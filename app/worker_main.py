@@ -11,13 +11,20 @@ from app.config import get_settings
 from app.db.postgres import get_engine, get_sessionmaker
 from app.db.repositories.job_repository import ClaimedJob, JobRepository
 from app.workers import embedding_worker, report_worker
-from app.workers.types import JobHandler
+from app.workers.types import JobFinishedHook, JobHandler
 
 logger = logging.getLogger("muro.worker")
 
 HANDLERS: dict[str, JobHandler] = {
     embedding_worker.JOB_TYPE: embedding_worker.handle,
     report_worker.JOB_TYPE: report_worker.handle,
+}
+
+# 성공이든 최종 실패든 job이 끝나면 부른다. 핸들러 안(성공 경로)에만 두면 실패로
+# 끝난 job은 후처리를 못 탄다 — 배치의 마지막 job이 실패하면 완료 알림이 영영 안
+# 나가던 문제(2026-09 RECAP)가 이것 때문이었다.
+ON_FINISHED: dict[str, JobFinishedHook] = {
+    report_worker.JOB_TYPE: report_worker.on_finished,
 }
 
 
@@ -47,12 +54,27 @@ async def _execute(job: ClaimedJob) -> None:
     except Exception as e:
         logger.exception("job %s 실패 (시도 %s/%s)", job.id, job.attempts, job.max_attempts)
         async with sessionmaker() as session:
-            await JobRepository(session).mark_failed(job, f"{type(e).__name__}: {e}")
+            gave_up = await JobRepository(session).mark_failed(job, f"{type(e).__name__}: {e}")
+        if gave_up:
+            await _on_finished(job)
         return
 
     async with sessionmaker() as session:
         await JobRepository(session).mark_done(job.id)
     logger.info("job %s 완료 (%s)", job.id, job.job_type)
+    await _on_finished(job)
+
+
+async def _on_finished(job: ClaimedJob) -> None:
+    """상태(done·failed)를 먼저 확정한 뒤에 부른다 — 그래야 후처리가 "남은 job"을
+    셀 때 이 job을 끝난 것으로 본다. 후처리가 실패해도 job 자체의 결과는 그대로 둔다."""
+    hook = ON_FINISHED.get(job.job_type)
+    if hook is None:
+        return
+    try:
+        await hook(job.payload)
+    except Exception:
+        logger.exception("job %s 후처리 실패 (%s)", job.id, job.job_type)
 
 
 async def main() -> None:

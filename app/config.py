@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     moderation_port: int = 8001
 
     # 워커 (Postgres 기반 작업 큐)
+    # 블루그린 대기 VM은 false — 워커는 LB를 안 거치고 공유 DB 큐에서 직접 작업을 가져가서,
+    # 대기 VM에서도 돌면 다른 버전 코드가 운영 작업을 처리해 버린다. CD가 트래픽 전환 때 바꾼다.
+    run_worker: bool = True
     worker_poll_interval_seconds: float = 1.0
     job_max_attempts: int = 3
     job_stale_after_seconds: int = 600
