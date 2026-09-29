@@ -111,9 +111,12 @@ jobs:
             exit 1
           fi
 
-          # 새 운영 VM 워커 켜기 — 아직 트래픽을 안 받는 상태라 재시작해도 서비스 영향 없음
+          # 새 운영 VM 워커 켜기 — 아직 트래픽을 안 받는 상태라 재시작해도 서비스 영향 없음.
+          # IMAGE_TAG는 deploy job의 SSH 세션에서만 export됐고 여긴 새 세션이라 비어있으므로,
+          # 재pull 없이 그 VM이 지금 실제로 돌리고 있는 이미지 태그를 그대로 읽어서 재사용한다.
           gcloud compute ssh "$STANDBY_VM" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
             cd ~/app &&
+            export IMAGE_TAG=\$(docker inspect ai --format='{{.Config.Image}}' | cut -d: -f2) &&
             sed -i 's/^RUN_WORKER=.*/RUN_WORKER=true/' ai.env &&
             docker compose up -d --force-recreate ai
           "
@@ -139,9 +142,12 @@ jobs:
           gcloud compute instances add-access-config "$ACTIVE_VM" \
             --zone="${{ env.ZONE }}" --access-config-name="External NAT"
 
-          # 옛 운영 VM 워커 끄기 — 이미 트래픽이 빠진 상태라 재시작해도 서비스 영향 없음
+          # 옛 운영 VM 워커 끄기 — 이미 트래픽이 빠진 상태라 재시작해도 서비스 영향 없음.
+          # 여기도 새 세션이라 IMAGE_TAG가 비어있으므로, 이 VM이 지금 돌리고 있는(옛) 이미지
+          # 태그를 그대로 읽어서 재사용한다 — 새로 배포된 태그로 실수로 덮어쓰지 않기 위함이다.
           gcloud compute ssh "$ACTIVE_VM" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
             cd ~/app &&
+            export IMAGE_TAG=\$(docker inspect ai --format='{{.Config.Image}}' | cut -d: -f2) &&
             (grep -q '^RUN_WORKER=' ai.env && sed -i 's/^RUN_WORKER=.*/RUN_WORKER=false/' ai.env || echo 'RUN_WORKER=false' >> ai.env) &&
             docker compose up -d --force-recreate ai
           "
