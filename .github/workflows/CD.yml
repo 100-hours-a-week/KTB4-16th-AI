@@ -12,7 +12,7 @@ env:
 jobs:
   # 스모크 테스트는 CI 쪽 테스트 코드로 대체하기로 해서 여기선 배포만 한다.
   deploy:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main') }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -66,6 +66,7 @@ jobs:
           YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}
           BACKEND_MYSQL_URL=${{ secrets.BACKEND_MYSQL_URL }}
           BACKEND_INTERNAL_URL=${{ secrets.BACKEND_INTERNAL_URL }}
+          RUN_WORKER=false
           ENVEOF
 
       # 4. Standby VM에 env 전송 + ai 컨테이너만 새 이미지로 교체
@@ -110,6 +111,13 @@ jobs:
             exit 1
           fi
 
+          # 새 운영 VM 워커 켜기 — 아직 트래픽을 안 받는 상태라 재시작해도 서비스 영향 없음
+          gcloud compute ssh "$STANDBY_VM" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
+            cd ~/app &&
+            sed -i 's/^RUN_WORKER=.*/RUN_WORKER=true/' ai.env &&
+            docker compose up -d --force-recreate ai
+          "
+
           gcloud compute instances delete-access-config "$ACTIVE_VM" \
             --zone="${{ env.ZONE }}" --access-config-name="External NAT"
 
@@ -130,3 +138,10 @@ jobs:
           # 임시(ephemeral) 외부 IP를 다시 붙여서 인터넷 접속을 유지시켜준다.
           gcloud compute instances add-access-config "$ACTIVE_VM" \
             --zone="${{ env.ZONE }}" --access-config-name="External NAT"
+
+          # 옛 운영 VM 워커 끄기 — 이미 트래픽이 빠진 상태라 재시작해도 서비스 영향 없음
+          gcloud compute ssh "$ACTIVE_VM" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
+            cd ~/app &&
+            (grep -q '^RUN_WORKER=' ai.env && sed -i 's/^RUN_WORKER=.*/RUN_WORKER=false/' ai.env || echo 'RUN_WORKER=false' >> ai.env) &&
+            docker compose up -d --force-recreate ai
+          "
