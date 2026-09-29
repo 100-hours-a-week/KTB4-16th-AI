@@ -1,6 +1,9 @@
 import sys
 
-from app.launcher import supervise
+import pytest
+
+from app.config import get_settings
+from app.launcher import commands, supervise
 
 
 def _py(code: str) -> list[str]:
@@ -24,3 +27,27 @@ def test_process_exiting_normally_is_still_treated_as_failure():
     code = supervise({"long": _py("import time; time.sleep(60)"), "quit": _py("pass")})
 
     assert code == 1
+
+
+@pytest.fixture
+def run_worker_env(monkeypatch):
+    def _set(value: str | None) -> None:
+        if value is None:
+            monkeypatch.delenv("RUN_WORKER", raising=False)
+        else:
+            monkeypatch.setenv("RUN_WORKER", value)
+        get_settings.cache_clear()
+
+    yield _set
+    get_settings.cache_clear()
+
+
+def test_worker_runs_by_default(run_worker_env):
+    run_worker_env(None)
+    assert set(commands()) == {"gateway", "moderation", "worker"}
+
+
+def test_run_worker_false_starts_only_api_servers(run_worker_env):
+    """블루그린 대기 VM — 워커가 공유 DB 큐에서 운영 작업을 가져가지 않게 뺀다."""
+    run_worker_env("false")
+    assert set(commands()) == {"gateway", "moderation"}

@@ -6,6 +6,7 @@ from app.db.postgres import get_sessionmaker as get_postgres_sessionmaker
 from app.db.repositories.job_repository import JobRepository
 from app.db.repositories.report_repository import ReportRepository
 from app.schemas.reports import ReportBatchGenerateRequest, ReportBatchQueuedResponse
+from app.workers.report_worker import BATCH_NOTIFY_JOB_TYPE
 
 JOB_TYPE = "report"
 
@@ -16,6 +17,12 @@ class ReportService:
 
     async def enqueue_batch(self, req: ReportBatchGenerateRequest) -> ReportBatchQueuedResponse:
         user_ids = await self._resolve_target_user_ids(req)
+
+        # 같은 달을 다시 돌리면(QA 재생성 등) 지난 배치의 "알림 1회 전송권"이 남아 있어
+        # 이번 배치가 끝나도 콜백이 안 나간다 — 새 배치를 넣기 전에 돌려놓는다.
+        await self._jobs.release_once(
+            job_type=BATCH_NOTIFY_JOB_TYPE, dedupe_key=f"{req.year}-{req.month}"
+        )
 
         max_attempts = get_settings().job_max_attempts
         for user_id in user_ids:
