@@ -102,8 +102,12 @@ class JobRepository:
         )
         await self._session.commit()
 
-    async def mark_failed(self, job: ClaimedJob, error: str) -> None:
-        """재시도가 남으면 지수 백오프 후 pending, 아니면 failed."""
+    async def mark_failed(self, job: ClaimedJob, error: str) -> bool:
+        """재시도가 남으면 지수 백오프 후 pending, 아니면 failed.
+
+        재시도를 다 써서 포기(failed)했으면 True — 호출부가 "이 job은 이제 끝났다"는
+        후처리(배치 완료 알림 등)를 할 수 있게 알려준다.
+        """
         retry = job.attempts < job.max_attempts
         delay = RETRY_BASE_SECONDS * 2 ** (job.attempts - 1)
         await self._session.execute(
@@ -125,6 +129,7 @@ class JobRepository:
             },
         )
         await self._session.commit()
+        return not retry
 
     async def cancel(self, *, job_type: str, dedupe_key: str) -> None:
         """작업을 cancelled로 표시한다. 워커는 cancelled 작업을 꺼내지 않고,
@@ -133,21 +138,6 @@ class JobRepository:
             text(
                 "UPDATE ai_jobs SET status = 'cancelled', updated_at = now() "
                 "WHERE job_type = :job_type AND dedupe_key = :key"
-            ),
-            {"job_type": job_type, "key": dedupe_key},
-        )
-        await self._session.commit()
-
-    async def mark_done_by_dedupe_key(self, *, job_type: str, dedupe_key: str) -> None:
-        """(job_type, dedupe_key)로 직접 done 처리. job_id를 모르는 호출부(핸들러 내부)가
-        "배치의 남은 개수"를 정확히 세려면, worker_main의 mark_done을 기다리지 않고
-        여기서 먼저 자기 상태를 반영해야 한다 (그래야 나중의 count_incomplete가 자신을
-        빼고 셀 수 있음). worker_main이 이후 호출할 mark_done(job_id)은 이미 done이라
-        조건에 안 걸려 조용히 아무 일도 안 한다."""
-        await self._session.execute(
-            text(
-                "UPDATE ai_jobs SET status = 'done', last_error = NULL, updated_at = now() "
-                "WHERE job_type = :job_type AND dedupe_key = :key AND status = 'running'"
             ),
             {"job_type": job_type, "key": dedupe_key},
         )
@@ -213,3 +203,15 @@ class JobRepository:
         result = await self._session.execute(stmt)
         await self._session.commit()
         return result.rowcount > 0
+
+    async def release_once(self, *, job_type: str, dedupe_key: str) -> None:
+        """try_claim_once로 발급한 실행권을 돌려놓는다 — 같은 일을 다시 한 번 할 수 있게.
+
+        배치를 다시 돌릴 때(QA 재생성 등) 지난번 알림 실행권이 남아 있으면
+        새 배치가 끝나도 알림이 안 나간다.
+        """
+        await self._session.execute(
+            text("DELETE FROM ai_jobs WHERE job_type = :job_type AND dedupe_key = :key"),
+            {"job_type": job_type, "key": dedupe_key},
+        )
+        await self._session.commit()

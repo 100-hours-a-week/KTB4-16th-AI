@@ -34,6 +34,9 @@ class InMemoryJobRepository:
     async def cancel(self, *, job_type: str, dedupe_key: str) -> None:
         self.jobs.pop((job_type, dedupe_key), None)
 
+    async def release_once(self, *, job_type: str, dedupe_key: str) -> None:
+        self.jobs.pop((job_type, dedupe_key), None)
+
 
 class InMemoryEmbeddingStore:
     def __init__(self) -> None:
