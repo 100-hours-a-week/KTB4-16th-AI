@@ -111,6 +111,29 @@ jobs:
             exit 1
           fi
 
+          # 세 CD(backend/frontend/ai)가 서로 독립적으로 이 라벨/IP를 바꾸다 보니, 이
+          # CD가 스위치해도 다른 두 서비스는 이 VM에 예전에 마지막으로 배포됐던 버전
+          # 그대로 남아있을 수 있다(2026-09-30 backend/frontend 양쪽에서 실제 발생).
+          # active가 되기 전에 다른 서비스들도 최신 태그인지 확인해 동기화한다.
+          for SERVICE in backend frontend; do
+            LATEST=$(gcloud artifacts docker images list \
+              "${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/$SERVICE/$SERVICE" \
+              --include-tags --sort-by="~UPDATE_TIME" --limit=1 --format="value(TAGS)" | cut -d',' -f1)
+
+            gcloud compute ssh "$STANDBY_VM" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
+              cd ~/app &&
+              CURRENT=\$(docker inspect $SERVICE --format='{{.Config.Image}}' | rev | cut -d: -f1 | rev) &&
+              if [ \"\$CURRENT\" != \"$LATEST\" ]; then
+                echo \"$SERVICE 동기화: \$CURRENT -> $LATEST\" &&
+                export IMAGE_TAG=$LATEST &&
+                docker compose pull $SERVICE &&
+                docker compose up -d $SERVICE
+              else
+                echo \"$SERVICE 이미 최신 (\$CURRENT)\"
+              fi
+            "
+          done
+
           # 새 운영 VM 워커 켜기 — 아직 트래픽을 안 받는 상태라 재시작해도 서비스 영향 없음.
           # IMAGE_TAG는 deploy job의 SSH 세션에서만 export됐고 여긴 새 세션이라 비어있으므로,
           # 재pull 없이 그 VM이 지금 실제로 돌리고 있는 이미지 태그를 그대로 읽어서 재사용한다.
