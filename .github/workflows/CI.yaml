@@ -1,19 +1,33 @@
 name: AI CI develop
 
 on:
+  push:
+    branches:
+      - develop
   pull_request:
     branches:
       - develop
 
+concurrency:
+  group: ai-main-release
+  cancel-in-progress: false
+
+
 jobs:
-  ci:
-    name: AI CI
+  pr-ci:
+    if: github.event_name == 'pull_request'
+    name: AI CI pull_request
     runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
 
     steps:
       # 1. 코드 체크아웃
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
             
       # 2. Ruff 설치 + 린트 검사  
       - name: Ruff 실행
@@ -45,7 +59,7 @@ jobs:
   notify:
       name: Discord notification
       runs-on: ubuntu-latest
-      needs: ci
+      needs: pr-ci
 
       # CI가 실패해도 알림 작업 실행
       if: ${{ always() }}
@@ -65,10 +79,10 @@ jobs:
             DISCORD_EMBEDS: |
               [
                 {
-                  "title": "AI develop CI: ${{ needs.ci.result }}",
+                  "title": "AI develop CI: ${{ needs.pr-ci.result }}",
                   "description": ${{ toJSON(github.event.pull_request.title) }},
                   "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                  "color": ${{ needs.ci.result == 'success' && 3066993 || 15158332 }},
+                  "color": ${{ needs.pr-ci.result == 'success' && 3066993 || 15158332 }},
                   "fields": [
                     {
                       "name": "PR",
@@ -93,3 +107,115 @@ jobs:
                   ]
                 }
               ]
+  push-ci:
+    if: github.event_name == 'push'
+    name: AI CI push
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+      id-token: write
+    
+    env:
+      IMAGE_BASE: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID_Develop }}/${{ secrets.PROJECT_REPOSITORY }}/${{ secrets.IMAGE_NAME }}
+
+    steps:
+      # 1. 코드 체크아웃
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          # semantic-release가 Git 태그 및 히스토리를 분석해야 하므로 0 유지 필수
+          fetch-depth: 0
+
+      # 2. Python 환경 설정
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      # 3. 애플리케이션 의존성 설치
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      # 4. 컴파일
+      - name: Check Python syntax
+        run: python -m compileall .
+
+      # 5. 
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+          
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID_Develop }}
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER_Develop }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT_Develop }}
+          
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v3
+
+      - name: Configure Docker authentication
+        run: |
+          gcloud auth configure-docker "${{ secrets.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Release backend image
+        env:
+          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
+        run: |
+          npx --yes \
+            --package=semantic-release@25 \
+            --package=@semantic-release/exec@7 \
+            semantic-release
+
+  notify-2:
+    name: Discord notification
+    runs-on: ubuntu-latest
+    needs: push-ci
+    if: ${{ always() && github.event_name == 'push' }}
+    permissions: {}
+
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+    steps:
+      - name: Send CI result to Discord
+        if: ${{ env.DISCORD_WEBHOOK != '' }}
+        uses: Ilshidur/action-discord@0.3.2
+        with:
+          args: "AI Develop push CI 결과 알림"
+        env:
+          DISCORD_USERNAME: MURO_BOT
+          DISCORD_EMBEDS: |
+            [
+              {
+                "title": "AI CI: ${{ needs.push-ci.result }}",
+                "description": ${{ toJSON(github.event.head_commit.message || '커밋 메시지 없음') }},
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "color": ${{ needs.push-ci.result == 'success' && 3066993 || 15158332 }},
+                "fields": [
+                  {
+                    "name": "커밋",
+                    "value": "[커밋 확인](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})",
+                    "inline": true
+                  },
+                  {
+                    "name": "푸시한 사람",
+                    "value": ${{ toJSON(github.actor) }},
+                    "inline": true
+                  },
+                  {
+                    "name": "브랜치",
+                    "value": ${{ toJSON(github.ref_name) }},
+                    "inline": true
+                  }
+                ]
+              }
+            ]
+      
