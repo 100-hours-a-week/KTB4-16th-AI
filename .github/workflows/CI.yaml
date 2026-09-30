@@ -8,6 +8,7 @@ on:
     branches:
       - develop
 
+# 동시성 제어
 concurrency:
   group: ai-develop-release
   cancel-in-progress: false
