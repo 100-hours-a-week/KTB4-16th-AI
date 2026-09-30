@@ -18,6 +18,7 @@ logger = logging.getLogger("muro.worker")
 HANDLERS: dict[str, JobHandler] = {
     embedding_worker.JOB_TYPE: embedding_worker.handle,
     report_worker.JOB_TYPE: report_worker.handle,
+    report_worker.BATCH_NOTIFY_JOB_TYPE: report_worker.handle_batch_notify,
 }
 
 # 성공이든 최종 실패든 job이 끝나면 부른다. 핸들러 안(성공 경로)에만 두면 실패로
