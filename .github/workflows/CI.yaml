@@ -62,7 +62,7 @@ jobs:
       needs: pr-ci
 
       # CI가 실패해도 알림 작업 실행
-      if: ${{ always() }}
+      if: ${{ always() && github.event_name == 'pull_request' }}
       permissions: {}
 
       env:
