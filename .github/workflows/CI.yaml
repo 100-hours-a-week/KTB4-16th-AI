@@ -12,6 +12,8 @@ concurrency:
   group: ai-develop-release
   cancel-in-progress: false
 
+env:
+  ZONE: asia-northeast3-a
 
 jobs:
   pr-ci:
@@ -28,25 +30,22 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 1
-            
-      # 2. Ruff 설치 + 린트 검사  
+
+      # 2. Ruff 설치 + 린트 검사
       - name: Ruff 실행
         uses: astral-sh/ruff-action@v3
         with:
-            args: "check"
+          args: "check"
 
-      
       # 3. Ruff로 포맷 검사
       - name: Run Ruff Formatter Check
         run: ruff format --check .
-        
 
       # 4. Python 환경 설정
       - name: Set up Python
         uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-
 
       # 5. 애플리케이션 의존성 설치
       - name: Install dependencies
@@ -55,67 +54,68 @@ jobs:
       # 6. 컴파일
       - name: Check Python syntax
         run: python -m compileall .
-        
+
   notify:
-      name: Discord notification
-      runs-on: ubuntu-latest
-      needs: pr-ci
+    name: Discord notification
+    runs-on: ubuntu-latest
+    needs: pr-ci
 
-      # CI가 실패해도 알림 작업 실행
-      if: ${{ always() && github.event_name == 'pull_request' }}
-      permissions: {}
+    # CI가 실패해도 알림 작업 실행 (PR 이벤트일 때만)
+    if: ${{ always() && github.event_name == 'pull_request' }}
+    permissions: {}
 
-      env:
-        DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
 
-      steps:
-        - name: Send CI result to Discord
-          if: ${{ env.DISCORD_WEBHOOK != '' }}
-          uses: Ilshidur/action-discord@0.3.2
-          with:
-            args: "AI CI 결과 알림"
-          env:
-            DISCORD_USERNAME: MURO_BOT
-            DISCORD_EMBEDS: |
-              [
-                {
-                  "title": "AI develop CI: ${{ needs.pr-ci.result }}",
-                  "description": ${{ toJSON(github.event.pull_request.title) }},
-                  "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                  "color": ${{ needs.pr-ci.result == 'success' && 3066993 || 15158332 }},
-                  "fields": [
-                    {
-                      "name": "PR",
-                      "value": "[#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})",
-                      "inline": true
-                    },
-                    {
-                      "name": "작성자",
-                      "value": ${{ toJSON(github.event.pull_request.user.login) }},
-                      "inline": true
-                    },
-                    {
-                      "name": "작업 브랜치",
-                      "value": ${{ toJSON(github.head_ref) }},
-                      "inline": true
-                    },
-                    {
-                      "name": "대상 브랜치",
-                      "value": ${{ toJSON(github.base_ref) }},
-                      "inline": true
-                    }
-                  ]
-                }
-              ]
+    steps:
+      - name: Send CI result to Discord
+        if: ${{ env.DISCORD_WEBHOOK != '' }}
+        uses: Ilshidur/action-discord@0.3.2
+        with:
+          args: "AI CI 결과 알림"
+        env:
+          DISCORD_USERNAME: MURO_BOT
+          DISCORD_EMBEDS: |
+            [
+              {
+                "title": "AI develop CI: ${{ needs.pr-ci.result }}",
+                "description": ${{ toJSON(github.event.pull_request.title) }},
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "color": ${{ needs.pr-ci.result == 'success' && 3066993 || 15158332 }},
+                "fields": [
+                  {
+                    "name": "PR",
+                    "value": "[#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})",
+                    "inline": true
+                  },
+                  {
+                    "name": "작성자",
+                    "value": ${{ toJSON(github.event.pull_request.user.login) }},
+                    "inline": true
+                  },
+                  {
+                    "name": "작업 브랜치",
+                    "value": ${{ toJSON(github.head_ref) }},
+                    "inline": true
+                  },
+                  {
+                    "name": "대상 브랜치",
+                    "value": ${{ toJSON(github.base_ref) }},
+                    "inline": true
+                  }
+                ]
+              }
+            ]
+
   push-ci:
     if: github.event_name == 'push'
     name: AI CI push
     runs-on: ubuntu-latest
-    
+
     permissions:
       contents: write
       id-token: write
-    
+
     env:
       IMAGE_BASE: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID_Develop }}/${{ secrets.PROJECT_REPOSITORY }}/${{ secrets.IMAGE_NAME }}
 
@@ -141,7 +141,7 @@ jobs:
       - name: Check Python syntax
         run: python -m compileall .
 
-      # 5. 
+      # 5. Node.js 설정
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
@@ -150,14 +150,14 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
-          
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
           project_id: ${{ secrets.GCP_PROJECT_ID_Develop }}
           workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER_Develop }}
           service_account: ${{ secrets.SERVICE_ACCOUNT_Develop }}
-          
+
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v3
 
@@ -174,10 +174,116 @@ jobs:
             --package=@semantic-release/exec@7 \
             semantic-release
 
+  # 1단계 job: Develop VM에 새 버전을 자동으로 배포한다.
+  deploy:
+    name: Deploy to Develop VM
+    runs-on: ubuntu-latest
+    needs: push-ci
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      id-token: write   # GCP WIF 인증용 OIDC 토큰 발급 권한
+    outputs:
+      vm: ${{ steps.develop.outputs.vm }}
+
+    steps:
+      # WIF로 GCP 서비스 계정 인증 (키 파일 없이 임시 토큰 발급)
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID_Develop }}
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER_Develop }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT_Develop }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      # 1. 현재 role=develop 라벨이 붙은 VM을 찾는다.
+      - id: develop
+        run: |
+          VM=$(gcloud compute instances list \
+            --filter="labels.role=develop" \
+            --zones="${{ env.ZONE }}" \
+            --format="value(name)")
+          if [ -z "$VM" ]; then
+            echo "role=develop 라벨을 가진 VM을 찾을 수 없습니다."
+            exit 1
+          fi
+          echo "vm=$VM" >> "$GITHUB_OUTPUT"
+
+      # 2. CI(semantic-release)가 방금 push한 이미지 중 가장 최근 태그를 조회한다.
+      - id: image
+        run: |
+          TAG=$(gcloud artifacts docker images list \
+            "${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID_Develop }}/${{ secrets.PROJECT_REPOSITORY }}/${{ secrets.IMAGE_NAME }}" \
+            --include-tags --sort-by="~UPDATE_TIME" --limit=1 \
+            --format="value(TAGS)" | cut -d',' -f1)
+          if [ -z "$TAG" ]; then
+            echo "조회된 Docker 이미지 태그가 없습니다."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # 3. ai.env 파일을 GitHub Secrets 값으로 생성한다.
+      - run: |
+          cat > ai.env <<ENVEOF
+          APP_ENV=${{ secrets.APP_ENV || 'develop' }}
+          INTERNAL_TOKEN=${{ secrets.AI_INTERNAL_TOKEN || secrets.INTERNAL_TOKEN }}
+          DATABASE_URL=${{ secrets.DATABASE_URL_Develop || secrets.DATABASE_URL }}
+          AI_CLIENT_MODE=${{ secrets.AI_CLIENT_MODE }}
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          LLM_MODEL=${{ secrets.LLM_MODEL }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          TEXT_EMBEDDING_MODEL=${{ secrets.TEXT_EMBEDDING_MODEL }}
+          TEXT_EMBEDDING_DIM=${{ secrets.TEXT_EMBEDDING_DIM }}
+          REPLICATE_API_TOKEN=${{ secrets.REPLICATE_API_TOKEN }}
+          CLIP_MODEL=${{ secrets.CLIP_MODEL }}
+          CLIP_EMBEDDING_DIM=${{ secrets.CLIP_EMBEDDING_DIM }}
+          SPOTIFY_CLIENT_ID=${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET=${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}
+          BACKEND_MYSQL_URL=${{ secrets.BACKEND_MYSQL_URL_Develop || secrets.BACKEND_MYSQL_URL }}
+          BACKEND_INTERNAL_URL=${{ secrets.BACKEND_INTERNAL_URL_Develop || secrets.BACKEND_INTERNAL_URL }}
+          RUN_WORKER=true
+          ENVEOF
+
+      # 4. env 파일을 develop VM으로 전송하고, 새 이미지를 pull해서 ai 컨테이너만 교체한다.
+      #    같은 VM 위의 backend/frontend/nginx 컨테이너는 건드리지 않는다.
+      - run: |
+          gcloud compute scp ai.env "${{ steps.develop.outputs.vm }}:~/app/ai.env" \
+            --zone="${{ env.ZONE }}" --tunnel-through-iap
+
+          gcloud compute ssh "${{ steps.develop.outputs.vm }}" \
+            --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
+              set -e
+              gcloud auth configure-docker '${{ secrets.GCP_REGION }}-docker.pkg.dev' --quiet
+              cd ~/app
+              export IMAGE_TAG=${{ steps.image.outputs.tag }}
+              export GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_Develop }}
+              docker compose pull ai
+              docker compose up -d ai
+            "
+
+      # 5. 컨테이너가 healthy 상태가 될 때까지 대기
+      - name: "Wait for ai container to be healthy"
+        run: |
+          gcloud compute ssh "${{ steps.develop.outputs.vm }}" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
+            for i in \$(seq 1 20); do
+              status=\$(sudo docker inspect ai --format='{{.State.Health.Status}}' 2>/dev/null || echo 'unhealthy')
+              if [ \"\$status\" = \"healthy\" ]; then
+                echo \"ai healthy (시도 \$i/20)\"
+                exit 0
+              fi
+              echo \"대기 중... (\$i/20) 현재 상태: \$status\"
+              sleep 3
+            done
+            echo \"ai가 60초 안에 healthy가 되지 않았습니다.\"
+            exit 1
+          "
+
   notify-2:
     name: Discord notification
     runs-on: ubuntu-latest
-    needs: push-ci
+    needs: [push-ci, deploy]
     if: ${{ always() && github.event_name == 'push' }}
     permissions: {}
 
@@ -189,16 +295,16 @@ jobs:
         if: ${{ env.DISCORD_WEBHOOK != '' }}
         uses: Ilshidur/action-discord@0.3.2
         with:
-          args: "AI Develop push CI 결과 알림"
+          args: "AI Develop push CI 및 개발 서버 배포 결과 알림"
         env:
           DISCORD_USERNAME: MURO_BOT
           DISCORD_EMBEDS: |
             [
               {
-                "title": "AI CI: ${{ needs.push-ci.result }}",
+                "title": "AI Develop 배포: ${{ needs.deploy.result }} (CI: ${{ needs.push-ci.result }})",
                 "description": ${{ toJSON(github.event.head_commit.message || '커밋 메시지 없음') }},
                 "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                "color": ${{ needs.push-ci.result == 'success' && 3066993 || 15158332 }},
+                "color": ${{ (needs.push-ci.result == 'success' && needs.deploy.result == 'success') && 3066993 || 15158332 }},
                 "fields": [
                   {
                     "name": "커밋",
@@ -218,4 +324,3 @@ jobs:
                 ]
               }
             ]
-      
