@@ -9,7 +9,7 @@ on:
       - develop
 
 concurrency:
-  group: ai-main-release
+  group: ai-develop-release
   cancel-in-progress: false
 
 
