@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from app.components.report_summarizer import ReportSummarizer
+from app.config import get_settings
 from app.db.mysql import get_sessionmaker as get_mysql_sessionmaker
 from app.db.postgres import get_sessionmaker as get_postgres_sessionmaker
 from app.db.repositories.job_repository import JobRepository
@@ -15,7 +16,7 @@ from app.db.repositories.report_repository import (
     RecordSummary,
     ReportRepository,
 )
-from app.dependencies import Clients, get_clients, get_clip_tagger
+from app.dependencies import get_clients, get_clip_tagger
 
 JOB_TYPE = "report"
 
@@ -91,20 +92,20 @@ async def on_finished(payload: dict[str, Any]) -> None:
     실패(재시도 소진)일 때 아무도 알림을 안 보낸다 — 앞서 성공한 job들은 그때
     "아직 남은 job 있음"을 보고 넘어갔기 때문. 그래서 성공·실패 양쪽이 지나는 여기로 뺐다.
     """
-    await _notify_if_batch_complete(get_clients(), year=payload["year"], month=payload["month"])
+    await _enqueue_notify_if_batch_complete(year=payload["year"], month=payload["month"])
 
 
-async def _notify_if_batch_complete(clients: Clients, *, year: int, month: int) -> None:
-    """이 job으로 배치가 다 끝났으면 백엔드에 딱 한 번, 완성된 내용과 함께 알린다.
+async def _enqueue_notify_if_batch_complete(*, year: int, month: int) -> None:
+    """이 job으로 배치가 다 끝났으면, 완료 알림 전송을 별도 job으로 큐에 넣는다.
 
     1. 남은(pending·running) job이 0개면 배치가 끝난 것. 이 job의 상태는
        worker_main이 이미 done/failed로 확정해뒀으므로 자기 자신은 안 세어진다.
     2. 그래도 여러 job이 동시에 끝나 동시에 0개를 볼 수 있으니, 유니크 제약으로
-       "알림 전송권"을 한 번만 발급해서 실제로는 그중 하나만 진짜로 보낸다.
-    3. 콜백엔 완료 알림만이 아니라 각 유저의 실제 리포트 내용(aiRecap, photoScenes)도
-       실어서 보낸다 — 백엔드 DTO(MonthlyReportAiCallbackRequest) 협의 결과.
-       재시도를 다 써서 포기(failed)한 유저도 results에 포함한다 — status만
-       FAILED로 다르고 errorCode를 채운다(백엔드: 코드 값 자체는 안 정해짐, 구분만 필요).
+       "알림 전송권"을 한 번만 발급해서 실제로는 그중 하나만 진짜로 큐에 넣는다.
+    3. 알림 전송 자체는 여기서 바로 하지 않고 report_batch_notify job으로 큐에 넣는다 —
+       그래야 전송이 실패해도(백엔드 일시 장애 등) 일반 job과 똑같이 재시도된다.
+       claimed 마커만 있고 바로 clients.backend.notify_report_ready를 부르면,
+       그 호출 자체가 실패했을 때 재시도할 방법이 없어 배치 알림이 영영 유실된다.
     """
     dedupe_prefix = f"{year}-{month}-"
 
@@ -112,14 +113,37 @@ async def _notify_if_batch_complete(clients: Clients, *, year: int, month: int) 
         jobs = JobRepository(session)
         remaining = await jobs.count_incomplete(job_type=JOB_TYPE, dedupe_key_prefix=dedupe_prefix)
         if remaining > 0:
-            return  # 아직 다른 사용자 job이 처리 중 — 마지막 job이 알림을 보낼 것
+            return  # 아직 다른 사용자 job이 처리 중 — 마지막 job이 알림 job을 큐에 넣을 것
 
         claimed = await jobs.try_claim_once(
             job_type=BATCH_NOTIFY_JOB_TYPE, dedupe_key=f"{year}-{month}"
         )
         if not claimed:
-            return  # 다른 job이 이미 이 배치의 알림을 보냈음(동시 완료 레이스)
+            return  # 다른 job이 이미 이 배치의 알림 job을 큐에 넣었음(동시 완료 레이스)
 
+        await jobs.enqueue(
+            job_type=BATCH_NOTIFY_JOB_TYPE,
+            dedupe_key=f"{year}-{month}",
+            payload={"year": year, "month": month},
+            max_attempts=get_settings().job_max_attempts,
+        )
+
+
+async def handle_batch_notify(payload: dict[str, Any]) -> None:
+    """배치 완료 알림을 실제로 전송한다. 콜백엔 각 유저의 실제 리포트 내용
+    (aiRecap, photoScenes)도 실어서 보낸다 — 백엔드 DTO(MonthlyReportAiCallbackRequest)
+    협의 결과. 재시도를 다 써서 포기(failed)한 유저도 results에 포함한다 — status만
+    FAILED로 다르고 errorCode를 채운다(백엔드: 코드 값 자체는 안 정해짐, 구분만 필요).
+
+    이 함수가 실패(예외)하면 worker_main이 일반 job과 똑같이 재시도한다 — 전송
+    실패가 조용히 유실되지 않는다.
+    """
+    year: int = payload["year"]
+    month: int = payload["month"]
+    dedupe_prefix = f"{year}-{month}-"
+
+    async with get_postgres_sessionmaker()() as session:
+        jobs = JobRepository(session)
         completed_ids = await jobs.completed_user_ids(
             job_type=JOB_TYPE, dedupe_key_prefix=dedupe_prefix
         )
@@ -148,7 +172,7 @@ async def _notify_if_batch_complete(clients: Clients, *, year: int, month: int) 
         for uid in failed_ids
     ]
 
-    await clients.backend.notify_report_ready(
+    await get_clients().backend.notify_report_ready(
         job_id=f"report_batch_{year}-{month}",
         year=year,
         month=month,
