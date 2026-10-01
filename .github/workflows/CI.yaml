@@ -256,12 +256,12 @@ jobs:
           gcloud compute ssh "${{ steps.develop.outputs.vm }}" \
             --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
               set -e
-              gcloud auth configure-docker '${{ secrets.GCP_REGION }}-docker.pkg.dev' --quiet
+              sudo gcloud auth configure-docker '${{ secrets.GCP_REGION }}-docker.pkg.dev' --quiet
               cd ~/app
               export IMAGE_TAG=${{ steps.image.outputs.tag }}
               export GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_Develop }}
-              docker compose pull ai
-              docker compose up -d ai
+              sudo --preserve-env=IMAGE_TAG,GCP_PROJECT_ID docker compose pull ai
+              sudo --preserve-env=IMAGE_TAG,GCP_PROJECT_ID docker compose up -d ai
             "
 
       # 5. 컨테이너가 healthy 상태가 될 때까지 대기
