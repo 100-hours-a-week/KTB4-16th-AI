@@ -281,6 +281,16 @@ jobs:
             exit 1
           "
 
+      # nginx는 컨테이너 DNS를 시작/리로드 시점에만 캐싱하므로, 방금 재생성된
+      # ai의 새 IP를 반영하도록 reload한다. 개발서버는 VM이 하나뿐이라
+      # 트래픽 전환 과정이 없어 이 단계가 빠져있었고, 그래서 이미지는 최신인데
+      # 실제로는 화면에 반영이 안 되는 문제가 있었다(2026-10-01 frontend에서 실제 발생).
+      - name: "Reload nginx to pick up new container IP"
+        run: |
+          gcloud compute ssh "${{ steps.develop.outputs.vm }}" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
+            sudo docker exec nginx nginx -s reload
+          "
+
   notify-2:
     name: Discord notification
     runs-on: ubuntu-latest
