@@ -34,10 +34,12 @@ from app.clients.llm_client import LLMClient
 from app.components.music_tags import GENRE_VOCAB, MOOD_VOCAB
 from app.exceptions import LLMError
 
-PROMPT_VERSION = "song-curate-v5"
+PROMPT_VERSION = "song-curate-v6"
 
-# Spotify 확인 단계에서 일부가 탈락하므로 최종 3곡보다 넉넉히 받는다.
-CANDIDATE_COUNT = 8
+# Spotify 확인 단계에서 일부가 탈락하므로(일반 6~7/8, 인디 2~4/8 실측) 최종 5곡보다 넉넉히 받는다.
+CANDIDATE_COUNT = 10
+# 곡 한 줄이 약 40~60토큰 — 10곡 + 상황 줄이 768에 빠듯해서 늘린다
+SONG_MAX_TOKENS = 1024
 
 SYSTEM_PROMPT = f"""너는 주어진 상황에 어울리는 음악을 추천하는 도우미다.
 
@@ -98,17 +100,31 @@ class SongCurator:
     def model(self) -> str:
         return self._llm.model
 
-    async def curate_from_tags(self, tags: list[str]) -> CurationResult:
+    async def curate_from_tags(
+        self, tags: list[str], exclude: list[SongCandidate] | None = None
+    ) -> CurationResult:
         """기능3 — 사진 CLIP 태그로 추천."""
         if not tags:
             raise LLMError("태그가 없으면 곡을 추천할 수 없어요.")
-        return await self.curate(f"사진에서 뽑은 분위기 태그: {', '.join(tags)}")
+        return await self.curate(f"사진에서 뽑은 분위기 태그: {', '.join(tags)}", exclude)
 
-    async def curate(self, situation: str) -> CurationResult:
-        """상황 설명 문장으로 추천. 기능1은 장소·날씨·시간대를 여기로 넘긴다."""
+    async def curate(
+        self, situation: str, exclude: list[SongCandidate] | None = None
+    ) -> CurationResult:
+        """상황 설명 문장으로 추천. 기능1은 장소·날씨·시간대를 여기로 넘긴다.
+
+        exclude는 앞선 추천에서 이미 나온 곡 — 최종 곡 수가 모자라 한 번 더 받을 때
+        같은 곡이 다시 나오지 않게 한다.
+        """
         if not situation.strip():
             raise LLMError("상황 설명이 없으면 곡을 추천할 수 없어요.")
-        response = await self._llm.complete(system=SYSTEM_PROMPT, prompt=situation, max_tokens=768)
+        prompt = situation
+        if exclude:
+            listed = ", ".join(f"{s.artist} - {s.title}" for s in exclude)
+            prompt += f"\n이미 추천한 곡이라 다시 추천하지 않는다: {listed}"
+        response = await self._llm.complete(
+            system=SYSTEM_PROMPT, prompt=prompt, max_tokens=SONG_MAX_TOKENS
+        )
         return _parse(response)
 
 

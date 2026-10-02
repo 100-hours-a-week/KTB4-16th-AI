@@ -5,12 +5,14 @@ from app.components.embedder import Embedder
 from app.components.reranker import Reranker
 from app.components.song_curator import SongCurator
 from app.components.vector_search import RecordSearch
+from app.db.repositories.track_lookup_repository import TrackLookupStore
 from app.dependencies import (
     get_embedder,
     get_record_search,
     get_reranker,
     get_song_curator,
     get_spotify_search_client,
+    get_track_lookup_store,
 )
 from app.schemas.context_recommend import ContextRecommendRequest, ContextRecommendResponse
 from app.services.context_recommend_service import ContextRecommendService
@@ -26,8 +28,9 @@ async def context_recommend(
     song_curator: SongCurator = Depends(get_song_curator),
     reranker: Reranker = Depends(get_reranker),
     spotify_search: SpotifySearchClient = Depends(get_spotify_search_client),
+    track_lookups: TrackLookupStore = Depends(get_track_lookup_store),
 ) -> ContextRecommendResponse:
     service = ContextRecommendService(
-        embedder, record_search, song_curator, reranker, spotify_search
+        embedder, record_search, song_curator, reranker, spotify_search, track_lookups
     )
     return await service.recommend(req)

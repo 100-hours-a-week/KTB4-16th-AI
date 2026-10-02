@@ -45,12 +45,26 @@ class StubRecordSearch:
 
 
 class StubSongCurator:
-    def __init__(self, curation: CurationResult | None = None, error: Exception | None = None):
+    """첫 호출은 curation, 곡이 모자라 보충할 때(exclude 있음)는 extra를 돌려준다."""
+
+    def __init__(
+        self,
+        curation: CurationResult | None = None,
+        error: Exception | None = None,
+        extra: CurationResult | None = None,
+    ):
         self._curation = curation
         self._error = error
+        self._extra = extra or CurationResult((), (), [])
         self.situations: list[str] = []
+        self.excludes: list[list[SongCandidate]] = []
 
-    async def curate(self, situation: str) -> CurationResult:
+    async def curate(
+        self, situation: str, exclude: list[SongCandidate] | None = None
+    ) -> CurationResult:
+        if exclude:
+            self.excludes.append(exclude)
+            return self._extra
         self.situations.append(situation)
         if self._error:
             raise self._error
