@@ -366,3 +366,34 @@ async def test_tracks_carry_spotify_track_id_and_url_for_the_backend():
 
     assert res.tracks[0].external_track_id == "t_ballad"
     assert res.tracks[0].external_url == "https://open.spotify.com/track/t_ballad"
+
+
+async def test_returns_at_most_5_even_if_backend_asks_for_10():
+    """백엔드가 limit=10을 보내도 5곡까지만 — 5곡이 찼으면 LLM 보충 호출도 안 한다."""
+    songs = [_song("가수", f"곡{i}") for i in range(7)]
+    search = {
+        s.search_query: [_track_json(f"t{i}", s.title, s.artist)] for i, s in enumerate(songs)
+    }
+    curator = StubSongCurator(_curation(songs))
+
+    res = await _service(curator=curator, spotify=StubSpotify(search)).recommend(_req(limit=10))
+
+    assert len(res.tracks) == 5
+    assert curator.excludes == []
+
+
+async def test_tops_up_once_when_fewer_than_5():
+    first = [_song("가수", "곡0")]
+    extra = [_song("다른가수", f"추가{i}") for i in range(4)]
+    search = {
+        s.search_query: [_track_json(f"t{i}", s.title, s.artist)] for i, s in enumerate(first)
+    }
+    search |= {
+        s.search_query: [_track_json(f"x{i}", s.title, s.artist)] for i, s in enumerate(extra)
+    }
+    curator = StubSongCurator(_curation(first), extra=_curation(extra))
+
+    res = await _service(curator=curator, spotify=StubSpotify(search)).recommend(_req(limit=5))
+
+    assert len(res.tracks) == 5
+    assert curator.excludes == [first]
