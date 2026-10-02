@@ -9,6 +9,9 @@ get_clip_tagger·get_song_curator·get_reranker·get_spotify_search_client 등 �
 
 from fastapi.testclient import TestClient
 
+from app.clients.spotify_client import SpotifyError
+from app.components.song_curator import CurationResult, SongCandidate
+from app.dependencies import get_song_curator, get_spotify_search_client
 from app.main import create_app
 from tests.conftest import AUTH
 
@@ -61,3 +64,38 @@ def test_validation_failure_is_logged_without_values(caplog):
     assert res.status_code == 400
     assert "요청 검증 실패 POST /api/photo-recommend (Content-Type: text/plain)" in caplog.text
     assert "secret" not in caplog.text
+
+
+class _OneSongCurator:
+    async def curate_from_tags(self, tags):
+        return CurationResult(
+            situation_genres=("발라드",),
+            situation_moods=("잔잔한",),
+            songs=[
+                SongCandidate(artist="아이유", title="밤편지", genre="발라드", moods=("잔잔한",))
+            ],
+        )
+
+
+class _DownSpotify:
+    async def search_tracks(self, query, limit=10):
+        raise SpotifyError("Spotify API 오류 (status 429)")
+
+    async def get_track(self, track_id):
+        raise SpotifyError("Spotify API 오류 (status 429)")
+
+
+def test_spotify_down_returns_502():
+    """Spotify가 전부 실패하면 빈 200이 아니라 502 — 백엔드가 장애를 구분할 수 있게."""
+    app = create_app()
+    app.dependency_overrides[get_song_curator] = lambda: _OneSongCurator()
+    app.dependency_overrides[get_spotify_search_client] = lambda: _DownSpotify()
+
+    res = TestClient(app).post(
+        "/api/photo-recommend",
+        json={"imageUrl": "https://cdn.muro.app/uploads/img_882.jpg"},
+        headers=AUTH,
+    )
+
+    assert res.status_code == 502
+    assert res.json()["code"] == "EXTERNAL_API_FAILED"
