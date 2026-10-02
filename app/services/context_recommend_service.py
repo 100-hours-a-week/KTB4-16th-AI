@@ -47,6 +47,9 @@ NEARBY_REFERENCE_COUNT = 5
 # 장르도 무드도 하나도 안 겹치는 곡만 뺀다(상황 무드 3개 중 1개만 겹쳐도 0.117).
 # 위키 설계상 임계값은 실측 후 튜닝.
 MIN_RERANK_SCORE = 0.1
+# 2026-10-02 팀 결정: 추천은 최대 5곡. 백엔드가 limit을 더 크게 보내도(당시 10) 5곡까지만
+# 주고, 5곡이 찼으면 LLM 보충 호출도 하지 않는다.
+MAX_TRACKS = 5
 
 # 백엔드 WeatherCondition enum(기상청 단기예보 기준) → 상황 문장용 표현. 모르는 값은 그대로 쓴다.
 WEATHER_PHRASES = {
@@ -107,9 +110,10 @@ class ContextRecommendService:
 
         already_heard = {r.external_track_id for r in references}
         candidates = [c for c in candidates if c.external_track_id not in already_heard]
-        kept = self._keep(curation, candidates, req.limit)
+        limit = min(req.limit, MAX_TRACKS)
+        kept = self._keep(curation, candidates, limit)
 
-        if len(kept) < req.limit:
+        if len(kept) < limit:
             # Spotify 탈락·점수 미달로 모자라면 이미 나온 곡을 빼고 한 번만 더 받는다.
             # 보충은 있으면 좋은 것이라 실패해도 지금 있는 곡으로 응답한다.
             try:
@@ -122,7 +126,7 @@ class ContextRecommendService:
             else:
                 seen = {c.external_track_id for c in candidates} | already_heard
                 candidates += [c for c in more if c.external_track_id not in seen]
-                kept = self._keep(curation, candidates, req.limit)
+                kept = self._keep(curation, candidates, limit)
 
         return ContextRecommendResponse(
             request_id=req.request_id,
