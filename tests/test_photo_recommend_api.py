@@ -11,13 +11,19 @@ from fastapi.testclient import TestClient
 
 from app.clients.spotify_client import SpotifyError
 from app.components.song_curator import CurationResult, SongCandidate
-from app.dependencies import get_song_curator, get_spotify_search_client
+from app.dependencies import get_song_curator, get_spotify_search_client, get_track_lookup_store
 from app.main import create_app
-from tests.conftest import AUTH
+from tests.conftest import AUTH, InMemoryLookups
+
+
+def _app():
+    app = create_app()
+    app.dependency_overrides[get_track_lookup_store] = lambda: InMemoryLookups()
+    return app
 
 
 def _client() -> TestClient:
-    return TestClient(create_app())
+    return TestClient(_app())
 
 
 def test_photo_recommend_returns_valid_shape():
@@ -67,7 +73,7 @@ def test_validation_failure_is_logged_without_values(caplog):
 
 
 class _OneSongCurator:
-    async def curate_from_tags(self, tags):
+    async def curate_from_tags(self, tags, exclude=None):
         return CurationResult(
             situation_genres=("발라드",),
             situation_moods=("잔잔한",),
@@ -87,7 +93,7 @@ class _DownSpotify:
 
 def test_spotify_down_returns_502():
     """Spotify가 전부 실패하면 빈 200이 아니라 502 — 백엔드가 장애를 구분할 수 있게."""
-    app = create_app()
+    app = _app()
     app.dependency_overrides[get_song_curator] = lambda: _OneSongCurator()
     app.dependency_overrides[get_spotify_search_client] = lambda: _DownSpotify()
 

@@ -66,6 +66,35 @@ class TrackMood(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class TrackLookup(Base):
+    """LLM이 말한 곡(가수+제목) → Spotify 확인 결과 캐시.
+
+    추천 1건마다 곡 8~10개를 Spotify에 조회하다가 하루 요청 한도를 넘겨 추천이 전부
+    멈춘 적이 있다(2026-10-02, 429 QUOTA_EXCEEDED). 같은 곡은 자주 다시 나오므로 한 번
+    확인한 결과를 저장해 두고 재사용한다.
+
+    Spotify 개발자 약관은 메타데이터·커버의 "임시" 캐시만 허용하고 무기한 저장을 금지해서,
+    verified_at 기준으로 유효기간이 지나면 다시 확인한다(track_resolver의 TTL 참고).
+    external_track_id가 NULL이면 "Spotify에 없는 곡"(LLM이 지어낸 곡 등)이라는 기록이다.
+    """
+
+    __tablename__ = "track_lookups"
+
+    lookup_key: Mapped[str] = mapped_column(String(300), primary_key=True)
+    llm_artist: Mapped[str] = mapped_column(String(200))
+    llm_title: Mapped[str] = mapped_column(String(300))
+    genre: Mapped[str] = mapped_column(String(20), server_default="")
+    moods: Mapped[list[str]] = mapped_column(ARRAY(String(20)), server_default="{}")
+    external_track_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    title: Mapped[str | None] = mapped_column(String(300))
+    artist_name: Mapped[str | None] = mapped_column(String(300))
+    spotify_uri: Mapped[str | None] = mapped_column(String(100))
+    album_image_url: Mapped[str | None] = mapped_column(Text)
+    external_url: Mapped[str | None] = mapped_column(Text)
+    verified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class AiJob(Base):
     """게이트웨이와 워커 사이의 작업 큐. 상태·재시도 이력을 함께 남긴다."""
 

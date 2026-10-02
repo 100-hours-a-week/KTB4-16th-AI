@@ -27,7 +27,8 @@ class ContextRecommendRequest(CamelModel):
     local_time: datetime
     # 백엔드 명세: 주변 자물쇠도 백엔드가 모아서 넘긴다. 없으면(주변 자물쇠 없음) 빈 목록
     nearby_tracks: list[NearbyTrack] = Field(default_factory=list)
-    limit: int = Field(default=3, ge=1, le=10)
+    # 2026-10-02 팀 결정: 추천 곡 5개로 통일 (기능3 RESULT_COUNT와 같게)
+    limit: int = Field(default=5, ge=1, le=10)
 
 
 class RankedTrack(Track):
