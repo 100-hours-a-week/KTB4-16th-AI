@@ -21,9 +21,10 @@ from datetime import datetime
 from app.clients.spotify_client import SpotifySearchClient
 from app.components.embedder import Embedder
 from app.components.reranker import Reranker, TrackCandidate
-from app.components.song_curator import SongCurator
+from app.components.song_curator import CurationResult, SongCurator
 from app.components.track_resolver import TrackResolver
 from app.components.vector_search import RecordSearch
+from app.db.repositories.track_lookup_repository import TrackLookupStore
 from app.exceptions import ExternalApiFailedError, LLMError, UpstreamError
 from app.schemas.context_recommend import (
     ContextRecommendRequest,
@@ -74,13 +75,14 @@ class ContextRecommendService:
         song_curator: SongCurator,
         reranker: Reranker,
         spotify_search: SpotifySearchClient,
+        track_lookups: TrackLookupStore | None = None,
     ):
         self._embedder = embedder
         self._records = record_search
         self._song_curator = song_curator
         self._reranker = reranker
         self._spotify = spotify_search
-        self._resolver = TrackResolver(spotify_search)
+        self._resolver = TrackResolver(spotify_search, track_lookups)
 
     async def recommend(self, req: ContextRecommendRequest) -> ContextRecommendResponse:
         moment = f"{_weather_phrase(req.weather.condition)} {_time_bucket(req.local_time)}"
@@ -105,11 +107,22 @@ class ContextRecommendService:
 
         already_heard = {r.external_track_id for r in references}
         candidates = [c for c in candidates if c.external_track_id not in already_heard]
+        kept = self._keep(curation, candidates, req.limit)
 
-        ranked = self._reranker.rank(
-            curation.situation_genres, curation.situation_moods, candidates
-        )
-        kept = [(c, score) for c, score in ranked if score >= MIN_RERANK_SCORE][: req.limit]
+        if len(kept) < req.limit:
+            # Spotify 탈락·점수 미달로 모자라면 이미 나온 곡을 빼고 한 번만 더 받는다.
+            # 보충은 있으면 좋은 것이라 실패해도 지금 있는 곡으로 응답한다.
+            try:
+                extra = await self._song_curator.curate(
+                    _situation_prompt(req, moment, references), exclude=curation.songs
+                )
+                more = await self._resolver.resolve(extra.songs)
+            except UpstreamError as e:
+                logger.warning("곡 보충 실패, 있는 곡으로 응답: %s", e)
+            else:
+                seen = {c.external_track_id for c in candidates} | already_heard
+                candidates += [c for c in more if c.external_track_id not in seen]
+                kept = self._keep(curation, candidates, req.limit)
 
         return ContextRecommendResponse(
             request_id=req.request_id,
@@ -117,6 +130,14 @@ class ContextRecommendService:
             recommendation_basis=basis,
             tracks=[_to_ranked_track(c, score) for c, score in kept],
         )
+
+    def _keep(
+        self, curation: CurationResult, candidates: list[TrackCandidate], limit: int
+    ) -> list[tuple[TrackCandidate, float]]:
+        ranked = self._reranker.rank(
+            curation.situation_genres, curation.situation_moods, candidates
+        )
+        return [(c, score) for c, score in ranked if score >= MIN_RERANK_SCORE][:limit]
 
     async def _personal_references(self, user_id: int, moment: str) -> list[ReferenceTrack]:
         """지금 상황과 비슷한 과거 자물쇠에서 들은 곡. 못 찾거나 실패하면 빈 목록(=GENERIC).

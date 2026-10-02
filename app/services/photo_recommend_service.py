@@ -1,4 +1,4 @@
-"""기능3 처리 순서: CLIP 태깅 → LLM 곡+태그 추천 → Spotify 실존 확인 → 재랭킹 → 상위 3곡.
+"""기능3 처리 순서: CLIP 태깅 → LLM 곡+태그 추천 → Spotify 실존 확인 → 재랭킹 → 상위 5곡.
 
 이전엔 LLM이 만든 장르 키워드로 Spotify를 넓게 검색하고 그 결과를 재랭킹으로 걸렀다.
 그다음엔 LLM이 실제 곡을 직접 추천하고 임베딩 유사도로 재랭킹했는데, 자유 문장
@@ -23,13 +23,14 @@ from app.components.clip_tagger import ClipTagger
 from app.components.reranker import Reranker, TrackCandidate
 from app.components.song_curator import CurationResult, SongCurator
 from app.components.track_resolver import TrackResolver
+from app.db.repositories.track_lookup_repository import TrackLookupStore
 from app.exceptions import ClipError, ExternalApiFailedError, LLMError, UpstreamError
 from app.schemas.common import Track
 from app.schemas.photo_recommend import PhotoRecommendRequest, PhotoRecommendResponse
 
 logger = logging.getLogger("muro.photo_recommend")
 
-RESULT_COUNT = 3
+RESULT_COUNT = 5
 
 
 class PhotoRecommendService:
@@ -39,11 +40,12 @@ class PhotoRecommendService:
         song_curator: SongCurator,
         reranker: Reranker,
         spotify_search: SpotifySearchClient,
+        track_lookups: TrackLookupStore | None = None,
     ):
         self._clip_tagger = clip_tagger
         self._song_curator = song_curator
         self._reranker = reranker
-        self._resolver = TrackResolver(spotify_search)
+        self._resolver = TrackResolver(spotify_search, track_lookups)
 
     async def recommend(self, req: PhotoRecommendRequest) -> PhotoRecommendResponse:
         try:
@@ -73,6 +75,9 @@ class PhotoRecommendService:
             logger.warning("Spotify 확인 실패: %s", e)
             raise ExternalApiFailedError("Spotify 곡 확인에 실패했어요.") from e
 
+        if len(candidates) < RESULT_COUNT:
+            candidates = await self._top_up(tags, curation, candidates)
+
         if not candidates:
             # 추천받은 곡이 전부 Spotify에 없었다 — 에러는 아니고 빈 결과
             return PhotoRecommendResponse(mood_tags=tags, rewritten_query="", tracks=[])
@@ -83,6 +88,22 @@ class PhotoRecommendService:
             rewritten_query="",
             tracks=[_to_track(c) for c in ranked[:RESULT_COUNT]],
         )
+
+    async def _top_up(
+        self, tags: list[str], curation: CurationResult, candidates: list[TrackCandidate]
+    ) -> list[TrackCandidate]:
+        """Spotify에서 탈락해 RESULT_COUNT곡이 안 되면 이미 나온 곡을 빼고 한 번만 더 받는다.
+
+        보충은 있으면 좋은 것이라, 여기서 실패해도 지금 있는 곡으로 응답한다.
+        """
+        try:
+            extra = await self._song_curator.curate_from_tags(tags, exclude=curation.songs)
+            more = await self._resolver.resolve(extra.songs)
+        except UpstreamError as e:
+            logger.warning("곡 보충 실패, 있는 곡으로 응답: %s", e)
+            return candidates
+        seen = {c.external_track_id for c in candidates}
+        return candidates + [c for c in more if c.external_track_id not in seen]
 
     def _rerank_safely(
         self, curation: CurationResult, candidates: list[TrackCandidate]
