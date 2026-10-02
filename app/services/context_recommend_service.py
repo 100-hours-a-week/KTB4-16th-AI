@@ -24,7 +24,7 @@ from app.components.reranker import Reranker, TrackCandidate
 from app.components.song_curator import SongCurator
 from app.components.track_resolver import TrackResolver
 from app.components.vector_search import RecordSearch
-from app.exceptions import LLMError, UpstreamError
+from app.exceptions import ExternalApiFailedError, LLMError, UpstreamError
 from app.schemas.context_recommend import (
     ContextRecommendRequest,
     ContextRecommendResponse,
@@ -100,8 +100,8 @@ class ContextRecommendService:
         try:
             candidates = await self._resolver.resolve(curation.songs)
         except UpstreamError as e:
-            logger.warning("Spotify 확인 실패, 폴백: %s", e)
-            return _degraded(req, basis)
+            logger.warning("Spotify 확인 실패: %s", e)
+            raise ExternalApiFailedError("Spotify 곡 확인에 실패했어요.") from e
 
         already_heard = {r.external_track_id for r in references}
         candidates = [c for c in candidates if c.external_track_id not in already_heard]
