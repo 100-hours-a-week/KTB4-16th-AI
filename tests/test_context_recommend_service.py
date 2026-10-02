@@ -6,7 +6,7 @@ from app.clients.spotify_client import SpotifyError
 from app.components.reranker import Reranker
 from app.components.song_curator import CurationResult, SongCandidate
 from app.components.vector_search import SimilarRecord
-from app.exceptions import LLMError
+from app.exceptions import ExternalApiFailedError, LLMError
 from app.schemas.context_recommend import ContextRecommendRequest
 from app.services.context_recommend_service import (
     NEARBY_REFERENCE_COUNT,
@@ -300,14 +300,13 @@ async def test_llm_failure_is_degraded():
     assert res.request_id == "req_1"
 
 
-async def test_spotify_down_for_every_song_is_degraded():
+async def test_spotify_down_for_every_song_raises_502():
     spotify = StubSpotify({BALLAD.search_query: SpotifyError("장애")})
 
-    res = await _service(curator=StubSongCurator(_curation([BALLAD])), spotify=spotify).recommend(
-        _req()
-    )
-
-    assert res.degraded is True
+    with pytest.raises(ExternalApiFailedError):
+        await _service(curator=StubSongCurator(_curation([BALLAD])), spotify=spotify).recommend(
+            _req()
+        )
 
 
 @pytest.mark.parametrize(

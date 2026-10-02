@@ -8,8 +8,9 @@ song_curator.py, reranker.py). 그래서 지금은 song_curator가 곡 추천과
 얼마나 겹치는지로 점수를 매긴다.
 
 에러 처리 원칙(위키 5-1절): CLIP·LLM 장애는 폴백 + degraded:true, 결과 0건은 에러가
-아니라 빈 배열(degraded:false). 재랭킹 실패는 후보 자체는 유효하므로 순서만 원본으로
-두고 응답은 그대로 낸다.
+아니라 빈 배열(degraded:false). Spotify 장애는 502 — 곡을 하나도 확인할 수 없어
+200 빈 결과로는 백엔드가 장애를 알아챌 수 없었다. 재랭킹 실패는 후보 자체는
+유효하므로 순서만 원본으로 두고 응답은 그대로 낸다.
 
 ※ "지역 인기곡 폴백"은 백엔드에 해당 조회 API(FR-008 집계)가 아직 없어
   place만 받아두고 실제 조회는 미구현 — 지금은 빈 tracks로 대체한다.
@@ -22,7 +23,7 @@ from app.components.clip_tagger import ClipTagger
 from app.components.reranker import Reranker, TrackCandidate
 from app.components.song_curator import CurationResult, SongCurator
 from app.components.track_resolver import TrackResolver
-from app.exceptions import ClipError, LLMError, UpstreamError
+from app.exceptions import ClipError, ExternalApiFailedError, LLMError, UpstreamError
 from app.schemas.common import Track
 from app.schemas.photo_recommend import PhotoRecommendRequest, PhotoRecommendResponse
 
@@ -69,8 +70,8 @@ class PhotoRecommendService:
         try:
             candidates = await self._resolver.resolve(curation.songs)
         except UpstreamError as e:
-            logger.warning("Spotify 확인 실패, 폴백: %s", e)
-            return self._fallback(tags=tags)
+            logger.warning("Spotify 확인 실패: %s", e)
+            raise ExternalApiFailedError("Spotify 곡 확인에 실패했어요.") from e
 
         if not candidates:
             # 추천받은 곡이 전부 Spotify에 없었다 — 에러는 아니고 빈 결과

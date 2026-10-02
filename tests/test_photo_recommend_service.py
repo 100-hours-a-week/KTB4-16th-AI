@@ -1,7 +1,9 @@
+import pytest
+
 from app.clients.spotify_client import SpotifyError
 from app.components.reranker import Reranker
 from app.components.song_curator import CurationResult, SongCandidate
-from app.exceptions import ClipError, LLMError
+from app.exceptions import ClipError, ExternalApiFailedError, LLMError
 from app.schemas.photo_recommend import PhotoRecommendRequest
 from app.services.photo_recommend_service import PhotoRecommendService
 
@@ -160,8 +162,8 @@ async def test_one_song_spotify_failure_does_not_fail_the_whole_request():
     assert [t.title for t in res.tracks] == ["밤편지"]
 
 
-async def test_all_songs_spotify_failure_falls_back_degraded():
-    """전부 오류로 실패하면(=Spotify 자체 장애로 추정) 폴백으로 처리한다."""
+async def test_all_songs_spotify_failure_raises_502():
+    """전부 오류로 실패하면(=Spotify 자체 장애로 추정) 빈 200 대신 502로 알린다."""
     songs = [_song("A", "Song A"), _song("B", "Song B")]
     results = {
         _q("A", "Song A"): SpotifyError("장애"),
@@ -169,9 +171,8 @@ async def test_all_songs_spotify_failure_falls_back_degraded():
     }
     service = build_service(curation=_curation(songs=songs), results=results)
 
-    res = await service.recommend(_req())
-
-    assert res.degraded is True
+    with pytest.raises(ExternalApiFailedError):
+        await service.recommend(_req())
 
 
 async def test_duplicate_tracks_are_deduplicated():

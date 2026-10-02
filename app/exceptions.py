@@ -62,6 +62,18 @@ class EmbeddingError(UpstreamError):
     message = "임베딩 API 호출에 실패했어요."
 
 
+class ExternalApiFailedError(AppError):
+    """우리 서버는 정상인데 응답에 꼭 필요한 외부 API가 실패한 경우.
+
+    빈 결과를 200으로 내리면 백엔드가 성공으로 보고 빈 화면을 띄운다(실제로 겪음:
+    Spotify 하루 한도 초과로 사진 추천이 전부 빈 결과였는데 200이라 원인을 못 찾음).
+    """
+
+    status_code = 502
+    code = "EXTERNAL_API_FAILED"
+    message = "외부 서비스 호출에 실패했어요."
+
+
 class ModelUnavailableError(AppError):
     status_code = 503
     code = "MODEL_UNAVAILABLE"
