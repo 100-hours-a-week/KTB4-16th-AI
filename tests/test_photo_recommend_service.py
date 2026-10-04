@@ -20,11 +20,25 @@ class StubClipTagger:
 
 
 class StubSongCurator:
-    def __init__(self, curation: CurationResult | None = None, error: Exception | None = None):
+    """첫 호출은 curation, 곡이 모자라 보충할 때(exclude 있음)는 extra를 돌려준다."""
+
+    def __init__(
+        self,
+        curation: CurationResult | None = None,
+        error: Exception | None = None,
+        extra: CurationResult | None = None,
+    ):
         self._curation = curation if curation is not None else _curation()
         self._error = error
+        self._extra = extra or CurationResult((), (), [])
+        self.excludes: list[list[SongCandidate]] = []
 
-    async def curate_from_tags(self, tags: list[str]) -> CurationResult:
+    async def curate_from_tags(
+        self, tags: list[str], exclude: list[SongCandidate] | None = None
+    ) -> CurationResult:
+        if exclude:
+            self.excludes.append(exclude)
+            return self._extra
         if self._error:
             raise self._error
         return self._curation
@@ -111,14 +125,56 @@ async def test_happy_path_returns_top_3_tracks_ranked_by_tag_overlap():
     assert res.tracks[0].title == "Blinding Lights"
 
 
-async def test_only_top_3_are_returned_even_if_more_resolve():
-    songs = [_song("A", f"Song {i}") for i in range(5)]
-    results = {_q("A", f"Song {i}"): [_track_json(f"t{i}", f"Song {i}", "A")] for i in range(5)}
+async def test_only_top_5_are_returned_even_if_more_resolve():
+    songs = [_song("A", f"Song {i}") for i in range(7)]
+    results = {_q("A", f"Song {i}"): [_track_json(f"t{i}", f"Song {i}", "A")] for i in range(7)}
     service = build_service(curation=_curation(songs=songs), results=results)
 
     res = await service.recommend(_req())
 
-    assert len(res.tracks) == 3
+    assert len(res.tracks) == 5
+
+
+async def test_tops_up_once_when_fewer_than_5_resolve():
+    """Spotify에서 탈락해 5곡이 안 되면 이미 나온 곡을 빼고 한 번 더 받아 채운다."""
+    first = [_song("A", f"Song {i}") for i in range(2)]
+    extra = [_song("B", f"More {i}") for i in range(3)]
+    results = {_q("A", f"Song {i}"): [_track_json(f"t{i}", f"Song {i}", "A")] for i in range(2)}
+    results |= {_q("B", f"More {i}"): [_track_json(f"m{i}", f"More {i}", "B")] for i in range(3)}
+    curator = StubSongCurator(curation=_curation(songs=first), extra=_curation(songs=extra))
+    service = PhotoRecommendService(
+        clip_tagger=StubClipTagger(tags=["카페"]),
+        song_curator=curator,
+        reranker=Reranker(),
+        spotify_search=StubSpotifySearch(results),
+    )
+
+    res = await service.recommend(_req())
+
+    assert len(res.tracks) == 5
+    assert curator.excludes == [first]
+
+
+async def test_top_up_failure_keeps_what_we_have():
+    first = [_song("A", "Song 0")]
+    results = {_q("A", "Song 0"): [_track_json("t0", "Song 0", "A")]}
+
+    class TopUpFails(StubSongCurator):
+        async def curate_from_tags(self, tags, exclude=None):
+            if exclude:
+                raise LLMError("장애")
+            return _curation(songs=first)
+
+    service = PhotoRecommendService(
+        clip_tagger=StubClipTagger(tags=["카페"]),
+        song_curator=TopUpFails(),
+        reranker=Reranker(),
+        spotify_search=StubSpotifySearch(results),
+    )
+
+    res = await service.recommend(_req())
+
+    assert [t.external_track_id for t in res.tracks] == ["t0"]
 
 
 async def test_searches_spotify_with_title_and_artist_field_filters():
