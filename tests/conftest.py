@@ -9,6 +9,7 @@ from typing import Any  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app.db.repositories.track_lookup_repository import LookupEntry  # noqa: E402
 from app.dependencies import (  # noqa: E402
     get_embedding_store,
     get_job_repository,
@@ -36,6 +37,24 @@ class InMemoryJobRepository:
 
     async def release_once(self, *, job_type: str, dedupe_key: str) -> None:
         self.jobs.pop((job_type, dedupe_key), None)
+
+
+class InMemoryLookups:
+    """track_lookups 대역 — broken=True면 DB 장애처럼 예외를 던진다."""
+
+    def __init__(self, entries: list[LookupEntry] | None = None, broken: bool = False):
+        self.rows = {e.lookup_key: e for e in entries or []}
+        self.broken = broken
+
+    async def get_many(self, keys):
+        if self.broken:
+            raise RuntimeError("DB 장애")
+        return {k: self.rows[k] for k in keys if k in self.rows}
+
+    async def save_many(self, entries):
+        if self.broken:
+            raise RuntimeError("DB 장애")
+        self.rows |= {e.lookup_key: e for e in entries}
 
 
 class InMemoryEmbeddingStore:

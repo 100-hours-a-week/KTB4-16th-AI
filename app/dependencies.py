@@ -37,6 +37,7 @@ from app.db.postgres import get_session
 from app.db.repositories.embedding_repository import EmbeddingRepository, EmbeddingStore
 from app.db.repositories.job_repository import JobRepository
 from app.db.repositories.report_repository import MonthlyReportRepository
+from app.db.repositories.track_lookup_repository import TrackLookupRepository, TrackLookupStore
 from app.exceptions import UnauthorizedError
 
 
@@ -136,6 +137,12 @@ async def get_monthly_report_repository(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncIterator[MonthlyReportRepository]:
     yield MonthlyReportRepository(session)
+
+
+async def get_track_lookup_store(
+    session: AsyncSession = Depends(get_session),
+) -> AsyncIterator[TrackLookupStore]:
+    yield TrackLookupRepository(session)
 
 
 def get_spotify_playlist_client() -> SpotifyPlaylistClient:

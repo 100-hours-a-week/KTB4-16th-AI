@@ -6,9 +6,9 @@ fake 모드 클라이언트로 실제 의존성 그래프를 태운다. 과거 �
 
 from fastapi.testclient import TestClient
 
-from app.dependencies import get_record_search
+from app.dependencies import get_record_search, get_track_lookup_store
 from app.main import create_app
-from tests.conftest import AUTH
+from tests.conftest import AUTH, InMemoryLookups
 
 
 class EmptyRecordSearch:
@@ -18,6 +18,7 @@ class EmptyRecordSearch:
 
 def _client() -> TestClient:
     app = create_app()
+    app.dependency_overrides[get_track_lookup_store] = lambda: InMemoryLookups()
     app.dependency_overrides[get_record_search] = lambda: EmptyRecordSearch()
     return TestClient(app)
 

@@ -4,11 +4,13 @@ from app.clients.spotify_client import SpotifySearchClient
 from app.components.clip_tagger import ClipTagger
 from app.components.reranker import Reranker
 from app.components.song_curator import SongCurator
+from app.db.repositories.track_lookup_repository import TrackLookupStore
 from app.dependencies import (
     get_clip_tagger,
     get_reranker,
     get_song_curator,
     get_spotify_search_client,
+    get_track_lookup_store,
 )
 from app.schemas.photo_recommend import PhotoRecommendRequest, PhotoRecommendResponse
 from app.services.photo_recommend_service import PhotoRecommendService
@@ -23,6 +25,9 @@ async def photo_recommend(
     song_curator: SongCurator = Depends(get_song_curator),
     reranker: Reranker = Depends(get_reranker),
     spotify_search: SpotifySearchClient = Depends(get_spotify_search_client),
+    track_lookups: TrackLookupStore = Depends(get_track_lookup_store),
 ) -> PhotoRecommendResponse:
-    service = PhotoRecommendService(clip_tagger, song_curator, reranker, spotify_search)
+    service = PhotoRecommendService(
+        clip_tagger, song_curator, reranker, spotify_search, track_lookups
+    )
     return await service.recommend(req)
