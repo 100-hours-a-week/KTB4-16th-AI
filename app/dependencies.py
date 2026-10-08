@@ -28,6 +28,11 @@ from app.clients.spotify_client import (
 from app.components.category_vectors import CategoryVectors
 from app.components.clip_tagger import ClipTagger
 from app.components.embedder import Embedder
+from app.components.moderation_model import (
+    FakeModerationModel,
+    ModerationModel,
+    load_onnx_model,
+)
 from app.components.query_rewriter import QueryRewriter
 from app.components.reranker import Reranker
 from app.components.song_curator import SongCurator
@@ -39,6 +44,7 @@ from app.db.repositories.job_repository import JobRepository
 from app.db.repositories.report_repository import MonthlyReportRepository
 from app.db.repositories.track_lookup_repository import TrackLookupRepository, TrackLookupStore
 from app.exceptions import UnauthorizedError
+from app.services.moderation_service import ModerationService
 
 
 async def verify_internal_token(x_internal_token: str | None = Header(default=None)) -> None:
@@ -187,3 +193,16 @@ async def get_record_search(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncIterator[RecordSearch]:
     yield VectorSearch(session)
+
+
+@lru_cache
+def get_moderation_model() -> ModerationModel | None:
+    # 프로세스당 한 번만 로드한다 (ONNX 세션 생성에 1~2초)
+    s = get_settings()
+    if s.ai_client_mode == "fake":
+        return FakeModerationModel()
+    return load_onnx_model(s.moderation_model_dir, s.moderation_model_version, s.moderation_threads)
+
+
+def get_moderation_service() -> ModerationService:
+    return ModerationService(get_moderation_model(), get_settings().moderation_threshold)

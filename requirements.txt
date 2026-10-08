@@ -13,3 +13,7 @@ openai>=3.15,<4
 anthropic>=1.6,<2
 httpx>=0.28,<1
 pyyaml>=6.0,<7
+# 기능6 모더레이션 모델 추론 (PyTorch 없이 ONNX)
+onnxruntime>=1.19,<2
+tokenizers>=0.20,<1
+numpy>=1.26,<3
