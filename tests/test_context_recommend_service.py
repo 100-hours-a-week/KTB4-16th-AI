@@ -262,7 +262,7 @@ async def test_song_already_heard_in_similar_moment_is_not_recommended_again():
 
 async def test_tracks_carry_rerank_score_highest_first():
     exact = _song("아이유", "밤편지", genre="발라드", moods=("잔잔한", "그리운"))
-    partial = _song("잔나비", "뜨거운 여름밤", genre="인디", moods=("잔잔한",))
+    partial = _song("잔나비", "뜨거운 여름밤", genre="인디음악", moods=("잔잔한",))
     spotify = StubSpotify(
         {
             exact.search_query: [_track_json("t1", "밤편지", "아이유")],
