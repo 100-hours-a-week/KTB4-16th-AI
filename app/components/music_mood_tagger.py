@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from app.clients.llm_client import LLMClient
 from app.components.music_tags import GENRE_VOCAB, MOOD_VOCAB
 
-PROMPT_VERSION = "music-mood-v3"
+PROMPT_VERSION = "music-mood-v4"
 
 SYSTEM_PROMPT = f"""너는 음악 큐레이터다. 주어진 곡의 분위기를 한국어로 설명한다.
 
@@ -60,7 +60,9 @@ def _parse(text: str) -> MoodDescription:
         if line.startswith("설명:"):
             description = line.removeprefix("설명:").strip()
         elif line.startswith("장르:"):
-            genre = line.removeprefix("장르:").strip()
+            # 목록 밖 장르는 버린다 — 사용자 대표 장르를 셀 때 이름이 다르면 합산이 안 된다
+            value = line.removeprefix("장르:").strip()
+            genre = value if value in GENRE_VOCAB else ""
         elif line.startswith("무드:"):
             moods = tuple(m.strip() for m in line.removeprefix("무드:").split(",") if m.strip())
     return MoodDescription(text=description, genre=genre, moods=moods)

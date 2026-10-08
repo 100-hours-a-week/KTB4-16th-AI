@@ -64,7 +64,7 @@ class Reranker:
     def _score(
         self, situation_genres: tuple[str, ...], situation_moods: tuple[str, ...], c: TrackCandidate
     ) -> float:
-        # 상황은 장르가 여러 개일 수 있다(맑은 저녁 한강공원 → 시티팝·인디·어쿠스틱)
+        # 상황은 장르가 여러 개일 수 있다(맑은 저녁 한강공원 → 인디음악·포크/블루스·POP)
         genre_score = 1.0 if c.genre and c.genre in situation_genres else 0.0
         mood_overlap = len(set(situation_moods) & set(c.moods))
         mood_score = mood_overlap / len(situation_moods) if situation_moods else 0.0
