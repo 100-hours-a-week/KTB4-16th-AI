@@ -1,7 +1,8 @@
 import time
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.dependencies import get_moderation_model, get_moderation_service
 from app.schemas.health import ModerationHealthResponse
 from app.schemas.moderation import ModerationCheckRequest, ModerationCheckResponse
 from app.services.moderation_service import ModerationService
@@ -14,13 +15,19 @@ _started_at = time.monotonic()
 
 
 @router.post("/check", response_model=ModerationCheckResponse)
-async def check(req: ModerationCheckRequest) -> ModerationCheckResponse:
-    return await ModerationService().check(req)
+async def check(
+    req: ModerationCheckRequest,
+    service: ModerationService = Depends(get_moderation_service),
+) -> ModerationCheckResponse:
+    return await service.check(req)
 
 
 @health_router.get("/health", response_model=ModerationHealthResponse)
 async def moderation_health() -> ModerationHealthResponse:
-    # 모델 로드 전이라 modelVersion은 null
+    # 모델 파일이 없으면 modelVersion은 null (서버는 뜨고 판정만 503)
+    model = get_moderation_model()
     return ModerationHealthResponse(
-        status="ok", model_version=None, uptime_seconds=int(time.monotonic() - _started_at)
+        status="ok",
+        model_version=model.version if model else None,
+        uptime_seconds=int(time.monotonic() - _started_at),
     )

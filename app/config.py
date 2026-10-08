@@ -61,6 +61,12 @@ class Settings(BaseSettings):
     # scripts/spotify_service_account_setup.py로 1회 발급. 뮤로 팀 계정 1개 전용
     spotify_service_refresh_token: str = ""
 
+    # 기능6 모더레이션 모델 (KcELECTRA ONNX) — Docker 빌드 때 HF 비공개 저장소에서 받아 둔다
+    moderation_model_dir: str = "/app/models/moderation"
+    moderation_model_version: str = "kcelectra-v1-stage3"
+    moderation_threshold: float = 0.5
+    moderation_threads: int = 2
+
     # 외부 API 공통
     external_timeout_seconds: float = 20.0
     external_max_retries: int = 2
