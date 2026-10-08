@@ -44,7 +44,7 @@ async def test_curate_skips_unparseable_song_lines_but_keeps_the_rest():
         "곡:\n"
         "아이유 - 밤편지 | 장르=발라드 | 무드=잔잔한\n"
         "이 줄은 형식이 깨짐\n"
-        "지코 - 아무노래 | 장르=힙합 | 무드=신나는"
+        "지코 - 아무노래 | 장르=랩/힙합 | 무드=신나는"
     )
     curation = await SongCurator(ScriptedLLM(response)).curate_from_tags(["카페"])
     assert [s.artist for s in curation.songs] == ["아이유", "지코"]
@@ -75,11 +75,11 @@ async def test_curate_with_blank_situation_raises():
 
 async def test_situation_can_have_several_genres():
     response = (
-        "상황: 장르=시티팝,인디,어쿠스틱 | 무드=따뜻한,설레는,잔잔한\n곡:\n"
+        "상황: 장르=POP,인디음악,포크/블루스 | 무드=따뜻한,설레는,잔잔한\n곡:\n"
         "아이유 - 밤편지 | 장르=발라드 | 무드=잔잔한"
     )
     curation = await SongCurator(ScriptedLLM(response)).curate("상황: 맑은 저녁")
-    assert curation.situation_genres == ("시티팝", "인디", "어쿠스틱")
+    assert curation.situation_genres == ("POP", "인디음악", "포크/블루스")
     assert curation.situation_moods == ("따뜻한", "설레는", "잔잔한")
 
 
@@ -104,3 +104,14 @@ async def test_copied_format_example_line_is_ignored():
     )
     curation = await SongCurator(ScriptedLLM(response)).curate("상황: 비 오는 밤")
     assert [s.title for s in curation.songs] == ["밤편지"]
+
+
+async def test_old_genre_names_are_dropped():
+    """2026-10-08 장르를 13개로 바꾼 뒤 예전 이름(시티팝·힙합 등)은 목록 밖이라 버린다."""
+    response = (
+        "상황: 장르=시티팝,힙합,랩/힙합 | 무드=신나는\n곡:\n"
+        "지코 - 아무노래 | 장르=힙합 | 무드=신나는"
+    )
+    curation = await SongCurator(ScriptedLLM(response)).curate("상황: 파티")
+    assert curation.situation_genres == ("랩/힙합",)
+    assert curation.songs[0].genre == ""

@@ -33,7 +33,7 @@ def test_exact_genre_and_mood_match_ranks_first():
 
 def test_partial_mood_overlap_ranks_between_full_and_no_match():
     full_match = _candidate("full", genre="댄스", moods=("신나는", "화려한"))
-    partial_match = _candidate("partial", genre="힙합", moods=("신나는", "그리운"))
+    partial_match = _candidate("partial", genre="랩/힙합", moods=("신나는", "그리운"))
     no_match = _candidate("none", genre="발라드", moods=("그리운", "따뜻한"))
 
     ranked = Reranker().rerank(
@@ -77,9 +77,9 @@ def test_rank_returns_scores_highest_first():
 
 
 def test_genre_matches_if_it_is_any_of_the_situation_genres():
-    indie = _candidate("indie", genre="인디", moods=("그리운",))
+    indie = _candidate("indie", genre="인디음악", moods=("그리운",))
     trot = _candidate("trot", genre="트로트", moods=("그리운",))
 
-    ranked = Reranker().rerank(("시티팝", "인디", "어쿠스틱"), ("따뜻한",), [trot, indie])
+    ranked = Reranker().rerank(("POP", "인디음악", "포크/블루스"), ("따뜻한",), [trot, indie])
 
     assert [c.external_track_id for c in ranked] == ["indie", "trot"]
