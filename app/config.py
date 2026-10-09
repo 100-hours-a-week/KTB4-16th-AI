@@ -67,6 +67,10 @@ class Settings(BaseSettings):
     moderation_threshold: float = 0.5
     moderation_threads: int = 2
 
+    # 기능6 오늘의 질문 — 최근 며칠치 자물쇠로 장르별 통계를 낼지, 최대 몇 건까지 볼지
+    balance_stats_days: int = 90
+    balance_stats_limit: int = 5000
+
     # 외부 API 공통
     external_timeout_seconds: float = 20.0
     external_max_retries: int = 2
