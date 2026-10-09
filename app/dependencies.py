@@ -34,16 +34,24 @@ from app.components.moderation_model import (
     load_onnx_model,
 )
 from app.components.query_rewriter import QueryRewriter
+from app.components.question_generator import QuestionGenerator
 from app.components.reranker import Reranker
 from app.components.song_curator import SongCurator
 from app.components.vector_search import RecordSearch, VectorSearch
 from app.config import get_settings
+from app.db import mysql, postgres
 from app.db.postgres import get_session
+from app.db.repositories.balance_stats_repository import (
+    BalanceStatsRepository,
+    GenreStats,
+    GenreStatsSource,
+)
 from app.db.repositories.embedding_repository import EmbeddingRepository, EmbeddingStore
 from app.db.repositories.job_repository import JobRepository
 from app.db.repositories.report_repository import MonthlyReportRepository
 from app.db.repositories.track_lookup_repository import TrackLookupRepository, TrackLookupStore
 from app.exceptions import UnauthorizedError
+from app.services.balance_service import BalanceService
 from app.services.moderation_service import ModerationService
 
 
@@ -206,3 +214,37 @@ def get_moderation_model() -> ModerationModel | None:
 
 def get_moderation_service() -> ModerationService:
     return ModerationService(get_moderation_model(), get_settings().moderation_threshold)
+
+
+class _DbGenreStats:
+    """오늘의 질문 재료 — 백엔드 MySQL(자물쇠)과 AI Postgres(곡 장르·무드)를 함께 읽는다."""
+
+    async def get(self, music_genre: str) -> GenreStats:
+        s = get_settings()
+        async with (
+            mysql.get_sessionmaker()() as mysql_session,
+            postgres.get_sessionmaker()() as pg_session,
+        ):
+            repo = BalanceStatsRepository(mysql_session, pg_session)
+            return await repo.get(
+                music_genre, days=s.balance_stats_days, limit=s.balance_stats_limit
+            )
+
+
+class _NoGenreStats:
+    """백엔드 DB가 없는 로컬·테스트 환경 — 통계 없이 일반 취향 질문을 만든다."""
+
+    async def get(self, music_genre: str) -> GenreStats:
+        return GenreStats.empty()
+
+
+def get_genre_stats_source() -> GenreStatsSource:
+    s = get_settings()
+    if s.ai_client_mode == "fake" or not s.backend_mysql_url:
+        return _NoGenreStats()
+    return _DbGenreStats()
+
+
+def get_balance_service() -> BalanceService:
+    # 곡·가수 지식이 필요한 작업이라 knowledge LLM을 쓴다
+    return BalanceService(get_genre_stats_source(), QuestionGenerator(get_clients().llm_knowledge))

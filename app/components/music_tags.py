@@ -24,6 +24,11 @@ GENRE_VOCAB = [
     "J-POP",
 ]
 
+# 취향 투표 그룹 — 백엔드 users.music_genre·vote_questions.music_genre에 들어가는 값.
+# 13개 장르 + 공통. 사람이 적은 장르의 사용자는 공통으로 묶는다.
+COMMON_GROUP = "공통"
+MUSIC_GENRE_GROUPS = [*GENRE_VOCAB, COMMON_GROUP]
+
 MOOD_VOCAB = [
     "신나는",
     "잔잔한",
