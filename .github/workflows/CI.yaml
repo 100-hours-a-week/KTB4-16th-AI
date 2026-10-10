@@ -1,4 +1,4 @@
-HF_TOKEN: ${{ secrets.HF_TOKEN }}name: AI CI main
+name: AI CI main
 
 on:
   push:
