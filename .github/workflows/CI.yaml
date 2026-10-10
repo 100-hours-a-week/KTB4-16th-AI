@@ -168,6 +168,7 @@ jobs:
 
       - name: Release ai image
         env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
         run: |
           npx --yes \
