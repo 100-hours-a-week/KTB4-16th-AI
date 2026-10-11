@@ -47,6 +47,48 @@ def _describe_weather(raw: str) -> str:
     return WEATHER_KO.get(raw.upper(), raw)
 
 
+@dataclass(frozen=True)
+class BatchScope:
+    """배치 하나를 가리키는 값 — job 키 접두사와 알림 키를 한 곳에서 만든다.
+
+    batch_request_id가 있으면 그 값으로 구분한다(같은 달 수동 트리거를 2번 보내도 서로
+    다른 배치). 없으면(구버전 백엔드) 예전처럼 연·월로 구분한다.
+
+    - job 키: "{id}:{userId}" / "{year}-{month}-{userId}". ID에는 ':'를 못 쓰게 검증해서
+      "abc"의 접두사가 "abc-1"의 job과 겹치지 않는다.
+    - 알림 키: "batch:{id}" / "{year}-{month}". 접두사를 붙여서 ID가 우연히 "2026-9" 같은
+      모양이어도 연·월 키와 겹치지 않는다.
+    """
+
+    year: int
+    month: int
+    batch_request_id: str | None = None
+
+    @property
+    def job_prefix(self) -> str:
+        if self.batch_request_id:
+            return f"{self.batch_request_id}:"
+        return f"{self.year}-{self.month}-"
+
+    @property
+    def notify_key(self) -> str:
+        if self.batch_request_id:
+            return f"batch:{self.batch_request_id}"
+        return f"{self.year}-{self.month}"
+
+    def job_key(self, user_id: int) -> str:
+        return f"{self.job_prefix}{user_id}"
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> "BatchScope":
+        # 이 기능이 들어오기 전에 큐에 들어간 job엔 batch_request_id가 없다 → 연·월로 동작
+        return cls(
+            year=payload["year"],
+            month=payload["month"],
+            batch_request_id=payload.get("batch_request_id"),
+        )
+
+
 async def handle(payload: dict[str, Any]) -> None:
     user_id: int = payload["user_id"]
     year: int = payload["year"]
@@ -92,10 +134,10 @@ async def on_finished(payload: dict[str, Any]) -> None:
     실패(재시도 소진)일 때 아무도 알림을 안 보낸다 — 앞서 성공한 job들은 그때
     "아직 남은 job 있음"을 보고 넘어갔기 때문. 그래서 성공·실패 양쪽이 지나는 여기로 뺐다.
     """
-    await _enqueue_notify_if_batch_complete(year=payload["year"], month=payload["month"])
+    await _enqueue_notify_if_batch_complete(scope=BatchScope.from_payload(payload))
 
 
-async def _enqueue_notify_if_batch_complete(*, year: int, month: int) -> None:
+async def _enqueue_notify_if_batch_complete(*, scope: BatchScope) -> None:
     """이 job으로 배치가 다 끝났으면, 완료 알림 전송을 별도 job으로 큐에 넣는다.
 
     1. 남은(pending·running) job이 0개면 배치가 끝난 것. 이 job의 상태는
@@ -107,24 +149,28 @@ async def _enqueue_notify_if_batch_complete(*, year: int, month: int) -> None:
        claimed 마커만 있고 바로 clients.backend.notify_report_ready를 부르면,
        그 호출 자체가 실패했을 때 재시도할 방법이 없어 배치 알림이 영영 유실된다.
     """
-    dedupe_prefix = f"{year}-{month}-"
-
     async with get_postgres_sessionmaker()() as session:
         jobs = JobRepository(session)
-        remaining = await jobs.count_incomplete(job_type=JOB_TYPE, dedupe_key_prefix=dedupe_prefix)
+        remaining = await jobs.count_incomplete(
+            job_type=JOB_TYPE, dedupe_key_prefix=scope.job_prefix
+        )
         if remaining > 0:
             return  # 아직 다른 사용자 job이 처리 중 — 마지막 job이 알림 job을 큐에 넣을 것
 
         claimed = await jobs.try_claim_once(
-            job_type=BATCH_NOTIFY_JOB_TYPE, dedupe_key=f"{year}-{month}"
+            job_type=BATCH_NOTIFY_JOB_TYPE, dedupe_key=scope.notify_key
         )
         if not claimed:
             return  # 다른 job이 이미 이 배치의 알림 job을 큐에 넣었음(동시 완료 레이스)
 
         await jobs.enqueue(
             job_type=BATCH_NOTIFY_JOB_TYPE,
-            dedupe_key=f"{year}-{month}",
-            payload={"year": year, "month": month},
+            dedupe_key=scope.notify_key,
+            payload={
+                "year": scope.year,
+                "month": scope.month,
+                "batch_request_id": scope.batch_request_id,
+            },
             max_attempts=get_settings().job_max_attempts,
         )
 
@@ -138,16 +184,17 @@ async def handle_batch_notify(payload: dict[str, Any]) -> None:
     이 함수가 실패(예외)하면 worker_main이 일반 job과 똑같이 재시도한다 — 전송
     실패가 조용히 유실되지 않는다.
     """
-    year: int = payload["year"]
-    month: int = payload["month"]
-    dedupe_prefix = f"{year}-{month}-"
+    scope = BatchScope.from_payload(payload)
+    year, month = scope.year, scope.month
 
     async with get_postgres_sessionmaker()() as session:
         jobs = JobRepository(session)
         completed_ids = await jobs.completed_user_ids(
-            job_type=JOB_TYPE, dedupe_key_prefix=dedupe_prefix
+            job_type=JOB_TYPE, dedupe_key_prefix=scope.job_prefix
         )
-        failed_ids = await jobs.failed_user_ids(job_type=JOB_TYPE, dedupe_key_prefix=dedupe_prefix)
+        failed_ids = await jobs.failed_user_ids(
+            job_type=JOB_TYPE, dedupe_key_prefix=scope.job_prefix
+        )
         reports = await MonthlyReportRepository(session).get_many(
             user_ids=completed_ids, year=year, month=month
         )
@@ -178,11 +225,13 @@ async def handle_batch_notify(payload: dict[str, Any]) -> None:
         month=month,
         generated_at=datetime.now(UTC).isoformat(),
         results=results,
+        batch_request_id=scope.batch_request_id,
     )
     logger.info(
-        "배치 완료 알림 전송 %s-%s: 성공 %d명, 실패 %d명",
+        "배치 완료 알림 전송 %s-%s (batchRequestId=%s): 성공 %d명, 실패 %d명",
         year,
         month,
+        scope.batch_request_id,
         len(reports),
         len(failed_ids),
     )
