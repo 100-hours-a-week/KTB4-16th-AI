@@ -143,6 +143,22 @@ class JobRepository:
         )
         await self._session.commit()
 
+    async def count_with_prefix(self, *, job_type: str, dedupe_key_prefix: str) -> int:
+        """dedupe_key가 이 접두사로 시작하는 job_type 작업의 개수(상태 무관).
+
+        같은 batchRequestId로 요청이 다시 왔는지(이미 접수된 배치인지) 확인할 때 쓴다.
+        """
+        row = await self._session.execute(
+            text(
+                """
+                SELECT COUNT(*) FROM ai_jobs
+                WHERE job_type = :job_type AND dedupe_key LIKE :prefix
+                """
+            ),
+            {"job_type": job_type, "prefix": f"{dedupe_key_prefix}%"},
+        )
+        return row.scalar_one()
+
     async def count_incomplete(self, *, job_type: str, dedupe_key_prefix: str) -> int:
         """dedupe_key가 이 접두사로 시작하는 job_type 작업 중 아직 안 끝난(pending·running)
         개수. failed는 "재시도 다 써서 포기한 것"이라 미완료로 안 센다 — 그거 하나 때문에

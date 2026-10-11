@@ -28,6 +28,7 @@ class ReportBackendClient(Protocol):
         month: int,
         generated_at: str,
         results: list[dict[str, Any]],
+        batch_request_id: str | None = None,
     ) -> None: ...
 
 
@@ -44,18 +45,24 @@ class BackendClient:
         month: int,
         generated_at: str,
         results: list[dict[str, Any]],
+        batch_request_id: str | None = None,
     ) -> None:
         """RECAP 배치 생성 완료 + 결과 내용을 백엔드에 알린다 (MonthlyReportAiCallbackRequest)."""
+        body: dict[str, Any] = {
+            "jobId": job_id,
+            "year": year,
+            "month": month,
+            "generatedAt": generated_at,
+            "results": results,
+        }
+        # 요청 때 받은 batchRequestId를 값 그대로 돌려준다. 없으면(구버전 백엔드 요청) 필드를
+        # 아예 빼서 기존 본문과 똑같이 보낸다 — null을 보내면 백엔드가 "모르는 ID"로 볼 수 있다.
+        if batch_request_id is not None:
+            body["batchRequestId"] = batch_request_id
         try:
             res = await self._http.post(
                 "/internal/ai/report-ready",
-                json={
-                    "jobId": job_id,
-                    "year": year,
-                    "month": month,
-                    "generatedAt": generated_at,
-                    "results": results,
-                },
+                json=body,
                 headers={"X-Internal-Token": self._internal_token},
             )
         except httpx.HTTPError as e:
@@ -80,6 +87,7 @@ class FakeBackendClient:
         month: int,
         generated_at: str,
         results: list[dict[str, Any]],
+        batch_request_id: str | None = None,
     ) -> None:
         self.calls.append(
             {
@@ -88,5 +96,6 @@ class FakeBackendClient:
                 "month": month,
                 "generated_at": generated_at,
                 "results": results,
+                "batch_request_id": batch_request_id,
             }
         )
