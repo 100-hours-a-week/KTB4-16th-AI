@@ -38,6 +38,11 @@ class InMemoryJobRepository:
     async def release_once(self, *, job_type: str, dedupe_key: str) -> None:
         self.jobs.pop((job_type, dedupe_key), None)
 
+    async def count_with_prefix(self, *, job_type: str, dedupe_key_prefix: str) -> int:
+        return sum(
+            1 for (t, key) in self.jobs if t == job_type and key.startswith(dedupe_key_prefix)
+        )
+
 
 class InMemoryLookups:
     """track_lookups 대역 — broken=True면 DB 장애처럼 예외를 던진다."""

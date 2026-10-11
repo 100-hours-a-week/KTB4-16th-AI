@@ -12,12 +12,17 @@ class ReportBatchGenerateRequest(CamelModel):
     month: int = Field(ge=1, le=12)
     # 생략 시 전체 사용자. 백엔드 명세상 userId는 숫자(Long)
     user_ids: list[int] | None = None
+    # 백엔드가 요청마다 주는 배치 구분값(같은 달 수동 트리거를 2번 보내도 구분하려고).
+    # 콜백에 값 그대로 돌려준다. 생략하면(구버전 백엔드) 연·월로 구분하던 기존 동작.
+    # ':'를 못 쓰게 막아 job 키 "{id}:{userId}"의 경계가 모호해지지 않게 한다.
+    batch_request_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9-]{1,64}$")
 
 
 class ReportBatchQueuedResponse(CamelModel):
     status: Literal["QUEUED"] = "QUEUED"
     job_id: str
     target_count: int | None = None
+    batch_request_id: str | None = None
 
 
 class AiRecapOut(CamelModel):

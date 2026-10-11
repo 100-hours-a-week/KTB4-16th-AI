@@ -38,6 +38,17 @@ SYSTEM_PROMPT = """너는 사용자의 한 달 기록을 보고 AI 리캡 한 �
 
 NO_RECORDS_TEXT = "이번 달은 남겨진 기록이 없어요."
 
+# 백엔드 컬럼 ai_recap_text가 VARCHAR(100) — 이걸 넘기면 콜백 전체(배치의 다른 유저
+# 결과까지 포함)가 거부된다(MULO_테이블_정의서 v8.1). "한 문장만" 프롬프트 지시는
+# LLM이 안 지킬 수 있어서, 저장·전송 전에 항상 이 길이 이하로 강제한다.
+AI_RECAP_TEXT_LIMIT = 100
+
+
+def _truncate_recap_text(text: str, limit: int = AI_RECAP_TEXT_LIMIT) -> str:
+    if len(text) <= limit:
+        return text
+    return text[: limit - 1] + "…"
+
 
 class ReportSummarizer:
     def __init__(self, llm: LLMClient):
@@ -75,4 +86,5 @@ class ReportSummarizer:
             sections.append(f"[이달의 사진 분위기 비중]\n{category_line}")
 
         prompt = "\n\n".join(sections)
-        return await self._llm.complete(system=SYSTEM_PROMPT, prompt=prompt, max_tokens=150)
+        summary = await self._llm.complete(system=SYSTEM_PROMPT, prompt=prompt, max_tokens=150)
+        return _truncate_recap_text(summary)
