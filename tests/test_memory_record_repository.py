@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from types import SimpleNamespace
 
 from app.db.repositories.memory_record_repository import MemoryRecordRepository
@@ -67,3 +68,73 @@ async def test_no_ids_means_no_query():
 
     assert await MemoryRecordRepository(session).get_many(user_id=5, record_ids=[]) == {}
     assert session.executed == []
+
+
+def _condition_row(record_id=1, **overrides):
+    values = {
+        "record_id": record_id,
+        "created_at": datetime(2026, 10, 3, 18, 30),
+        "weather_condition": "CLEAR",
+        "temperature": Decimal("18.5"),
+        "mood_score": 10,
+        "legal_dong_name": "성수동1가",
+        "legal_dong_code": "1120011500",
+        "latitude": Decimal("37.544000"),
+        "longitude": Decimal("127.037000"),
+    }
+    values.update(overrides)
+    return SimpleNamespace(**values)
+
+
+async def test_condition_rows_query_is_scoped_to_user_and_limited():
+    session = FakeMysqlSession([_condition_row(1)])
+
+    await MemoryRecordRepository(session).list_condition_rows(user_id=5, limit=300)
+
+    sql, params = session.executed[0]
+    assert "r.user_id = :user_id" in sql  # 다른 사용자의 자물쇠는 읽히지 않는다
+    assert "r.deleted_at IS NULL" in sql  # 삭제된 자물쇠는 뺀다
+    assert "ORDER BY r.created_at DESC" in sql and "LIMIT :limit" in sql  # 최근순, 개수 제한
+    assert params == {"user_id": 5, "limit": 300}
+
+
+async def test_condition_rows_convert_decimals_and_codes():
+    session = FakeMysqlSession([_condition_row(7, legal_dong_code=1120011500)])
+
+    (row,) = await MemoryRecordRepository(session).list_condition_rows(user_id=5, limit=10)
+
+    assert (row.record_id, row.weather_condition, row.mood_score) == (7, "CLEAR", 10)
+    assert row.temperature == 18.5 and isinstance(row.temperature, float)
+    assert (row.latitude, row.longitude) == (37.544, 127.037)
+    assert row.dong_name == "성수동1가"
+    assert row.dong_code == "1120011500"  # 숫자로 와도 문자열로
+
+
+async def test_condition_rows_keep_missing_values_as_none():
+    empty = _condition_row(
+        2,
+        weather_condition=None,
+        temperature=None,
+        mood_score=None,
+        legal_dong_name=None,
+        legal_dong_code=None,
+        latitude=None,
+        longitude=None,
+    )
+    session = FakeMysqlSession([empty])
+
+    (row,) = await MemoryRecordRepository(session).list_condition_rows(user_id=5, limit=10)
+
+    assert row.weather_condition is None and row.temperature is None and row.mood_score is None
+    assert row.dong_name is None and row.dong_code is None
+    assert row.latitude is None and row.longitude is None
+
+
+async def test_get_many_does_not_read_the_unverified_place_columns():
+    """위경도·법정동코드 컬럼 이름이 틀려도 조건이 없는 질문의 검색이 깨지지 않게 분리해 둔다."""
+    session = FakeMysqlSession([_row(1)])
+
+    await MemoryRecordRepository(session).get_many(user_id=5, record_ids=[1])
+
+    sql, _ = session.executed[0]
+    assert "latitude" not in sql and "longitude" not in sql and "legal_dong_code" not in sql
