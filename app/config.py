@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     memory_search_comment_weight: float = 0.5
     memory_search_music_weight: float = 0.5
     memory_search_candidates: int = 20  # 검색기마다 가져오는 후보 수
+    # 질문에 조건(장소·계절·날씨·기분 등)이 있을 때의 점수 — 마찬가지로 시험지로 정할 초기값
+    memory_search_condition_weight: float = 0.5  # 최종 점수에서 조건 점수의 몫 (나머지는 벡터)
+    memory_search_location_weight: float = 2.0  # 조건 점수 안에서 장소·지역·동 조건의 가중치
+    memory_search_other_condition_weight: float = 1.0  # 그 밖의 조건
+    memory_search_scan_limit: int = 5000  # 조건 비교를 위해 읽는 자물쇠의 최대 개수 (최근순)
+    memory_search_condition_candidates: int = 50  # 조건으로만 후보가 되는 기록의 최대 개수
 
     # CLIP 이미지 임베딩 — Replicate openai/clip (clip-vit-large-patch14)
     # V2에 RunPod 직접 서빙으로 교체 예정. 모델이 바뀌면 차원 변경 → 전체 재임베딩
