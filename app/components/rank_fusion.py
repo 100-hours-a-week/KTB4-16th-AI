@@ -7,9 +7,10 @@
 가중치·최소 유사도는 시험지로 정할 초기값이다 — 하드코딩하지 않고 호출하는 쪽이 넘긴다.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from app.components.condition_scoring import RecordScore
 from app.components.vector_search import SimilarRecord
 
 
@@ -52,3 +53,48 @@ def fuse(
 
     fused.sort(key=lambda f: (-f.score, -f.record_id))
     return fused
+
+
+@dataclass(frozen=True)
+class RankedRecord:
+    record_id: int
+    score: float  # 최종 점수 (0~1)
+    vector_score: float
+    condition: RecordScore
+
+
+@dataclass(frozen=True)
+class ConditionRanking:
+    exact: list[RankedRecord]  # 질문의 조건을 모두 만족하는 기록
+    suggestions: list[RankedRecord]  # 일부만 만족하는 기록 ("이런 걸 찾으시는 게 아닌가요?")
+
+
+def combine_with_conditions(
+    vector: Sequence[FusedRecord],
+    conditions: Mapping[int, RecordScore],
+    *,
+    condition_weight: float,
+) -> ConditionRanking:
+    """벡터 점수와 조건 점수를 합쳐서, 조건을 모두 만족하는 기록과 일부만 만족하는 기록으로 나눈다.
+
+    최종 점수 = (1 - w) × 벡터 점수 + w × 조건 점수. 조건을 하나도 못 맞춘 기록은 벡터 점수가
+    아무리 높아도 결과에 넣지 않는다 — 질문이 조건을 말했는데 상관없는 기록이 섞이지 않게.
+    벡터 검색 상위 후보에 못 든 기록(조건으로만 후보가 된 기록)은 벡터 점수 0으로 계산한다.
+    """
+    if not 0 <= condition_weight <= 1:
+        raise ValueError("조건 가중치는 0~1 사이여야 해요.")
+
+    vector_by_id = {f.record_id: f.score for f in vector}
+    exact: list[RankedRecord] = []
+    suggestions: list[RankedRecord] = []
+    for record_id, condition in conditions.items():
+        if not condition.matched:
+            continue
+        vector_score = vector_by_id.get(record_id, 0.0)
+        score = (1 - condition_weight) * vector_score + condition_weight * condition.score
+        ranked = RankedRecord(record_id, score, vector_score, condition)
+        (exact if condition.all_matched else suggestions).append(ranked)
+
+    for group in (exact, suggestions):
+        group.sort(key=lambda r: (-r.score, -r.record_id))  # 점수가 같으면 최근 기록 먼저
+    return ConditionRanking(exact, suggestions)
