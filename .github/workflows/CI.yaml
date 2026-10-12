@@ -118,7 +118,7 @@ jobs:
       id-token: write
 
     env:
-      IMAGE_BASE: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID_Develop }}/${{ secrets.PROJECT_REPOSITORY }}/${{ secrets.IMAGE_NAME }}
+      IMAGE_BASE: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.PROJECT_REPOSITORY }}/${{ secrets.IMAGE_NAME }}
 
     steps:
       # 1. 코드 체크아웃
@@ -155,9 +155,9 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v3
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID_Develop }}
-          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER_Develop }}
-          service_account: ${{ secrets.SERVICE_ACCOUNT_Develop }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
 
       - name: Set up gcloud
         uses: google-github-actions/setup-gcloud@v3
@@ -193,9 +193,9 @@ jobs:
       - id: auth
         uses: google-github-actions/auth@v3
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID_Develop }}
-          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER_Develop }}
-          service_account: ${{ secrets.SERVICE_ACCOUNT_Develop }}
+          project_id: ${{ secrets.GCP_PROJECT_ID}}
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
 
       - uses: google-github-actions/setup-gcloud@v3
 
@@ -216,7 +216,7 @@ jobs:
       - id: image
         run: |
           TAG=$(gcloud artifacts docker images list \
-            "${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID_Develop }}/${{ secrets.PROJECT_REPOSITORY }}/${{ secrets.IMAGE_NAME }}" \
+            "${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.PROJECT_REPOSITORY }}/${{ secrets.IMAGE_NAME }}" \
             --include-tags --sort-by="~UPDATE_TIME" --limit=1 \
             --format="value(TAGS)" | cut -d',' -f1)
           if [ -z "$TAG" ]; then
@@ -260,7 +260,7 @@ jobs:
               sudo gcloud auth configure-docker '${{ secrets.GCP_REGION }}-docker.pkg.dev' --quiet
               cd ~/app
               export IMAGE_TAG=${{ steps.image.outputs.tag }}
-              export GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_Develop }}
+              export GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }}
               sudo --preserve-env=IMAGE_TAG,GCP_PROJECT_ID docker compose pull ai
               sudo --preserve-env=IMAGE_TAG,GCP_PROJECT_ID docker compose up -d ai
             "
