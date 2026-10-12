@@ -106,7 +106,7 @@ def _to_matched(record: MemoryRecord, fused: FusedRecord) -> MatchedRecord:
     # 백엔드가 곡을 "spotify:track:ID"나 ID로 저장할 수 있다(기능4도 같은 정규화를 함) — ID만 남긴다
     track_id = record.external_track_id.rsplit(":", 1)[-1]
     return MatchedRecord(
-        record_id=str(record.record_id),
+        record_id=record.record_id,
         track=Track(
             title=record.title,
             artist_name=record.artist_name,

@@ -20,15 +20,17 @@ def _four_records(user: int = 35) -> tuple[FakeVectorSearch, FakeMemoryRecords]:
     return search, FakeMemoryRecords({user: {i: make_record(i) for i in (1, 2, 3, 4)}})
 
 
-def test_returns_top_3_with_camel_case_fields(client):
+def test_returns_matches_with_camel_case_fields_and_numeric_ids(client):
     _wire(client, *_four_records())
 
-    res = client.post(URL, json={"userId": 35, "queryText": "비 오던 날"}, headers=AUTH)
+    # 조건(장소·날씨 등)이 없는 질문이라 1단계 기준선 그대로 동작한다
+    res = client.post(URL, json={"userId": 35, "queryText": "그때 들은 노래"}, headers=AUTH)
 
     assert res.status_code == 200
     body = res.json()
     assert set(body) == {"answerText", "matchedRecords", "retryCount"}
-    assert [m["recordId"] for m in body["matchedRecords"]] == ["4", "1", "2"]
+    # recordId는 문자열이 아니라 숫자(Long)로 나간다 — 프론트 계약과 공통 ID 규칙
+    assert [m["recordId"] for m in body["matchedRecords"]] == [4, 1, 2, 3]
     first = body["matchedRecords"][0]
     assert first["track"]["title"] == "밤편지"
     assert first["track"]["spotifyUri"] == "spotify:track:2uwDoSLzTVVmWjsmbo8jhX"

@@ -35,15 +35,37 @@ SEARCH_HITS = {
 }
 
 
-async def test_returns_default_top_3_in_fused_order():
+async def test_returns_all_matches_in_fused_order_when_fewer_than_default_limit():
     service = _service(FakeVectorSearch(**SEARCH_HITS), _records(1, 2, 3, 4))
 
     res = await service.search(_request())
 
-    assert [m.record_id for m in res.matched_records] == ["4", "1", "2"]
-    assert [m.similarity_score for m in res.matched_records] == [0.75, 0.7, 0.4]
+    assert [m.record_id for m in res.matched_records] == [4, 1, 2, 3]
+    assert [m.similarity_score for m in res.matched_records] == [0.75, 0.7, 0.4, 0.35]
     assert res.retry_count == 0
-    assert res.answer_text.startswith("비슷한 기록 3개를 찾았어요.")
+    assert res.answer_text.startswith("비슷한 기록 4개를 찾았어요.")
+
+
+def test_default_limit_is_five():
+    # 프론트 계약은 "records 최대 5개"이고 limit을 따로 받지 않는다
+    assert _request().limit == 5
+
+
+async def test_default_limit_cuts_results_to_five():
+    comment = [hit(i, 0.9 - i * 0.01) for i in range(1, 9)]
+    service = _service(FakeVectorSearch(comment=comment), _records(*range(1, 9)))
+
+    res = await service.search(_request())
+
+    assert [m.record_id for m in res.matched_records] == [1, 2, 3, 4, 5]
+
+
+async def test_record_ids_are_numbers_not_strings():
+    service = _service(FakeVectorSearch(**SEARCH_HITS), _records(1, 2, 3, 4))
+
+    res = await service.search(_request())
+
+    assert all(isinstance(m.record_id, int) for m in res.matched_records)
 
 
 async def test_limit_from_request_is_respected():
@@ -51,16 +73,16 @@ async def test_limit_from_request_is_respected():
 
     res = await service.search(_request(limit=1))
 
-    assert [m.record_id for m in res.matched_records] == ["4"]
+    assert [m.record_id for m in res.matched_records] == [4]
 
 
 async def test_record_that_cannot_be_read_is_skipped_and_next_one_fills_in():
     """AI DB 벡터는 남아 있는데 백엔드에서 삭제된 자물쇠 — 4번을 건너뛰고 3개를 채운다."""
     service = _service(FakeVectorSearch(**SEARCH_HITS), _records(1, 2, 3))
 
-    res = await service.search(_request())
+    res = await service.search(_request(limit=3))
 
-    assert [m.record_id for m in res.matched_records] == ["1", "2", "3"]
+    assert [m.record_id for m in res.matched_records] == [1, 2, 3]
 
 
 async def test_other_users_records_never_come_back():
