@@ -27,6 +27,18 @@ class RecordSearch(Protocol):
     ) -> list[SimilarRecord]: ...
 
 
+class MemoryVectorSearch(Protocol):
+    """기능5 기억 검색이 쓰는 두 검색 — 코멘트 벡터와 곡 분위기 벡터."""
+
+    async def similar_by_comment(
+        self, user_id: int, query_vector: list[float], limit: int
+    ) -> list[SimilarRecord]: ...
+
+    async def similar_by_music(
+        self, user_id: int, query_vector: list[float], limit: int
+    ) -> list[SimilarRecord]: ...
+
+
 class VectorSearch:
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -51,6 +63,34 @@ class VectorSearch:
                 RecordEmbedding.user_id == user_id,
                 RecordEmbedding.comment_embedding.is_not(None),
             )
+            .order_by(distance)
+            .limit(limit)
+        )
+        return [
+            SimilarRecord(
+                record_id=row.record_id,
+                external_track_id=row.external_track_id,
+                similarity=1.0 - float(row.distance),
+            )
+            for row in rows
+        ]
+
+    async def similar_by_music(
+        self, user_id: int, query_vector: list[float], limit: int
+    ) -> list[SimilarRecord]:
+        """이 사용자의 자물쇠 중 곡 분위기 설명이 query와 가장 비슷한 것부터 limit개.
+
+        record_embeddings.music_embedding은 LLM이 곡 제목·아티스트로 쓴 무드 설명을
+        임베딩한 값이다(기능4). 코멘트를 안 쓴 자물쇠도 항상 이 벡터가 있다.
+        """
+        distance = RecordEmbedding.music_embedding.cosine_distance(query_vector)
+        rows = await self._session.execute(
+            select(
+                RecordEmbedding.record_id,
+                RecordEmbedding.external_track_id,
+                distance.label("distance"),
+            )
+            .where(RecordEmbedding.user_id == user_id)
             .order_by(distance)
             .limit(limit)
         )

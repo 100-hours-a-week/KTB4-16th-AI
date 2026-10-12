@@ -49,6 +49,13 @@ class Settings(BaseSettings):
     text_embedding_model: str = "text-embedding-3-small"
     text_embedding_dim: int = 1536
 
+    # 기능5 기억 검색 (1단계 기준선) — 아래 값은 모두 시험지로 정할 초기값이다.
+    # 임베딩 모델을 바꾸면 유사도 값의 분포가 달라지므로 그때 다시 정한다.
+    memory_search_min_similarity: float = 0.40  # 기능1의 개인 기록 기준(0.40)을 따라 시작
+    memory_search_comment_weight: float = 0.5
+    memory_search_music_weight: float = 0.5
+    memory_search_candidates: int = 20  # 검색기마다 가져오는 후보 수
+
     # CLIP 이미지 임베딩 — Replicate openai/clip (clip-vit-large-patch14)
     # V2에 RunPod 직접 서빙으로 교체 예정. 모델이 바뀌면 차원 변경 → 전체 재임베딩
     replicate_api_token: str = ""

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from fastapi import Depends, Header
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.anthropic_client import AnthropicClient
@@ -37,7 +38,7 @@ from app.components.query_rewriter import QueryRewriter
 from app.components.question_generator import QuestionGenerator
 from app.components.reranker import Reranker
 from app.components.song_curator import SongCurator
-from app.components.vector_search import RecordSearch, VectorSearch
+from app.components.vector_search import MemoryVectorSearch, RecordSearch, VectorSearch
 from app.config import get_settings
 from app.db import mysql, postgres
 from app.db.postgres import get_session
@@ -48,10 +49,16 @@ from app.db.repositories.balance_stats_repository import (
 )
 from app.db.repositories.embedding_repository import EmbeddingRepository, EmbeddingStore
 from app.db.repositories.job_repository import JobRepository
+from app.db.repositories.memory_record_repository import (
+    MemoryRecord,
+    MemoryRecordRepository,
+    MemoryRecordSource,
+)
 from app.db.repositories.report_repository import MonthlyReportRepository
 from app.db.repositories.track_lookup_repository import TrackLookupRepository, TrackLookupStore
-from app.exceptions import UnauthorizedError
+from app.exceptions import UnauthorizedError, UpstreamError
 from app.services.balance_service import BalanceService
+from app.services.memory_search_service import MemorySearchService
 from app.services.moderation_service import ModerationService
 
 
@@ -201,6 +208,55 @@ async def get_record_search(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncIterator[RecordSearch]:
     yield VectorSearch(session)
+
+
+async def get_memory_vector_search(
+    session: AsyncSession = Depends(get_session),
+) -> AsyncIterator[MemoryVectorSearch]:
+    yield VectorSearch(session)
+
+
+class _DbMemoryRecords:
+    """기억 검색 결과의 상세 — 백엔드 MySQL(읽기 전용)에서 읽는다."""
+
+    async def get_many(self, *, user_id: int, record_ids: list[int]) -> dict[int, MemoryRecord]:
+        try:
+            async with mysql.get_sessionmaker()() as mysql_session:
+                return await MemoryRecordRepository(mysql_session).get_many(
+                    user_id=user_id, record_ids=record_ids
+                )
+        except SQLAlchemyError as e:
+            raise UpstreamError("백엔드 DB에서 자물쇠 상세를 읽지 못했어요.") from e
+
+
+class _NoMemoryRecords:
+    """백엔드 DB가 없는 로컬·테스트 환경 — 상세를 못 읽어서 결과가 비어 있다."""
+
+    async def get_many(self, *, user_id: int, record_ids: list[int]) -> dict[int, MemoryRecord]:
+        return {}
+
+
+def get_memory_record_source() -> MemoryRecordSource:
+    s = get_settings()
+    if s.ai_client_mode == "fake" or not s.backend_mysql_url:
+        return _NoMemoryRecords()
+    return _DbMemoryRecords()
+
+
+async def get_memory_search_service(
+    search: MemoryVectorSearch = Depends(get_memory_vector_search),
+    records: MemoryRecordSource = Depends(get_memory_record_source),
+) -> MemorySearchService:
+    s = get_settings()
+    return MemorySearchService(
+        get_embedder(),
+        search,
+        records,
+        min_similarity=s.memory_search_min_similarity,
+        comment_weight=s.memory_search_comment_weight,
+        music_weight=s.memory_search_music_weight,
+        candidates=s.memory_search_candidates,
+    )
 
 
 @lru_cache
