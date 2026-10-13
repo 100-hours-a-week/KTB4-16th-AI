@@ -221,3 +221,28 @@ def test_real_rules_file_only_uses_known_song_mood_tags_and_weather_values():
 
     assert len(rules.song_moods) == 12
     assert {r.name for r in rules.seasons} == {"봄", "여름", "가을", "겨울"}
+
+
+# ---- 사전에 없는 장소 -------------------------------------------------------
+
+
+def test_unknown_place_word_becomes_a_place_text_condition(parser):
+    cond = _one(parser, "가을에 광교산에서 들은 노래", "place_text")
+
+    assert cond.names == ("광교산",)
+    assert cond.label == "광교산"
+    assert _kinds(parser, "가을에 광교산에서 들은 노래") == ["season", "place_text"]
+
+
+def test_dictionary_place_is_not_also_taken_as_an_unknown_place(parser):
+    # 서울숲은 '숲'으로 끝나지만 사전에서 먼저 잡혀 지워진다
+    assert _kinds(parser, "서울숲에서 들은 노래") == ["place"]
+
+
+def test_known_and_unknown_places_can_be_asked_together(parser):
+    assert _kinds(parser, "서울숲이랑 광교산에서 들은 노래") == ["place", "place_text"]
+
+
+def test_ordinary_place_words_do_not_become_conditions(parser):
+    assert _kinds(parser, "공원에서 들은 노래") == []
+    assert _kinds(parser, "이 지역에서 들은 노래") == []

@@ -50,6 +50,8 @@ class ConditionRow:
     dong_code: str | None  # places.legal_dong_code (10자리)
     latitude: float | None
     longitude: float | None
+    # 글자 검색에 쓰는 글: 사용자가 쓴 코멘트(최대 80자). 곡 제목·가수 이름은 일부러 읽지 않는다
+    comment: str | None = None
 
 
 class MemoryRecordSource(Protocol):
@@ -97,7 +99,7 @@ class MemoryRecordRepository:
         }
 
     async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
-        """이 사용자의 자물쇠를 최근순으로 limit개까지, 조건 비교에 필요한 값만 읽는다.
+        """이 사용자의 자물쇠를 최근순으로 limit개까지, 조건·코멘트 검색에 필요한 값만 읽는다.
 
         개인 일기라 자물쇠가 수천 개를 넘기 어렵다고 보고 SQL로 거르지 않고 가져와서 파이썬에서
         비교한다 — 조건 조합마다 SQL을 따로 만들 필요가 없고, 조건에 안 맞는 기록이 점수만
@@ -107,7 +109,7 @@ class MemoryRecordRepository:
             text(
                 """
                 SELECT r.record_id, r.created_at, r.weather_condition, r.temperature,
-                       r.mood_score, p.legal_dong_name, p.legal_dong_code,
+                       r.mood_score, r.comment, p.legal_dong_name, p.legal_dong_code,
                        p.latitude, p.longitude
                 FROM records r
                 JOIN places p ON r.place_id = p.place_id
@@ -129,6 +131,7 @@ class MemoryRecordRepository:
                 dong_code=None if row.legal_dong_code is None else str(row.legal_dong_code),
                 latitude=_to_float(row.latitude),
                 longitude=_to_float(row.longitude),
+                comment=row.comment,
             )
             for row in rows
         ]

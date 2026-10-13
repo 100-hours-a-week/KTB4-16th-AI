@@ -81,6 +81,7 @@ def _condition_row(record_id=1, **overrides):
         "legal_dong_code": "1120011500",
         "latitude": Decimal("37.544000"),
         "longitude": Decimal("127.037000"),
+        "comment": "광교산 단풍",
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -96,6 +97,8 @@ async def test_condition_rows_query_is_scoped_to_user_and_limited():
     assert "r.deleted_at IS NULL" in sql  # 삭제된 자물쇠는 뺀다
     assert "ORDER BY r.created_at DESC" in sql and "LIMIT :limit" in sql  # 최근순, 개수 제한
     assert params == {"user_id": 5, "limit": 300}
+    assert "r.comment" in sql  # 글자 검색에 쓰는 코멘트
+    assert "music_tracks" not in sql  # 곡 제목·가수 이름은 글자 검색 대상이 아니다
 
 
 async def test_condition_rows_convert_decimals_and_codes():
@@ -108,6 +111,7 @@ async def test_condition_rows_convert_decimals_and_codes():
     assert (row.latitude, row.longitude) == (37.544, 127.037)
     assert row.dong_name == "성수동1가"
     assert row.dong_code == "1120011500"  # 숫자로 와도 문자열로
+    assert row.comment == "광교산 단풍"
 
 
 async def test_condition_rows_keep_missing_values_as_none():
@@ -120,6 +124,7 @@ async def test_condition_rows_keep_missing_values_as_none():
         legal_dong_code=None,
         latitude=None,
         longitude=None,
+        comment=None,
     )
     session = FakeMysqlSession([empty])
 
@@ -128,6 +133,7 @@ async def test_condition_rows_keep_missing_values_as_none():
     assert row.weather_condition is None and row.temperature is None and row.mood_score is None
     assert row.dong_name is None and row.dong_code is None
     assert row.latitude is None and row.longitude is None
+    assert row.comment is None  # 코멘트를 안 쓴 자물쇠
 
 
 async def test_get_many_does_not_read_the_unverified_place_columns():

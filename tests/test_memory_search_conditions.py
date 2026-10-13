@@ -267,3 +267,127 @@ async def test_combined_period_place_mood_question(parser):
     res = await service.search(_request("작년 가을 서울숲에서 우울했을 때 들은 노래"))
 
     assert [m.record_id for m in res.matched_records] == [1]
+
+
+# ---- 코멘트로 장소 찾기 / 사전에 없는 장소 -----------------------------------
+
+
+def _comment_world():
+    """가을·봄, 코멘트에 광교산이 있고 없는 기록을 섞어 둔 사용자."""
+    rows = [
+        make_row(1, created_at=datetime(2026, 10, 5, 9, 0), comment="광교산 단풍 예뻤다"),
+        make_row(2, created_at=datetime(2026, 5, 2, 9, 0), comment="광교산 입구에서 출발"),
+        make_row(3, created_at=datetime(2026, 9, 20, 9, 0), comment="카페에서 공부"),
+        make_row(4, created_at=datetime(2026, 10, 9, 9, 0), comment=None),
+    ]
+    details = {r.record_id: make_record(r.record_id, created_at=r.created_at) for r in rows}
+    return rows, details
+
+
+async def test_unknown_place_is_searched_in_comments_and_combined_with_other_conditions(parser):
+    rows, details = _comment_world()
+    records = FakeMemoryRecords({USER: details}, {USER: rows})
+    service = _service(parser, FakeVectorSearch(), records)
+
+    res = await service.search(_request("가을에 광교산에서 들은 노래 뭐지?"))
+
+    assert [m.record_id for m in res.matched_records] == [1]  # 가을 AND 코멘트에 광교산
+    assert "'광교산'만 맞아요" in res.answer_text  # 2번(봄)은 장소만 맞아서 제안으로
+    assert "'가을'만 맞아요" in res.answer_text  # 3·4번(가을)은 계절만 맞아서 제안으로
+    assert res.answer_text.endswith(
+        "'광교산'은 장소 목록에 없는 곳이라서, 기록에 적어 둔 코멘트에서 찾았어요."
+    )
+
+
+async def test_unknown_place_nobody_wrote_about_is_ignored_with_a_notice(parser):
+    rows, details = _comment_world()
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("가을에 북한산에서 들은 노래"))
+
+    # 위치 조건은 빠지고 가을 조건만으로 찾는다
+    assert sorted(m.record_id for m in res.matched_records) == [1, 3, 4]
+    assert res.answer_text.startswith("조건에 모두 맞는 기록 3개를 찾았어요.")
+    assert res.answer_text.endswith(
+        "'북한산'은 아직 모르는 장소라서 위치 조건은 적용하지 못했어요. "
+        "동이나 구 이름(예: 성수동, 성동구)으로 물어보시면 더 정확하게 찾을 수 있어요."
+    )
+
+
+async def test_only_an_unknown_place_nobody_wrote_about_falls_back_to_plain_search_with_notice(
+    parser,
+):
+    rows, details = _comment_world()
+    records = FakeMemoryRecords({USER: details}, {USER: rows})
+    search = FakeVectorSearch(comment=[hit(3, 0.9)])
+    service = _service(parser, search, records)
+
+    res = await service.search(_request("북한산에서 들은 노래"))
+
+    assert [m.record_id for m in res.matched_records] == [3]  # 벡터 검색 결과 그대로
+    assert res.answer_text.startswith("비슷한 기록 1개를 찾았어요.")
+    assert "'북한산'은 아직 모르는 장소라서" in res.answer_text
+
+
+async def test_notice_is_added_even_when_nothing_is_found(parser):
+    rows, details = _comment_world()
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("북한산에서 들은 노래"))
+
+    assert res.matched_records == []
+    assert res.answer_text.startswith(NO_RESULT_TEXT)
+    assert "'북한산'은 아직 모르는 장소라서" in res.answer_text
+
+
+async def test_known_place_without_nearby_records_is_found_through_the_comment(parser):
+    far = {"latitude": 37.5575, "longitude": 126.9248}  # 홍대 — 서울숲에서 멀다
+    rows = [
+        make_row(1, **far, comment="서울숲 산책하다 들은 곡"),
+        make_row(2, **far, comment="합정에서 약속"),
+    ]
+    details = {i: make_record(i) for i in (1, 2)}
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("서울숲에서 들은 노래"))
+
+    assert [m.record_id for m in res.matched_records] == [1]
+    assert "장소 목록에 없는" not in res.answer_text  # 사전에 있는 장소라 안내할 것이 없다
+
+
+async def test_known_place_with_nearby_records_ignores_comment_mentions_elsewhere(parser):
+    rows = [
+        make_row(1, **SEOUL_FOREST, comment=None),
+        make_row(2, **HONGDAE, comment="서울숲에 다녀온 날"),
+    ]
+    details = {i: make_record(i) for i in (1, 2)}
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("서울숲에서 들은 노래"))
+
+    assert [m.record_id for m in res.matched_records] == [1]  # 좌표로 찾은 기록만
+
+
+async def test_other_users_comments_are_never_searched(parser):
+    rows, details = _comment_world()
+    others_rows = [make_row(9, comment="북한산 등산")]
+    records = FakeMemoryRecords(
+        {USER: details, 8: {9: make_record(9)}}, {USER: rows, 8: others_rows}
+    )
+    service = _service(parser, FakeVectorSearch(), records)
+
+    res = await service.search(_request("가을에 북한산에서 들은 노래"))
+
+    assert records.row_calls == [(USER, 5000)]  # 이 사용자의 자물쇠만 읽는다
+    assert 9 not in [m.record_id for m in res.matched_records]
+    assert "'북한산'은 아직 모르는 장소라서" in res.answer_text  # 다른 사람 코멘트로는 못 찾는다
+
+
+async def test_questions_without_unknown_places_get_no_notice(parser):
+    rows, details = _world()
+    service = _service(parser, _search(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("가을에 서울숲에서 들었던 노래 뭐지?"))
+
+    assert "모르는 장소" not in res.answer_text
+    assert "장소 목록에 없는" not in res.answer_text

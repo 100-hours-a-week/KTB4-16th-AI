@@ -37,6 +37,7 @@ def make_row(record_id: int, **overrides) -> ConditionRow:
         "dong_code": "1120011500",
         "latitude": 37.5440,
         "longitude": 127.0370,
+        "comment": None,
     }
     values.update(overrides)
     return ConditionRow(**values)

@@ -17,6 +17,7 @@ from app.db.repositories.memory_record_repository import MemoryRecord
 NO_RESULT_TEXT = "찾으시는 기록이 없어요. 다른 말로 다시 물어봐 주세요."
 SUGGESTION_HEADER = "이런 기록을 찾으시는 건 아닌가요?"
 SUGGESTION_HEADER_WITHOUT_EXACT = "조건에 모두 맞는 기록은 없어요. " + SUGGESTION_HEADER
+UNKNOWN_PLACE_HINT = "동이나 구 이름(예: 성수동, 성동구)으로 물어보시면 더 정확하게 찾을 수 있어요."
 
 
 @dataclass(frozen=True)
@@ -30,12 +31,17 @@ def compose_answer(
     suggestions: Sequence[Suggestion] = (),
     *,
     conditioned: bool = False,
+    notices: Sequence[str] = (),
 ) -> str:
-    """conditioned는 질문에 조건이 있었는지. 없으면 비슷한 기록만 한 목록으로 쓴다."""
-    if not records and not suggestions:
-        return NO_RESULT_TEXT
+    """conditioned는 질문에 조건이 있었는지. 없으면 비슷한 기록만 한 목록으로 쓴다.
 
+    notices는 결과 뒤에 덧붙이는 안내 문장들이다(예: 사전에 없는 장소라 적용 못 한 조건).
+    찾은 기록이 없어도 안내는 붙는다.
+    """
     lines: list[str] = []
+    if not records and not suggestions:
+        lines.append(NO_RESULT_TEXT)
+
     if records:
         noun = "조건에 모두 맞는 기록" if conditioned else "비슷한 기록"
         lines.append(f"{noun} {len(records)}개를 찾았어요.")
@@ -47,7 +53,41 @@ def compose_answer(
         lines += _numbered(
             (s.record for s in suggestions), notes=[_matched_note(s.matched) for s in suggestions]
         )
+    if notices:
+        lines.append("")
+        lines += notices
     return "\n".join(lines)
+
+
+def unknown_place_notices(found: Sequence[str], missing: Sequence[str]) -> list[str]:
+    """사전에 없는 장소 말에 대한 안내 문장들.
+
+    found: 코멘트에서 찾아 조건으로 쓴 말. missing: 어느 코멘트에도 없어서 적용하지 못한 말.
+    """
+    notices = []
+    if found:
+        notices.append(
+            f"{_quoted(found)}{_topic(found[-1])} 장소 목록에 없는 곳이라서, "
+            "기록에 적어 둔 코멘트에서 찾았어요."
+        )
+    if missing:
+        notices.append(
+            f"{_quoted(missing)}{_topic(missing[-1])} 아직 모르는 장소라서 "
+            f"위치 조건은 적용하지 못했어요. {UNKNOWN_PLACE_HINT}"
+        )
+    return notices
+
+
+def _quoted(words: Sequence[str]) -> str:
+    return ", ".join(f"'{w}'" for w in words)
+
+
+def _topic(word: str) -> str:
+    """주제 조사: 받침이 있으면 은, 없으면 는. 한글로 안 끝나면 은(는)."""
+    last = word[-1]
+    if not "가" <= last <= "힣":
+        return "은(는)"
+    return "은" if (ord(last) - ord("가")) % 28 else "는"
 
 
 def _numbered(records, notes: Sequence[str] = ()) -> list[str]:

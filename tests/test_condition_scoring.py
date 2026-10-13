@@ -5,6 +5,8 @@ import pytest
 
 from app.components.condition_scoring import (
     ConditionWeights,
+    dropped_place_words,
+    kept_place_words,
     resolve_conditions,
     score_rows,
     top_candidates,
@@ -253,3 +255,136 @@ def test_top_candidates_with_zero_limit_is_empty(limit):
     )
 
     assert top_candidates(scores, exclude=set(), limit=limit) == []
+
+
+# ---- 코멘트로 장소 찾기 ------------------------------------------------------
+
+SEOUL_FOREST_PARK = PlaceEntry("서울숲", ("서울숲공원",), "park", 37.5433, 127.0332, 1.5)
+EWHA = PlaceEntry("이화여자대학교", ("이대", "이화여대"), "campus", 37.5643, 126.9469, 1.0)
+AT_SEOUL_FOREST = {"latitude": 37.5440, "longitude": 127.0370}
+AT_HONGDAE = {"latitude": 37.5575, "longitude": 126.9248}
+
+
+def _resolved_scores(rows, *conditions):
+    """질문 조건을 이 사용자의 기록으로 확인한 뒤 점수를 낸다 (서비스와 같은 순서)."""
+    resolved = resolve_conditions(list(conditions), rows)
+    return score_rows(
+        rows, resolved, moods={}, music_similarity={}, min_similarity=0.4, weights=WEIGHTS
+    )
+
+
+def test_place_with_nearby_records_is_compared_by_coordinates_only():
+    rows = [
+        make_row(1, **AT_SEOUL_FOREST, comment=None),
+        make_row(2, **AT_HONGDAE, comment="서울숲에 다녀온 날"),  # 멀리서 저장하고 코멘트에만 적음
+    ]
+    cond = Condition("place", "서울숲 근처", places=(SEOUL_FOREST_PARK,))
+
+    (resolved,) = resolve_conditions([cond], rows)
+    scores = _resolved_scores(rows, cond)
+
+    assert resolved.names == ()  # 코멘트로 찾지 않는다
+    assert scores[1].score > 0
+    assert scores[2].score == 0.0
+
+
+def test_place_without_nearby_records_is_searched_in_comments_by_name_and_alias():
+    rows = [
+        make_row(1, **AT_HONGDAE, comment="서울숲 산책하다가 들은 곡"),
+        make_row(2, **AT_HONGDAE, comment="서울숲공원 벤치에서"),
+        make_row(3, **AT_HONGDAE, comment="그냥 걸었다"),
+        make_row(4, **AT_HONGDAE, comment=None),
+    ]
+    cond = Condition("place", "서울숲 근처", places=(SEOUL_FOREST_PARK,))
+
+    (resolved,) = resolve_conditions([cond], rows)
+    scores = _resolved_scores(rows, cond)
+
+    assert resolved.names == ("서울숲", "서울숲공원")
+    assert resolved.label == "서울숲 근처"  # 안내 문장에 쓰는 이름은 그대로
+    assert scores[1].score == scores[2].score == 1.0
+    assert scores[3].score == scores[4].score == 0.0
+
+
+def test_only_the_places_without_nearby_records_get_comment_names():
+    rows = [make_row(1, **AT_SEOUL_FOREST)]
+    cond = Condition("place", "서울숲·홍대 근처", places=(SEOUL_FOREST_PARK, HONGDAE))
+
+    (resolved,) = resolve_conditions([cond], rows)
+
+    assert resolved.names == ("홍대",)  # 서울숲은 근처에 기록이 있으니 좌표로만
+
+
+def test_comment_mention_follows_the_same_before_and_after_rule_as_the_question():
+    rows = [
+        make_row(1, **AT_SEOUL_FOREST, comment="이대로 가자"),  # '이대로'는 이대가 아니다
+        make_row(2, **AT_SEOUL_FOREST, comment="이대 앞에서 만났다"),
+        make_row(3, **AT_SEOUL_FOREST, comment="스이대 같은 이름"),  # 앞에 한글이 붙어 있다
+    ]
+    cond = Condition("place", "이화여자대학교 근처", places=(EWHA,))
+
+    scores = _resolved_scores(rows, cond)
+
+    assert scores[1].score == 0.0
+    assert scores[2].score == 1.0
+    assert scores[3].score == 0.0
+
+
+def test_comment_mention_ignores_spacing_and_case():
+    rows = [make_row(1, **AT_HONGDAE, comment="서 울 숲 갔음")]
+    cond = Condition("place", "서울숲 근처", places=(SEOUL_FOREST_PARK,))
+
+    assert _resolved_scores(rows, cond)[1].score == 1.0
+
+
+# ---- 사전에 없는 장소 말 -----------------------------------------------------
+
+
+def _unknown(*words):
+    return Condition("place_text", "·".join(words), names=tuple(words))
+
+
+def test_unknown_place_is_kept_only_if_some_comment_mentions_it():
+    rows = [make_row(1, comment="광교산 단풍 예뻤다"), make_row(2, comment="그냥 걸었다")]
+    asked = [_unknown("광교산", "북한산")]
+
+    resolved = resolve_conditions(asked, rows)
+
+    assert [c.names for c in resolved] == [("광교산",)]
+    assert resolved[0].label == "광교산"
+    assert kept_place_words(resolved) == ["광교산"]
+    assert dropped_place_words(asked, resolved) == ["북한산"]
+
+
+def test_unknown_place_nobody_wrote_about_is_dropped_so_it_cannot_hide_other_results():
+    rows = [make_row(1, comment="그냥 걸었다"), make_row(2, comment=None)]
+    asked = [_unknown("북한산")]
+
+    assert resolve_conditions(asked, rows) == []
+    assert dropped_place_words(asked, []) == ["북한산"]
+
+
+def test_unknown_place_matches_by_containing_text_not_only_whole_words():
+    rows = [
+        make_row(1, comment="광교산입구에서 출발"),  # 뒤에 글자가 이어져도 잡는다
+        make_row(2, comment="광교 산 정상"),
+        make_row(3, comment="북한산 갔다"),
+        make_row(4, comment=None),
+    ]
+
+    scores = _resolved_scores(rows, _unknown("광교산"))
+
+    assert scores[1].score == scores[2].score == 1.0
+    assert scores[3].score == scores[4].score == 0.0
+
+
+def test_unknown_place_counts_as_a_location_condition_in_the_weighting():
+    row = make_row(1, comment="광교산 단풍", created_at=datetime(2026, 5, 2, 9, 0))
+    season = Condition("season", "가을", months=frozenset({9, 10}))
+
+    score = _score(row, _unknown("광교산"), season)
+
+    # 장소류 가중치 2, 계절 1 → (2×1 + 1×0) ÷ 3
+    assert math.isclose(score.score, 2 / 3)
+    assert score.matched == ("광교산",)
+    assert score.missed == ("가을",)

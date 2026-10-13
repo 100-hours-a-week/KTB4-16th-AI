@@ -4,7 +4,7 @@ DB를 부르지 않고 질문 글자와 우리 서버의 규칙 파일(places.ya
 question_rules.yaml)만 본다. 자물쇠에 저장된 값과 맞는지는 뒤 단계(condition_scoring)가 비교한다.
 
 한 번 잡힌 글자는 공백으로 지워서 다른 규칙이 다시 쓰지 못하게 한다. 그래서 순서가 중요하다:
-기간 → 장소 → 지역 → 동 → 계절·달 → 날씨 → 기온 → 기분 → 곡 무드.
+기간 → 장소 → 지역 → 동 → 계절·달 → 날씨 → 기온 → 기분 → 곡 무드 → (남은 글자에서) 사전에 없는 장소.
 (예: "서울숲"을 장소로 가져가야 "서울"이 지역으로 또 잡히지 않고, "우울했을 때"를 기분으로
 가져가야 "우울"이 곡 무드로 또 잡히지 않는다.)
 """
@@ -19,6 +19,7 @@ from app.components.place_dictionary import PlaceDictionary
 from app.components.query_conditions import Condition
 from app.components.question_rules import QuestionRules
 from app.components.region_table import RegionTable
+from app.components.unknown_places import find_unknown_places
 
 # "연남동", "성수동1가", "종로3가" 모양. 실제 동인지는 여기서 모른다 — "운동을", "감동이"도 잡히고,
 # 이 사용자의 기록에 있는 동인지는 뒤 단계(resolve_conditions)가 확인해서 걸러낸다.
@@ -69,7 +70,12 @@ class QuestionParser:
         text = self._add_weather(text, conditions)
         text = self._add_ranges(text, self._rules.temperature, "temperature", conditions)
         text = self._add_ranges(text, self._rules.mood, "mood", conditions)
-        self._add_song_moods(text, conditions)
+        text = self._add_song_moods(text, conditions)
+
+        # 다 가져간 뒤에도 장소 같은 말이 남았으면 사전에 없는 장소다 — 코멘트에서 찾는다
+        unknown = find_unknown_places(text)
+        if unknown:
+            conditions.append(Condition("place_text", "·".join(unknown), names=tuple(unknown)))
         return conditions
 
     def _add_seasons(self, text: str, conditions: list[Condition]) -> str:
@@ -115,7 +121,7 @@ class QuestionParser:
             conditions.append(Condition(kind, chosen.label, low=chosen.low, high=chosen.high))
         return text
 
-    def _add_song_moods(self, text: str, conditions: list[Condition]) -> None:
+    def _add_song_moods(self, text: str, conditions: list[Condition]) -> str:
         tags: list[str] = []
         for rule in self._rules.song_moods:
             matched, text = _consume(text, rule.patterns)
@@ -123,6 +129,7 @@ class QuestionParser:
                 tags.append(rule.tag)
         if tags:
             conditions.append(Condition("song_mood", f"{'·'.join(tags)} 곡", names=tuple(tags)))
+        return text
 
 
 def _consume(text: str, patterns: Sequence[re.Pattern[str]]) -> tuple[bool, str]:

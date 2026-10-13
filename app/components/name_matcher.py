@@ -29,6 +29,18 @@ def name_pattern(name: str) -> re.Pattern[str]:
     return re.compile(NOT_AFTER_HANGUL + r"\s*".join(chars) + FOLLOWING, re.IGNORECASE)
 
 
+def substring_pattern(name: str) -> re.Pattern[str]:
+    """앞뒤 글자를 따지지 않고 이름이 들어 있기만 하면 잡는다 (공백·대소문자는 무시).
+
+    사전에 없는 "광교산" 같은 긴 말을 코멘트에서 찾을 때 쓴다 — "광교산입구"도 잡혀야 해서
+    name_pattern의 뒤 글자 규칙을 쓰지 않는다. 짧은 별칭("이대")에는 쓰지 말 것.
+    """
+    chars = [re.escape(c) for c in name if not c.isspace()]
+    if not chars:
+        raise ValueError("이름이 비어 있어요.")
+    return re.compile(r"\s*".join(chars), re.IGNORECASE)
+
+
 def blank_out(text: str, start: int, end: int) -> str:
     """찾은 글자를 같은 길이의 공백으로 바꾼다 — 같은 글자를 다른 규칙이 또 잡지 못하게."""
     return text[:start] + " " * (end - start) + text[end:]

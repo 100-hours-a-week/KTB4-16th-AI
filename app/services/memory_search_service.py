@@ -5,9 +5,14 @@
   상위 N개의 상세를 백엔드 MySQL에서 읽기 → 템플릿 답변
 
 질문에 조건(장소·지역·기간·계절·날씨·기온·기분·곡 무드)이 있으면 위에 이어서:
-  질문 해석(규칙) → 내 자물쇠의 가벼운 정보 읽기 → 조건 점수 → 조건으로만 후보가 된 기록의
-  벡터 유사도 구하기 → 벡터 점수와 조건 점수 합치기 → "모든 조건에 맞는 기록"은 결과로,
+  질문 해석(규칙) → 내 자물쇠의 가벼운 정보 읽기(코멘트 포함) → 조건 점수 → 조건으로만 후보가 된
+  기록의 벡터 유사도 구하기 → 벡터 점수와 조건 점수 합치기 → "모든 조건에 맞는 기록"은 결과로,
   "일부만 맞는 기록"은 답변 문장의 제안("이런 기록을 찾으시는 건 아닌가요?")으로
+
+장소는 좌표로 비교하되, 좌표로 비교할 수 없으면 코멘트에서 그 이름을 찾는다:
+  사전에 없는 장소("광교산") → 코멘트에 그 글자가 있는 기록 / 사전에 있어도 반경 안에 내 기록이
+  하나도 없는 장소 → 코멘트에 이름·별칭이 있는 기록. 코멘트 어디에도 없는 사전 밖 장소는 조건에서
+  빼고, 답변 끝에 "아직 모르는 장소, 동·구 이름으로 물어보세요"라고 안내한다.
 
 사진 검색과 LLM 답변은 이 위에 단계적으로 얹는다. 조건이 없는 질문의 결과가 그때 "좋아졌는지"
 비교하는 기준이 된다.
@@ -19,12 +24,14 @@ from datetime import date, datetime, timedelta, timezone
 
 from app.components.condition_scoring import (
     ConditionWeights,
+    dropped_place_words,
+    kept_place_words,
     resolve_conditions,
     score_rows,
     top_candidates,
 )
 from app.components.embedder import Embedder
-from app.components.memory_answer import Suggestion, compose_answer
+from app.components.memory_answer import Suggestion, compose_answer, unknown_place_notices
 from app.components.query_conditions import Condition
 from app.components.question_parser import QuestionParser
 from app.components.rank_fusion import combine_with_conditions, fuse
@@ -98,12 +105,18 @@ class MemorySearchService:
             rows = await self._records.list_condition_rows(
                 user_id=req.user_id, limit=self._scan_limit
             )
-            # 동·지역 후보를 이 사용자의 기록으로 확인한다 — 걸러지고 남은 조건이 없으면 일반 검색
-            conditions = resolve_conditions(conditions, rows)
+            # 동·지역·장소 후보를 이 사용자의 기록으로 확인한다.
+            # 걸러지고 남은 조건이 없으면 일반 검색
+            asked = conditions
+            conditions = resolve_conditions(asked, rows)
+            notices = unknown_place_notices(
+                found=kept_place_words(conditions), missing=dropped_place_words(asked, conditions)
+            )
             if conditions:
                 return await self._search_with_conditions(
-                    req, conditions, rows, query_vector, comment_hits, music_hits
+                    req, conditions, rows, query_vector, comment_hits, music_hits, notices
                 )
+            return await self._search_by_similarity(req, comment_hits, music_hits, notices)
         return await self._search_by_similarity(req, comment_hits, music_hits)
 
     async def _search_by_similarity(
@@ -111,6 +124,7 @@ class MemorySearchService:
         req: MemorySearchRequest,
         comment_hits: list[SimilarRecord],
         music_hits: list[SimilarRecord],
+        notices: Sequence[str] = (),
     ) -> MemorySearchResponse:
         ranked = fuse(
             comment_hits,
@@ -139,7 +153,7 @@ class MemorySearchService:
             len(matched),
         )
         return MemorySearchResponse(
-            answer_text=compose_answer([record for record, _ in matched]),
+            answer_text=compose_answer([record for record, _ in matched], notices=notices),
             matched_records=[_to_matched(record, item.score) for record, item in matched],
             retry_count=0,
         )
@@ -152,6 +166,7 @@ class MemorySearchService:
         query_vector: list[float],
         comment_hits: list[SimilarRecord],
         music_hits: list[SimilarRecord],
+        notices: Sequence[str],
     ) -> MemorySearchResponse:
         # 곡 무드 태그는 AI DB에 있다. 곡 무드 조건이 있을 때만 읽는다
         moods = (
@@ -223,6 +238,7 @@ class MemorySearchService:
                 [record for record, _ in matched],
                 [Suggestion(record, item.condition.matched) for record, item in suggestions],
                 conditioned=True,
+                notices=notices,
             ),
             matched_records=[_to_matched(record, item.score) for record, item in matched],
             retry_count=0,
