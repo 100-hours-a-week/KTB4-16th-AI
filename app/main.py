@@ -16,8 +16,10 @@ from app.api import (
     playlist,
     reports,
 )
+from app.config import get_settings
 from app.dependencies import verify_internal_token
 from app.exceptions import register_exception_handlers
+from app.monitoring import setup_metrics
 
 
 def create_app() -> FastAPI:
@@ -35,6 +37,9 @@ def create_app() -> FastAPI:
         balance,
     ):
         app.include_router(module.router, dependencies=[Depends(verify_internal_token)])
+
+    if get_settings().metrics_enabled:
+        setup_metrics(app)
     return app
 
 

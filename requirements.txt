@@ -13,3 +13,6 @@ openai>=3.15,<4
 anthropic>=1.6,<2
 httpx>=0.28,<1
 pyyaml>=6.0,<7
+# 모니터링: Prometheus 지표 수집 (GET /metrics)
+prometheus-fastapi-instrumentator>=8.1,<9
+prometheus-client>=0.26,<1
