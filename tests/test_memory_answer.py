@@ -2,42 +2,58 @@ from datetime import datetime
 
 from app.components.memory_answer import (
     NO_RESULT_TEXT,
+    SUGGESTION_HEADER,
     Suggestion,
     compose_answer,
+    template_headline,
     unknown_place_notices,
 )
 from tests.memory_fakes import make_record
 
-
-def test_no_records_says_there_is_nothing():
-    assert compose_answer([]) == NO_RESULT_TEXT
+# ---- 앞머리 문장 (LLM이 못 쓸 때의 템플릿) -----------------------------------
 
 
-def test_answer_lists_only_values_of_the_found_records():
-    records = [
-        make_record(1, created_at=datetime(2026, 8, 24, 18, 30), place_name="오산동"),
-        make_record(2, created_at=datetime(2026, 1, 3, 9, 0), title="Blueming", artist_name="IU"),
-    ]
+def test_headline_without_any_result_is_the_no_result_text():
+    assert template_headline(["가을"], found=0) == NO_RESULT_TEXT
+    assert template_headline([], found=0) == NO_RESULT_TEXT
 
-    assert compose_answer(records) == (
-        "비슷한 기록 2개를 찾았어요.\n"
-        "1. 2026년 8월 24일 · 오산동 · 아이유 - 밤편지\n"
-        "2. 2026년 1월 3일 · 오산동 · IU - Blueming"
+
+def test_headline_lists_the_conditions_and_the_count():
+    assert template_headline(["홍대 근처", "비 오는 날"], found=2) == (
+        "홍대 근처, 비 오는 날 조건에 맞는 자물쇠 2건을 찾았어요."
     )
 
 
-def test_missing_place_is_left_out_instead_of_printing_none():
-    answer = compose_answer([make_record(1, place_name=None)])
-
-    assert "None" not in answer
-    assert answer.splitlines()[1] == "1. 2026년 8월 24일 · 아이유 - 밤편지"
+def test_headline_without_conditions_says_similar():
+    assert template_headline([], found=4) == "비슷한 자물쇠 4건을 찾았어요."
 
 
-# ---- 조건이 있는 질문: 모두 맞는 기록 + 제안 -------------------------------------
+def test_headline_when_only_part_of_the_matches_is_sent_says_the_total():
+    assert template_headline(["가을"], found=50, total=120) == (
+        "가을 조건에 맞는 자물쇠는 총 120건이에요. 그중 상위 50건을 보여드려요."
+    )
 
 
-def _exact():
-    return [make_record(1, created_at=datetime(2026, 10, 3, 9, 0), place_name="성수동1가")]
+def test_headline_total_equal_to_found_is_just_the_count():
+    assert (
+        template_headline(["가을"], found=3, total=3) == "가을 조건에 맞는 자물쇠 3건을 찾았어요."
+    )
+
+
+def test_headline_with_only_suggestions_says_nothing_matches_all_conditions():
+    assert template_headline(["가을", "서울숲 근처"], found=0, suggestions=2) == (
+        "가을, 서울숲 근처 조건에 모두 맞는 자물쇠는 없어요."
+    )
+
+
+def test_headline_never_lists_records():
+    # 목록은 프론트가 matchedRecords로 카드를 보여준다 — 문장에는 값(곡·날짜 등)이 없다
+    headline = template_headline(["가을"], found=3)
+
+    assert "\n" not in headline
+
+
+# ---- 문장 합치기: 앞머리 + 제안 + 안내 ---------------------------------------
 
 
 def _suggestions():
@@ -65,68 +81,60 @@ def _suggestions():
     ]
 
 
-def test_conditioned_answer_with_exact_records_and_suggestions():
-    assert compose_answer(_exact(), _suggestions(), conditioned=True) == (
-        "조건에 모두 맞는 기록 1개를 찾았어요.\n"
-        "1. 2026년 10월 3일 · 성수동1가 · 아이유 - 밤편지\n"
-        "\n"
-        "이런 기록을 찾으시는 건 아닌가요?\n"
-        "1. 2026년 5월 2일 · 성수동2가 · 아이유 - Blueming ('서울숲 근처'만 맞아요)\n"
-        "2. 2025년 9월 14일 · 반포동 · 성시경 - 두 사람 ('가을'만 맞아요)"
+def test_answer_with_only_a_headline_is_the_headline():
+    assert compose_answer("가을 조건에 맞는 자물쇠 3건을 찾았어요.") == (
+        "가을 조건에 맞는 자물쇠 3건을 찾았어요."
     )
 
 
-def test_conditioned_answer_with_only_suggestions_says_no_exact_match():
-    assert compose_answer([], _suggestions(), conditioned=True) == (
-        "조건에 모두 맞는 기록은 없어요. 이런 기록을 찾으시는 건 아닌가요?\n"
-        "1. 2026년 5월 2일 · 성수동2가 · 아이유 - Blueming ('서울숲 근처'만 맞아요)\n"
-        "2. 2025년 9월 14일 · 반포동 · 성시경 - 두 사람 ('가을'만 맞아요)"
-    )
-
-
-def test_conditioned_answer_with_only_exact_records_has_no_suggestion_section():
-    answer = compose_answer(_exact(), [], conditioned=True)
+def test_suggestions_follow_the_headline_after_a_blank_line():
+    answer = compose_answer("가을 조건에 맞는 자물쇠 1건을 찾았어요.", _suggestions())
 
     assert answer == (
-        "조건에 모두 맞는 기록 1개를 찾았어요.\n1. 2026년 10월 3일 · 성수동1가 · 아이유 - 밤편지"
+        "가을 조건에 맞는 자물쇠 1건을 찾았어요.\n"
+        "\n"
+        f"{SUGGESTION_HEADER}\n"
+        "1. 2026년 5월 2일 · 성수동2가 · 아이유 - Blueming ('서울숲 근처'만 맞아요)\n"
+        "2. 2025년 9월 14일 · 반포동 · 성시경 - 두 사람 ('가을'만 맞아요)"
     )
-
-
-def test_conditioned_answer_with_nothing_is_the_no_result_text():
-    assert compose_answer([], [], conditioned=True) == NO_RESULT_TEXT
 
 
 def test_suggestion_lists_every_matched_condition():
     suggestion = Suggestion(make_record(2), ("가을", "서울숲 근처"))
 
-    answer = compose_answer([], [suggestion], conditioned=True)
-
-    assert answer.endswith("('가을', '서울숲 근처'만 맞아요)")
+    assert compose_answer("앞머리", [suggestion]).endswith("('가을', '서울숲 근처'만 맞아요)")
 
 
-def test_unconditioned_answer_is_unchanged_by_the_new_parameters():
-    assert compose_answer([make_record(1)]).startswith("비슷한 기록 1개를 찾았어요.")
+def test_missing_place_is_left_out_of_a_suggestion_instead_of_printing_none():
+    answer = compose_answer("앞머리", [Suggestion(make_record(2, place_name=None), ("가을",))])
+
+    assert "None" not in answer
+    assert answer.splitlines()[-1] == "1. 2026년 8월 24일 · 아이유 - 밤편지 ('가을'만 맞아요)"
+
+
+def test_suggestion_without_matched_conditions_has_no_note():
+    answer = compose_answer("앞머리", [Suggestion(make_record(2), ())])
+
+    assert answer.splitlines()[-1] == "1. 2026년 8월 24일 · 오산동 · 아이유 - 밤편지"
 
 
 # ---- 안내 문장 ---------------------------------------------------------------
 
 
-def test_notices_come_after_the_results_separated_by_a_blank_line():
-    answer = compose_answer(_exact(), conditioned=True, notices=["안내 하나", "안내 둘"])
+def test_notices_come_after_everything_separated_by_a_blank_line():
+    answer = compose_answer("앞머리", _suggestions(), notices=["안내 하나", "안내 둘"])
 
     assert answer.splitlines()[-3:] == ["", "안내 하나", "안내 둘"]
-    assert answer.startswith("조건에 모두 맞는 기록 1개를 찾았어요.")
+    assert answer.startswith("앞머리\n\n" + SUGGESTION_HEADER)
 
 
 def test_notices_are_kept_even_when_nothing_is_found():
-    answer = compose_answer([], notices=["안내 하나"])
-
-    assert answer == f"{NO_RESULT_TEXT}\n\n안내 하나"
+    assert compose_answer(NO_RESULT_TEXT, notices=["안내 하나"]) == f"{NO_RESULT_TEXT}\n\n안내 하나"
 
 
 def test_no_notices_leaves_the_answer_unchanged():
-    assert compose_answer(_exact(), conditioned=True, notices=[]) == compose_answer(
-        _exact(), conditioned=True
+    assert compose_answer("앞머리", _suggestions(), notices=[]) == compose_answer(
+        "앞머리", _suggestions()
     )
 
 

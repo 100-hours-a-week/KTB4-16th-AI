@@ -43,21 +43,32 @@ async def test_returns_all_matches_in_fused_order_when_fewer_than_default_limit(
     assert [m.record_id for m in res.matched_records] == [4, 1, 2, 3]
     assert [m.similarity_score for m in res.matched_records] == [0.75, 0.7, 0.4, 0.35]
     assert res.retry_count == 0
-    assert res.answer_text.startswith("비슷한 기록 4개를 찾았어요.")
+    assert (
+        res.answer_text == "비슷한 자물쇠 4건을 찾았어요."
+    )  # 목록은 카드가 보여주므로 문장에 없다
 
 
-def test_default_limit_is_five():
-    # 프론트 계약은 "records 최대 5개"이고 limit을 따로 받지 않는다
-    assert _request().limit == 5
+def test_default_limit_is_fifty():
+    # 프론트는 앞 5건을 먼저 보여주고 "더보기"에서 나머지를 보여주므로 전체(최대 50건)를 돌려준다
+    assert _request().limit == 50
 
 
-async def test_default_limit_cuts_results_to_five():
+async def test_default_limit_returns_more_than_the_five_shown_first():
     comment = [hit(i, 0.9 - i * 0.01) for i in range(1, 9)]
     service = _service(FakeVectorSearch(comment=comment), _records(*range(1, 9)))
 
     res = await service.search(_request())
 
-    assert [m.record_id for m in res.matched_records] == [1, 2, 3, 4, 5]
+    assert [m.record_id for m in res.matched_records] == [1, 2, 3, 4, 5, 6, 7, 8]
+
+
+async def test_default_limit_cuts_results_to_fifty():
+    comment = [hit(i, 0.95 - i * 0.005) for i in range(1, 61)]
+    service = _service(FakeVectorSearch(comment=comment), _records(*range(1, 61)))
+
+    res = await service.search(_request())
+
+    assert [m.record_id for m in res.matched_records] == list(range(1, 51))
 
 
 async def test_record_ids_are_numbers_not_strings():
@@ -112,13 +123,13 @@ async def test_nothing_above_min_similarity_returns_no_record_message_without_re
 
 
 async def test_only_a_few_extra_details_are_read_beyond_limit():
-    search = FakeVectorSearch(comment=[hit(i, 0.9 - i * 0.01) for i in range(1, 11)])
-    records = _records(*range(1, 11))
+    search = FakeVectorSearch(comment=[hit(i, 0.9 - i * 0.01) for i in range(1, 16)])
+    records = _records(*range(1, 16))
     service = _service(search, records)
 
     await service.search(_request(limit=2))
 
-    assert len(records.calls[0][1]) == 6  # limit(2) x 3
+    assert len(records.calls[0][1]) == 12  # limit(2) + 여유 10
 
 
 async def test_query_is_embedded_once_and_each_search_uses_the_candidate_count():

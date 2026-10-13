@@ -55,7 +55,7 @@ def test_no_match_is_200_with_empty_list_and_message(client):
 
     assert res.status_code == 200
     assert res.json()["matchedRecords"] == []
-    assert "기록이 없어요" in res.json()["answerText"]
+    assert "자물쇠가 없어요" in res.json()["answerText"]
 
 
 @pytest.mark.parametrize("user_id", [35, "35"])
@@ -89,7 +89,7 @@ def test_blank_query_is_400(client, query):
     assert res.json()["field"] == "queryText"
 
 
-@pytest.mark.parametrize("limit", [0, 21])
+@pytest.mark.parametrize("limit", [0, 101])
 def test_limit_out_of_range_is_400(client, limit):
     _wire(client, *_four_records())
 

@@ -6,8 +6,12 @@
 
 질문에 조건(장소·지역·기간·계절·날씨·기온·기분·곡 무드)이 있으면 위에 이어서:
   질문 해석(규칙) → 내 자물쇠의 가벼운 정보 읽기(코멘트 포함) → 조건 점수 → 조건으로만 후보가 된
-  기록의 벡터 유사도 구하기 → 벡터 점수와 조건 점수 합치기 → "모든 조건에 맞는 기록"은 결과로,
-  "일부만 맞는 기록"은 답변 문장의 제안("이런 기록을 찾으시는 건 아닌가요?")으로
+  기록의 벡터 유사도 구하기 → 벡터 점수와 조건 점수 합치기 → "모든 조건에 맞는 기록"은 전체(최대
+  limit개)를 결과로, "일부만 맞는 기록"은 화면에 먼저 보이는 5건이 안 찰 때만 답변 문장의 제안
+  ("이런 자물쇠를 찾으시는 건 아닌가요?")으로
+
+답변 문장에는 자물쇠 목록을 넣지 않는다 — 프론트가 matchedRecords로 카드를 보여준다(앞 5건, 나머지는
+더보기). 문장은 앞머리(질문한 조건 + 건수, LLM 또는 템플릿) + 제안 + 안내로 이뤄진다.
 
 장소는 좌표로 비교하되, 좌표로 비교할 수 없으면 코멘트에서 그 이름을 찾는다:
   사전에 없는 장소("광교산") → 코멘트에 그 글자가 있는 기록 / 사전에 있어도 반경 안에 내 기록이
@@ -18,10 +22,12 @@
 비교하는 기준이 된다.
 """
 
+import asyncio
 import logging
 from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta, timezone
 
+from app.components.answer_headline import HeadlineWriter
 from app.components.condition_scoring import (
     ConditionWeights,
     dropped_place_words,
@@ -31,7 +37,12 @@ from app.components.condition_scoring import (
     top_candidates,
 )
 from app.components.embedder import Embedder
-from app.components.memory_answer import Suggestion, compose_answer, unknown_place_notices
+from app.components.memory_answer import (
+    Suggestion,
+    compose_answer,
+    template_headline,
+    unknown_place_notices,
+)
 from app.components.query_conditions import Condition
 from app.components.question_parser import QuestionParser
 from app.components.rank_fusion import combine_with_conditions, fuse
@@ -46,8 +57,9 @@ from app.schemas.memory_search import MatchedRecord, MemorySearchRequest, Memory
 
 logger = logging.getLogger("muro.memory_search")
 
-# 삭제됐거나 상세를 못 읽는 자물쇠가 섞여 있을 수 있어서, 돌려줄 개수보다 넉넉히 상세를 읽는다
-FETCH_MULTIPLIER = 3
+# 삭제됐거나 상세를 못 읽는 자물쇠가 섞여 있을 수 있어서, 돌려줄 개수보다 조금 더 상세를 읽는다
+# (조건 검색은 SQL에서 삭제·타인 기록을 이미 거르므로 많이 읽을 필요가 없다)
+FETCH_SLACK = 10
 
 # "지난달" 같은 기간 표현의 기준이 되는 오늘은 한국 시간이다
 KST = timezone(timedelta(hours=9))
@@ -73,6 +85,9 @@ class MemorySearchService:
         condition_weights: ConditionWeights | None = None,
         scan_limit: int = 5000,
         condition_candidates: int = 50,
+        display_count: int = 5,
+        headline_writer: HeadlineWriter | None = None,
+        headline_timeout: float = 8.0,
         today: Callable[[], date] = today_kst,
     ):
         self._embedder = embedder
@@ -87,6 +102,9 @@ class MemorySearchService:
         self._condition_weights = condition_weights or ConditionWeights()
         self._scan_limit = scan_limit
         self._condition_candidates = condition_candidates
+        self._display_count = display_count  # 프론트가 먼저 보여주는 건수 (나머지는 "더보기")
+        self._headline_writer = headline_writer  # 없으면 앞머리는 템플릿 문장
+        self._headline_timeout = headline_timeout
         self._today = today
 
     async def search(self, req: MemorySearchRequest) -> MemorySearchResponse:
@@ -133,7 +151,7 @@ class MemorySearchService:
             music_weight=self._music_weight,
             min_similarity=self._min_similarity,
         )
-        wanted = ranked[: req.limit * FETCH_MULTIPLIER]
+        wanted = ranked[: req.limit + FETCH_SLACK]
         details = (
             await self._records.get_many(
                 user_id=req.user_id, record_ids=[f.record_id for f in wanted]
@@ -152,8 +170,10 @@ class MemorySearchService:
             len(ranked),
             len(matched),
         )
+        # 조건이 없는 질문은 앞머리에 나열할 조건이 없어서 LLM 없이 템플릿으로 쓴다
+        headline = template_headline([], found=len(matched))
         return MemorySearchResponse(
-            answer_text=compose_answer([record for record, _ in matched], notices=notices),
+            answer_text=compose_answer(headline, notices=notices),
             matched_records=[_to_matched(record, item.score) for record, item in matched],
             retry_count=0,
         )
@@ -210,9 +230,11 @@ class MemorySearchService:
             vector, score(music_similarity), condition_weight=self._condition_weight
         )
 
-        # 모든 조건에 맞는 기록과 제안 후보의 상세를 한 번에 읽는다
-        fetch = req.limit * FETCH_MULTIPLIER
-        exact, suggested = ranking.exact[:fetch], ranking.suggestions[:fetch]
+        # 모든 조건에 맞는 기록(전체, 최대 limit개)과 제안 후보의 상세를 한 번에 읽는다.
+        # 제안은 화면에 먼저 보이는 건수(display_count)가 안 찰 때만, 그 건수까지만 붙인다.
+        shown = min(req.limit, self._display_count)
+        exact = ranking.exact[: req.limit + FETCH_SLACK]
+        suggested = ranking.suggestions[: shown + FETCH_SLACK]
         wanted_ids = [r.record_id for r in (*exact, *suggested)]
         details = (
             await self._records.get_many(user_id=req.user_id, record_ids=wanted_ids)
@@ -220,8 +242,7 @@ class MemorySearchService:
             else {}
         )
         matched = _readable(exact, details, req.limit)
-        # 모든 조건에 맞는 기록이 모자랄 때만 "일부만 맞는 기록"을 제안한다
-        suggestions = _readable(suggested, details, req.limit) if len(matched) < req.limit else []
+        suggestions = _readable(suggested, details, shown) if len(matched) < shown else []
 
         logger.info(
             "기억 검색(조건 %s) user=%s 자물쇠 %d → 모두 맞음 %d, 일부 맞음 %d → 반환 %d, 제안 %d",
@@ -233,16 +254,43 @@ class MemorySearchService:
             len(matched),
             len(suggestions),
         )
+        headline = await self._headline(
+            [c.label for c in conditions],
+            found=len(matched),
+            total=len(ranking.exact),
+            suggestions=len(suggestions),
+        )
         return MemorySearchResponse(
             answer_text=compose_answer(
-                [record for record, _ in matched],
+                headline,
                 [Suggestion(record, item.condition.matched) for record, item in suggestions],
-                conditioned=True,
                 notices=notices,
             ),
             matched_records=[_to_matched(record, item.score) for record, item in matched],
             retry_count=0,
         )
+
+    async def _headline(
+        self, labels: Sequence[str], *, found: int, total: int, suggestions: int
+    ) -> str:
+        """앞머리 문장. LLM이 쓰되 못 쓰면(꺼짐·실패·시간 초과·검증 실패) 템플릿으로 대신한다."""
+        fallback = template_headline(labels, found=found, total=total, suggestions=suggestions)
+        if self._headline_writer is None or (found == 0 and suggestions == 0):
+            return fallback  # 결과가 없으면 근거가 없어서 LLM을 부르지 않는다
+        try:
+            text = await asyncio.wait_for(
+                self._headline_writer.write(
+                    labels, found=found, total=total, suggestions=suggestions
+                ),
+                timeout=self._headline_timeout,
+            )
+        except Exception as exc:  # 앞머리는 꾸밈이라 실패해도 검색 결과는 그대로 돌려준다
+            logger.warning("기억 검색 앞머리 LLM 실패(%s) — 템플릿으로 대신", type(exc).__name__)
+            return fallback
+        if text is None:
+            logger.warning("기억 검색 앞머리 LLM 응답이 기준에 안 맞아 템플릿 문장으로 대신")
+            return fallback
+        return text
 
 
 def _readable(ranked: Sequence, details: dict[int, MemoryRecord], limit: int) -> list[tuple]:

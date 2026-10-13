@@ -11,9 +11,9 @@ class MemorySearchRequest(CamelModel):
     # 백엔드 userId는 숫자(Long). 숫자 문자열("35")도 받아서 숫자로 바꾼다.
     user_id: int = Field(gt=0)
     query_text: str = Field(min_length=1)
-    # 백엔드 프론트 계약(POST /api/memories/search)은 records 최대 5개이고 limit을 따로 받지 않는다.
-    # 그래서 기본값은 5다. 백엔드가 limit을 보내면 그 값(최대 20)을 따른다.
-    limit: int = Field(default=5, ge=1, le=20)
+    # 프론트는 앞 5건만 먼저 보여주고 "더보기"에서 나머지를 보여주므로, 조건에 맞는 자물쇠를
+    # 전체(기본 최대 50건) 돌려준다. 백엔드가 limit을 보내면 그 값(최대 100)을 따른다.
+    limit: int = Field(default=50, ge=1, le=100)
 
     @field_validator("query_text")
     @classmethod

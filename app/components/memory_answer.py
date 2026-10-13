@@ -1,12 +1,14 @@
-"""기능5 기억 검색 — 찾은 자물쇠로 답변 문장을 만든다 (템플릿, LLM 없음).
+"""기능5 기억 검색 — 답변 문장을 만든다.
 
-찾은 기록의 값(날짜·장소·곡)만 그대로 쓴다. 검색으로 확정되지 않은 내용은 문장에 들어갈 수 없다 —
-"검색과 생성의 분리, 확정되지 않은 내용은 언급 금지"라는 설계 원칙을 문장 틀로 지킨다.
-LLM 문장은 V3에서 이 템플릿 위에 얹고, 인용 검증에 실패하면 이 템플릿으로 돌아온다.
+자물쇠 목록은 문장에 넣지 않는다. 프론트가 응답의 matchedRecords로 카드 목록을 보여주고(앞 5건,
+나머지는 "더보기"), 카드를 누르면 해당 자물쇠로 이동하기 때문이다. 문장에는 아래 셋만 들어간다.
 
-질문에 조건(장소·계절 등)이 있으면 모든 조건에 맞는 기록과, 일부만 맞는 기록을 나눠서 쓴다.
-일부만 맞는 기록은 "이런 기록을 찾으시는 건 아닌가요?"로 제안하고, 어떤 조건이 맞았는지 적는다.
-제안은 문장으로만 나간다 — 응답의 matchedRecords에는 모든 조건에 맞는 기록만 들어간다.
+1. 앞머리 — 질문한 조건과 찾은 건수. LLM이 쓰고(answer_headline), 실패하면 이 모듈의 템플릿
+   (template_headline)으로 대신한다.
+2. 제안 — 모든 조건에 맞지는 않지만 일부만 맞는 자물쇠. 카드가 없어서 문장으로만 안내한다.
+3. 안내 — 사전에 없는 장소 때문에 적용하지 못한 조건 등. 코드가 정한 문장을 그대로 붙인다.
+
+찾은 값(날짜·장소·곡)을 문장에 쓰는 것은 제안 목록뿐이고, 그 값은 검색으로 확정된 기록의 것이다.
 """
 
 from collections.abc import Sequence
@@ -14,9 +16,8 @@ from dataclasses import dataclass
 
 from app.db.repositories.memory_record_repository import MemoryRecord
 
-NO_RESULT_TEXT = "찾으시는 기록이 없어요. 다른 말로 다시 물어봐 주세요."
-SUGGESTION_HEADER = "이런 기록을 찾으시는 건 아닌가요?"
-SUGGESTION_HEADER_WITHOUT_EXACT = "조건에 모두 맞는 기록은 없어요. " + SUGGESTION_HEADER
+NO_RESULT_TEXT = "찾으시는 자물쇠가 없어요. 다른 말로 다시 물어봐 주세요."
+SUGGESTION_HEADER = "이런 자물쇠를 찾으시는 건 아닌가요?"
 UNKNOWN_PLACE_HINT = "동이나 구 이름(예: 성수동, 성동구)으로 물어보시면 더 정확하게 찾을 수 있어요."
 
 
@@ -26,36 +27,50 @@ class Suggestion:
     matched: tuple[str, ...]  # 이 기록이 맞은 조건의 이름
 
 
+def template_headline(
+    labels: Sequence[str], *, found: int, total: int | None = None, suggestions: int = 0
+) -> str:
+    """LLM 없이 만드는 앞머리 문장.
+
+    labels: 질문에서 읽어 낸 조건 이름들 (없으면 조건 없는 질문).
+    found: 결과(matchedRecords)로 보내는 자물쇠 수.
+    total: 조건에 모두 맞는 자물쇠 전체 수. found보다 크면 일부만 보내는 것이다.
+    suggestions: 문장 아래에 제안하는 일부만 맞는 자물쇠 수.
+    """
+    if found == 0 and suggestions == 0:
+        return NO_RESULT_TEXT
+    if not labels:
+        return f"비슷한 자물쇠 {found}건을 찾았어요."
+
+    conditions = ", ".join(labels)
+    if found == 0:
+        return f"{conditions} 조건에 모두 맞는 자물쇠는 없어요."
+    total = max(total or found, found)
+    if total > found:
+        return (
+            f"{conditions} 조건에 맞는 자물쇠는 총 {total}건이에요. "
+            f"그중 상위 {found}건을 보여드려요."
+        )
+    return f"{conditions} 조건에 맞는 자물쇠 {found}건을 찾았어요."
+
+
 def compose_answer(
-    records: Sequence[MemoryRecord],
+    headline: str,
     suggestions: Sequence[Suggestion] = (),
     *,
-    conditioned: bool = False,
     notices: Sequence[str] = (),
 ) -> str:
-    """conditioned는 질문에 조건이 있었는지. 없으면 비슷한 기록만 한 목록으로 쓴다.
+    """앞머리 + (있으면) 제안 목록 + (있으면) 안내 문장을 한 문자열로 합친다.
 
     notices는 결과 뒤에 덧붙이는 안내 문장들이다(예: 사전에 없는 장소라 적용 못 한 조건).
-    찾은 기록이 없어도 안내는 붙는다.
+    찾은 자물쇠가 없어도 안내는 붙는다.
     """
-    lines: list[str] = []
-    if not records and not suggestions:
-        lines.append(NO_RESULT_TEXT)
-
-    if records:
-        noun = "조건에 모두 맞는 기록" if conditioned else "비슷한 기록"
-        lines.append(f"{noun} {len(records)}개를 찾았어요.")
-        lines += _numbered(r for r in records)
+    lines = [headline]
     if suggestions:
-        if lines:
-            lines.append("")
-        lines.append(SUGGESTION_HEADER if records else SUGGESTION_HEADER_WITHOUT_EXACT)
-        lines += _numbered(
-            (s.record for s in suggestions), notes=[_matched_note(s.matched) for s in suggestions]
-        )
+        lines += ["", SUGGESTION_HEADER]
+        lines += _numbered(suggestions)
     if notices:
-        lines.append("")
-        lines += notices
+        lines += ["", *notices]
     return "\n".join(lines)
 
 
@@ -90,13 +105,15 @@ def _topic(word: str) -> str:
     return "은" if (ord(last) - ord("가")) % 28 else "는"
 
 
-def _numbered(records, notes: Sequence[str] = ()) -> list[str]:
+def _numbered(suggestions: Sequence[Suggestion]) -> list[str]:
     lines = []
-    for number, record in enumerate(records, start=1):
+    for number, suggestion in enumerate(suggestions, start=1):
+        record = suggestion.record
         parts = [_format_date(record), record.place_name, f"{record.artist_name} - {record.title}"]
         line = f"{number}. " + " · ".join(p for p in parts if p)
-        if notes and notes[number - 1]:
-            line += f" ({notes[number - 1]})"
+        note = _matched_note(suggestion.matched)
+        if note:
+            line += f" ({note})"
         lines.append(line)
     return lines
 

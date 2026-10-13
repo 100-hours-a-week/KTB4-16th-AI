@@ -26,6 +26,7 @@ from app.clients.spotify_client import (
     SpotifySearchClient,
     SpotifyServiceAccountClient,
 )
+from app.components.answer_headline import HeadlineWriter
 from app.components.category_vectors import CategoryVectors
 from app.components.clip_tagger import ClipTagger
 from app.components.condition_scoring import ConditionWeights
@@ -285,6 +286,12 @@ async def get_memory_search_service(
         ),
         scan_limit=s.memory_search_scan_limit,
         condition_candidates=s.memory_search_condition_candidates,
+        display_count=s.memory_search_display_count,
+        # 답변 앞머리 문장 — 꺼 두면(기본) 템플릿 문장. LLM에는 조건 이름과 건수만 보낸다
+        headline_writer=(
+            HeadlineWriter(get_clients().llm_general) if s.memory_answer_llm_enabled else None
+        ),
+        headline_timeout=s.memory_answer_llm_timeout_seconds,
     )
 
 

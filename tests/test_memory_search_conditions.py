@@ -4,6 +4,7 @@ from datetime import date, datetime
 
 import pytest
 
+from app.components.answer_headline import HeadlineWriter, build_prompt
 from app.components.memory_answer import NO_RESULT_TEXT
 from app.components.question_parser import QuestionParser
 from app.schemas.memory_search import MemorySearchRequest
@@ -12,6 +13,7 @@ from tests.memory_fakes import (
     FakeMemoryRecords,
     FakeVectorSearch,
     StubEmbedder,
+    StubLLM,
     hit,
     make_record,
     make_row,
@@ -26,7 +28,7 @@ def parser() -> QuestionParser:
     return QuestionParser.load_default()
 
 
-def _service(parser, search, records) -> MemorySearchService:
+def _service(parser, search, records, **overrides) -> MemorySearchService:
     return MemorySearchService(
         StubEmbedder(),
         search,
@@ -38,6 +40,7 @@ def _service(parser, search, records) -> MemorySearchService:
         parser=parser,
         condition_weight=0.5,
         today=lambda: TODAY,
+        **overrides,
     )
 
 
@@ -88,8 +91,11 @@ async def test_exact_matches_are_results_and_partial_matches_are_suggested_in_te
 
     assert [m.record_id for m in res.matched_records] == [1]  # 가을 AND 서울숲
     lines = res.answer_text.splitlines()
-    assert lines[0] == "조건에 모두 맞는 기록 1개를 찾았어요."
-    assert "이런 기록을 찾으시는 건 아닌가요?" in lines
+    assert lines[0] == "서울숲 근처, 가을 조건에 맞는 자물쇠 1건을 찾았어요."
+    assert "이런 자물쇠를 찾으시는 건 아닌가요?" in lines
+    assert (
+        "2026년 10월 3일" not in res.answer_text
+    )  # 모두 맞는 기록은 카드로 보여주므로 문장에 없다
     assert "2. 2025년 9월 14일 · 반포동 · 아이유 - 밤편지 ('가을'만 맞아요)" in res.answer_text
     assert "1. 2026년 5월 2일 · 성수동2가 · 아이유 - 밤편지 ('서울숲 근처'만 맞아요)" in (
         res.answer_text
@@ -117,7 +123,7 @@ async def test_suggestions_are_left_out_when_exact_matches_fill_the_limit(parser
     res = await service.search(_request("가을에 서울숲에서 들었던 노래", limit=1))
 
     assert [m.record_id for m in res.matched_records] == [1]
-    assert "이런 기록" not in res.answer_text
+    assert "이런 자물쇠" not in res.answer_text
 
 
 async def test_no_exact_match_returns_empty_list_and_suggestions_in_text(parser):
@@ -128,7 +134,9 @@ async def test_no_exact_match_returns_empty_list_and_suggestions_in_text(parser)
     res = await service.search(_request("가을에 서울숲에서 들었던 노래"))
 
     assert res.matched_records == []
-    assert res.answer_text.startswith("조건에 모두 맞는 기록은 없어요. 이런 기록을 찾으시는 건")
+    assert res.answer_text.startswith(
+        "서울숲 근처, 가을 조건에 모두 맞는 자물쇠는 없어요.\n\n이런 자물쇠를 찾으시는 건"
+    )
 
 
 async def test_question_without_conditions_skips_the_condition_path(parser):
@@ -141,7 +149,7 @@ async def test_question_without_conditions_skips_the_condition_path(parser):
 
     assert records.row_calls == []  # 자물쇠 정보를 읽지 않는다
     assert search.similarity_calls == [] and search.mood_calls == []
-    assert res.answer_text.startswith("비슷한 기록")  # 1단계 기준선 문장
+    assert res.answer_text.startswith("비슷한 자물쇠")  # 1단계 기준선 문장
 
 
 async def test_dong_word_the_user_never_visited_falls_back_to_plain_search(parser):
@@ -152,7 +160,7 @@ async def test_dong_word_the_user_never_visited_falls_back_to_plain_search(parse
     res = await service.search(_request("운동을 하던 날 들은 노래"))
 
     assert records.row_calls == [(USER, 5000)]  # 후보를 확인하려고 읽었지만
-    assert res.answer_text.startswith("비슷한 기록")  # 조건으로 남지 않아 기준선으로 처리
+    assert res.answer_text.startswith("비슷한 자물쇠")  # 조건으로 남지 않아 기준선으로 처리
     assert [m.record_id for m in res.matched_records] == [4, 3]
 
 
@@ -252,7 +260,7 @@ async def test_exact_record_whose_details_cannot_be_read_is_skipped(parser):
     res = await service.search(_request("가을에 서울숲에서 들었던 노래"))
 
     assert res.matched_records == []
-    assert res.answer_text.startswith("조건에 모두 맞는 기록은 없어요.")
+    assert res.answer_text.startswith("서울숲 근처, 가을 조건에 모두 맞는 자물쇠는 없어요.")
 
 
 async def test_combined_period_place_mood_question(parser):
@@ -307,7 +315,7 @@ async def test_unknown_place_nobody_wrote_about_is_ignored_with_a_notice(parser)
 
     # 위치 조건은 빠지고 가을 조건만으로 찾는다
     assert sorted(m.record_id for m in res.matched_records) == [1, 3, 4]
-    assert res.answer_text.startswith("조건에 모두 맞는 기록 3개를 찾았어요.")
+    assert res.answer_text.startswith("가을 조건에 맞는 자물쇠 3건을 찾았어요.")
     assert res.answer_text.endswith(
         "'북한산'은 아직 모르는 장소라서 위치 조건은 적용하지 못했어요. "
         "동이나 구 이름(예: 성수동, 성동구)으로 물어보시면 더 정확하게 찾을 수 있어요."
@@ -325,7 +333,7 @@ async def test_only_an_unknown_place_nobody_wrote_about_falls_back_to_plain_sear
     res = await service.search(_request("북한산에서 들은 노래"))
 
     assert [m.record_id for m in res.matched_records] == [3]  # 벡터 검색 결과 그대로
-    assert res.answer_text.startswith("비슷한 기록 1개를 찾았어요.")
+    assert res.answer_text.startswith("비슷한 자물쇠 1건을 찾았어요.")
     assert "'북한산'은 아직 모르는 장소라서" in res.answer_text
 
 
@@ -391,3 +399,180 @@ async def test_questions_without_unknown_places_get_no_notice(parser):
 
     assert "모르는 장소" not in res.answer_text
     assert "장소 목록에 없는" not in res.answer_text
+
+
+# ---- 전체 반환: 화면에는 5건, 나머지는 "더보기" ------------------------------
+
+
+def _forest_world(autumn: int, spring: int = 0):
+    """서울숲에서 가을에 저장한 기록 autumn건, 봄에 저장한 기록 spring건을 가진 사용자."""
+    rows, details = [], {}
+    for i in range(1, autumn + spring + 1):
+        when = datetime(2026, 10, 3, 9, 0) if i <= autumn else datetime(2026, 5, 2, 9, 0)
+        rows.append(make_row(i, created_at=when, **SEOUL_FOREST))
+        details[i] = make_record(i, created_at=when, place_name="성수동1가")
+    return rows, details
+
+
+async def test_all_exact_matches_are_returned_even_beyond_the_five_shown_first(parser):
+    rows, details = _forest_world(autumn=6, spring=2)
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("가을에 서울숲에서 들은 노래"))
+
+    assert sorted(m.record_id for m in res.matched_records) == [1, 2, 3, 4, 5, 6]
+    # 화면에 먼저 보이는 5건이 찼으므로 일부만 맞는 기록(7·8번)은 제안하지 않는다
+    assert res.answer_text == "서울숲 근처, 가을 조건에 맞는 자물쇠 6건을 찾았어요."
+
+
+async def test_suggestions_are_added_while_fewer_than_five_exact_matches(parser):
+    rows, details = _forest_world(autumn=4, spring=2)
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("가을에 서울숲에서 들은 노래"))
+
+    assert len(res.matched_records) == 4
+    assert res.answer_text.startswith("서울숲 근처, 가을 조건에 맞는 자물쇠 4건을 찾았어요.")
+    assert res.answer_text.count("'서울숲 근처'만 맞아요") == 2  # 5, 6번 (봄, 서울숲)
+
+
+async def test_headline_gives_the_total_when_fewer_are_returned_than_found(parser):
+    rows, details = _forest_world(autumn=5)
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("가을에 서울숲에서 들은 노래", limit=3))
+
+    assert len(res.matched_records) == 3
+    assert res.answer_text == (
+        "서울숲 근처, 가을 조건에 맞는 자물쇠는 총 5건이에요. 그중 상위 3건을 보여드려요."
+    )
+
+
+async def test_exact_matches_are_returned_in_score_order_and_the_list_is_not_in_the_text(parser):
+    rows, details = _forest_world(autumn=3)
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("가을에 서울숲에서 들은 노래"))
+
+    assert [m.record_id for m in res.matched_records] == [3, 2, 1]  # 점수가 같으면 최근 기록 먼저
+    assert "밤편지" not in res.answer_text and "성수동1가" not in res.answer_text
+
+
+# ---- 앞머리 문장을 LLM이 쓸 때 -------------------------------------------------
+
+LLM_SENTENCE = "서울숲 근처에서 가을에 저장하신 자물쇠 1건을 찾았습니다."
+
+
+def _llm_service(parser, llm, records, search=None, **overrides):
+    return _service(
+        parser,
+        search or _search(),
+        records,
+        headline_writer=HeadlineWriter(llm),
+        **overrides,
+    )
+
+
+async def test_headline_comes_from_the_llm_when_it_is_turned_on(parser):
+    rows, details = _world()
+    llm = StubLLM(LLM_SENTENCE)
+    service = _llm_service(parser, llm, FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("가을에 서울숲에서 들었던 노래 뭐지?"))
+
+    assert res.answer_text.splitlines()[0] == LLM_SENTENCE
+    assert [m.record_id for m in res.matched_records] == [1]  # 결과는 LLM과 상관없이 검색 그대로
+    # 일부만 맞는 기록 제안은 코드가 그대로 붙인다
+    assert "이런 자물쇠를 찾으시는 건 아닌가요?" in res.answer_text
+    assert "('가을'만 맞아요)" in res.answer_text
+
+
+async def test_llm_receives_only_condition_names_and_counts(parser):
+    rows, details = _world()
+    llm = StubLLM(LLM_SENTENCE)
+    service = _llm_service(parser, llm, FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    await service.search(_request("가을에 서울숲에서 들었던 노래 뭐지?"))
+
+    (call,) = llm.calls
+    assert call["prompt"] == build_prompt(["서울숲 근처", "가을"], found=1, total=1, suggestions=2)
+    for private in ("들었던 노래", "밤편지", "아이유", "성수동", "반포동"):
+        assert private not in call["prompt"]  # 질문 원문·곡·장소는 보내지 않는다
+
+
+async def test_llm_failure_falls_back_to_the_template_headline(parser):
+    rows, details = _world()
+    llm = StubLLM(error=RuntimeError("LLM 서버 오류"))
+    service = _llm_service(parser, llm, FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("가을에 서울숲에서 들었던 노래 뭐지?"))
+
+    assert res.answer_text.splitlines()[0] == "서울숲 근처, 가을 조건에 맞는 자물쇠 1건을 찾았어요."
+    assert [m.record_id for m in res.matched_records] == [1]  # 검색 결과는 그대로
+
+
+async def test_llm_sentence_with_a_wrong_count_is_not_used(parser):
+    rows, details = _world()
+    llm = StubLLM("서울숲 근처에서 가을에 저장하신 자물쇠 9건을 찾았습니다.")
+    service = _llm_service(parser, llm, FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("가을에 서울숲에서 들었던 노래 뭐지?"))
+
+    assert res.answer_text.splitlines()[0] == "서울숲 근처, 가을 조건에 맞는 자물쇠 1건을 찾았어요."
+
+
+async def test_slow_llm_is_given_up_after_the_timeout(parser):
+    rows, details = _world()
+    llm = StubLLM(LLM_SENTENCE, delay=1.0)
+    service = _llm_service(
+        parser,
+        llm,
+        FakeMemoryRecords({USER: details}, {USER: rows}),
+        headline_timeout=0.01,
+    )
+
+    res = await service.search(_request("가을에 서울숲에서 들었던 노래 뭐지?"))
+
+    assert res.answer_text.splitlines()[0] == "서울숲 근처, 가을 조건에 맞는 자물쇠 1건을 찾았어요."
+
+
+async def test_llm_is_not_called_when_there_is_nothing_to_report(parser):
+    rows, details = _world()
+    llm = StubLLM(LLM_SENTENCE)
+    records = FakeMemoryRecords({USER: details}, {USER: rows})
+    service = _llm_service(parser, llm, records)
+
+    res = await service.search(_request("가을에 서울숲에서 들었던 노래", userId=999))
+
+    assert res.answer_text == NO_RESULT_TEXT
+    assert llm.calls == []  # 근거가 없는데 문장을 만들게 하지 않는다
+
+
+async def test_llm_is_not_called_for_questions_without_conditions(parser):
+    rows, details = _world()
+    llm = StubLLM(LLM_SENTENCE)
+    service = _llm_service(parser, llm, FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("그때 들은 노래"))
+
+    assert llm.calls == []  # 나열할 조건이 없다
+    assert res.answer_text.startswith("비슷한 자물쇠")
+
+
+async def test_llm_headline_is_followed_by_the_notice_written_by_code(parser):
+    rows, details = _comment_world()
+    llm = StubLLM("가을에 저장하신 자물쇠 3건을 찾았어요.")
+    service = _llm_service(
+        parser,
+        llm,
+        FakeMemoryRecords({USER: details}, {USER: rows}),
+        search=FakeVectorSearch(),
+    )
+
+    res = await service.search(_request("가을에 북한산에서 들은 노래"))
+
+    # 어느 코멘트에도 없는 북한산은 조건에서 빠져서 LLM에는 "가을"만 전달된다
+    assert llm.calls[0]["prompt"] == build_prompt(["가을"], found=3, total=3, suggestions=0)
+    lines = res.answer_text.splitlines()
+    assert lines[0] == "가을에 저장하신 자물쇠 3건을 찾았어요."
+    assert lines[-1].startswith("'북한산'은 아직 모르는 장소라서 위치 조건은 적용하지 못했어요.")

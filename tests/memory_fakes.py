@@ -1,5 +1,6 @@
-"""기능5 기억 검색 테스트용 가짜 구현 — 벡터 검색, 백엔드 상세 조회, 임베더."""
+"""기능5 기억 검색 테스트용 가짜 구현 — 벡터 검색, 백엔드 상세 조회, 임베더, LLM."""
 
+import asyncio
 from datetime import datetime
 
 from app.components.vector_search import SimilarRecord
@@ -123,3 +124,23 @@ class StubEmbedder:
     async def embed(self, text: str) -> list[float]:
         self.texts.append(text)
         return [0.1, 0.2, 0.3]
+
+
+class StubLLM:
+    """정해 둔 응답을 돌려주고, 어떤 글을 받았는지 기록한다."""
+
+    model = "stub-llm"
+
+    def __init__(self, response: str = "", error: Exception | None = None, delay: float = 0.0):
+        self.response = response
+        self.error = error
+        self.delay = delay
+        self.calls: list[dict] = []
+
+    async def complete(self, *, system: str, prompt: str, max_tokens: int = 1024) -> str:
+        self.calls.append({"system": system, "prompt": prompt, "max_tokens": max_tokens})
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        if self.error:
+            raise self.error
+        return self.response
