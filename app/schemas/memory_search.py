@@ -2,15 +2,26 @@
 
 from datetime import datetime
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from app.schemas.common import CamelModel, Place, Track
 
 
 class MemorySearchRequest(CamelModel):
-    user_id: str = Field(min_length=1)
+    # 백엔드 userId는 숫자(Long). 숫자 문자열("35")도 받아서 숫자로 바꾼다.
+    user_id: int = Field(gt=0)
     query_text: str = Field(min_length=1)
-    limit: int = Field(default=5, ge=1, le=20)
+    # 1단계 기본값 3. 백엔드가 limit을 보내면 그 값(최대 20)을 따른다.
+    limit: int = Field(default=3, ge=1, le=20)
+
+    @field_validator("query_text")
+    @classmethod
+    def _not_blank(cls, value: str) -> str:
+        # min_length는 공백만 있는 질문을 못 거른다 — 임베딩이 빈 텍스트를 거부해 500이 된다
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("질문이 비어 있어요.")
+        return stripped
 
 
 class MatchedRecord(CamelModel):
