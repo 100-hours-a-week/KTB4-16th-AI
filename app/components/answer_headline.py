@@ -28,7 +28,7 @@ SYSTEM_PROMPT = """너는 음악 기록 앱 '뮤로'의 검색 결과 안내 문
 - 받은 정보에 없는 내용(곡, 가수, 장소, 날짜, 분위기)을 지어내지 않는다.
 - 자물쇠 목록은 따로 보여주므로 하나하나 나열하지 않는다.
 - 조건에 모두 맞는 자물쇠가 없으면 없다고 알린다.
-- 일부만 맞는 자물쇠가 있다고 알려 주면 마지막에 비슷한 자물쇠를 아래에 안내한다고 짧게 덧붙인다.
+- 일부만 맞는 자물쇠가 있다고 알려 주면 마지막에 비슷한 자물쇠도 함께 보여준다고 짧게 덧붙인다.
 - 이모지와 따옴표 없이 문장만 출력한다."""
 
 
@@ -66,7 +66,7 @@ def build_prompt(labels: Sequence[str], *, found: int, total: int, suggestions: 
     else:
         lines.append(f"조건에 모두 맞는 자물쇠: {found}건")
     if suggestions:
-        lines.append(f"일부만 맞는 자물쇠: {suggestions}건 (문장 아래에 따로 안내됨)")
+        lines.append(f"일부만 맞는 자물쇠: {suggestions}건 (화면에 따로 보여줌)")
     return "\n".join(lines)
 
 

@@ -21,6 +21,7 @@ def _row(record_id=1, **overrides):
     values = {
         "record_id": record_id,
         "created_at": datetime(2026, 8, 24, 18, 30),
+        "music_track_id": 3,
         "title": "밤편지",
         "artist_name": "아이유",
         "external_track_id": "abc",
@@ -28,6 +29,7 @@ def _row(record_id=1, **overrides):
         "external_url": "https://open.spotify.com/track/abc",
         "place_id": 10,
         "place_name": "오산동",
+        "weather_condition": "RAIN",
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -42,6 +44,25 @@ async def test_query_is_scoped_to_user_and_skips_deleted_records():
     assert "r.user_id = :user_id" in sql  # 다른 사용자의 자물쇠는 읽히지 않는다
     assert "r.deleted_at IS NULL" in sql  # 삭제된 자물쇠는 뺀다
     assert params == {"user_id": 5, "record_ids": [1, 2]}
+
+
+async def test_music_track_id_is_read_with_the_record():
+    session = FakeMysqlSession([_row(1, music_track_id=72)])
+
+    records = await MemoryRecordRepository(session).get_many(user_id=5, record_ids=[1])
+
+    assert records[1].music_track_id == 72
+    assert "r.music_track_id" in session.executed[0][0]  # 백엔드 응답 records[].musicTrackId용
+
+
+async def test_weather_condition_is_read_with_the_record_and_may_be_missing():
+    session = FakeMysqlSession([_row(1, weather_condition="SNOW"), _row(2, weather_condition=None)])
+
+    records = await MemoryRecordRepository(session).get_many(user_id=5, record_ids=[1, 2])
+
+    assert records[1].weather_condition == "SNOW"
+    assert records[2].weather_condition is None  # 백엔드가 날씨를 못 구한 기록
+    assert "r.weather_condition" in session.executed[0][0]
 
 
 async def test_rows_are_mapped_by_record_id():

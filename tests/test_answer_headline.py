@@ -29,7 +29,7 @@ def test_prompt_tells_when_nothing_matches_all_conditions_but_some_match_in_part
 
     assert prompt.splitlines()[1:] == [
         "조건에 모두 맞는 자물쇠: 0건 (없음)",
-        "일부만 맞는 자물쇠: 3건 (문장 아래에 따로 안내됨)",
+        "일부만 맞는 자물쇠: 3건 (화면에 따로 보여줌)",
     ]
 
 

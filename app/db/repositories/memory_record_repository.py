@@ -28,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 class MemoryRecord:
     record_id: int
     created_at: datetime
+    music_track_id: int  # 백엔드 music_tracks의 기본키 — 백엔드 응답 records[].musicTrackId
     title: str
     artist_name: str
     external_track_id: str
@@ -35,6 +36,8 @@ class MemoryRecord:
     external_url: str
     place_id: int | None
     place_name: str | None  # 백엔드 places.legal_dong_name — 비어 있을 수 있다
+    # 기록 당시 날씨(CLEAR·CLOUDY·OVERCAST·RAIN·SNOW·RAIN_SNOW·SHOWER). 못 구했으면 None
+    weather_condition: str | None = None
 
 
 @dataclass(frozen=True)
@@ -70,7 +73,7 @@ class MemoryRecordRepository:
         rows = await self._mysql.execute(
             text(
                 """
-                SELECT r.record_id, r.created_at,
+                SELECT r.record_id, r.created_at, r.music_track_id, r.weather_condition,
                        m.title, m.artist_name, m.external_track_id,
                        m.album_image_url, m.external_url,
                        p.place_id, p.legal_dong_name AS place_name
@@ -87,6 +90,7 @@ class MemoryRecordRepository:
             row.record_id: MemoryRecord(
                 record_id=row.record_id,
                 created_at=row.created_at,
+                music_track_id=row.music_track_id,
                 title=row.title,
                 artist_name=row.artist_name,
                 external_track_id=row.external_track_id,
@@ -94,6 +98,7 @@ class MemoryRecordRepository:
                 external_url=row.external_url or "",
                 place_id=row.place_id,
                 place_name=row.place_name,
+                weather_condition=row.weather_condition,
             )
             for row in rows
         }

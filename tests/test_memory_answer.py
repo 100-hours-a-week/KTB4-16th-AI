@@ -1,14 +1,9 @@
-from datetime import datetime
-
 from app.components.memory_answer import (
     NO_RESULT_TEXT,
-    SUGGESTION_HEADER,
-    Suggestion,
     compose_answer,
     template_headline,
     unknown_place_notices,
 )
-from tests.memory_fakes import make_record
 
 # ---- 앞머리 문장 (LLM이 못 쓸 때의 템플릿) -----------------------------------
 
@@ -53,32 +48,7 @@ def test_headline_never_lists_records():
     assert "\n" not in headline
 
 
-# ---- 문장 합치기: 앞머리 + 제안 + 안내 ---------------------------------------
-
-
-def _suggestions():
-    return [
-        Suggestion(
-            make_record(
-                2,
-                created_at=datetime(2026, 5, 2, 9, 0),
-                place_name="성수동2가",
-                title="Blueming",
-                artist_name="아이유",
-            ),
-            ("서울숲 근처",),
-        ),
-        Suggestion(
-            make_record(
-                3,
-                created_at=datetime(2025, 9, 14, 9, 0),
-                place_name="반포동",
-                title="두 사람",
-                artist_name="성시경",
-            ),
-            ("가을",),
-        ),
-    ]
+# ---- 문장 합치기: 앞머리 + 안내 ---------------------------------------------
 
 
 def test_answer_with_only_a_headline_is_the_headline():
@@ -87,55 +57,29 @@ def test_answer_with_only_a_headline_is_the_headline():
     )
 
 
-def test_suggestions_follow_the_headline_after_a_blank_line():
-    answer = compose_answer("가을 조건에 맞는 자물쇠 1건을 찾았어요.", _suggestions())
+def test_answer_has_no_record_list_and_no_suggestion_header():
+    # 자물쇠 목록은 records, 일부만 맞는 자물쇠는 suggestedRecords로 따로 나간다
+    answer = compose_answer(template_headline(["가을"], found=0, suggestions=2))
 
-    assert answer == (
-        "가을 조건에 맞는 자물쇠 1건을 찾았어요.\n"
-        "\n"
-        f"{SUGGESTION_HEADER}\n"
-        "1. 2026년 5월 2일 · 성수동2가 · 아이유 - Blueming ('서울숲 근처'만 맞아요)\n"
-        "2. 2025년 9월 14일 · 반포동 · 성시경 - 두 사람 ('가을'만 맞아요)"
-    )
-
-
-def test_suggestion_lists_every_matched_condition():
-    suggestion = Suggestion(make_record(2), ("가을", "서울숲 근처"))
-
-    assert compose_answer("앞머리", [suggestion]).endswith("('가을', '서울숲 근처'만 맞아요)")
-
-
-def test_missing_place_is_left_out_of_a_suggestion_instead_of_printing_none():
-    answer = compose_answer("앞머리", [Suggestion(make_record(2, place_name=None), ("가을",))])
-
-    assert "None" not in answer
-    assert answer.splitlines()[-1] == "1. 2026년 8월 24일 · 아이유 - 밤편지 ('가을'만 맞아요)"
-
-
-def test_suggestion_without_matched_conditions_has_no_note():
-    answer = compose_answer("앞머리", [Suggestion(make_record(2), ())])
-
-    assert answer.splitlines()[-1] == "1. 2026년 8월 24일 · 오산동 · 아이유 - 밤편지"
+    assert answer == "가을 조건에 모두 맞는 자물쇠는 없어요."
+    assert "이런 자물쇠를 찾으시는 건" not in answer  # 프론트 토글 문구라서 문장에 없다
 
 
 # ---- 안내 문장 ---------------------------------------------------------------
 
 
-def test_notices_come_after_everything_separated_by_a_blank_line():
-    answer = compose_answer("앞머리", _suggestions(), notices=["안내 하나", "안내 둘"])
+def test_notices_come_after_the_headline_separated_by_a_blank_line():
+    answer = compose_answer("앞머리", notices=["안내 하나", "안내 둘"])
 
-    assert answer.splitlines()[-3:] == ["", "안내 하나", "안내 둘"]
-    assert answer.startswith("앞머리\n\n" + SUGGESTION_HEADER)
+    assert answer == "앞머리\n\n안내 하나\n안내 둘"
 
 
 def test_notices_are_kept_even_when_nothing_is_found():
     assert compose_answer(NO_RESULT_TEXT, notices=["안내 하나"]) == f"{NO_RESULT_TEXT}\n\n안내 하나"
 
 
-def test_no_notices_leaves_the_answer_unchanged():
-    assert compose_answer("앞머리", _suggestions(), notices=[]) == compose_answer(
-        "앞머리", _suggestions()
-    )
+def test_no_notices_leaves_the_headline_unchanged():
+    assert compose_answer("앞머리", notices=[]) == "앞머리"
 
 
 def test_unknown_place_found_in_comments_is_explained():

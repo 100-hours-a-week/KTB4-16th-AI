@@ -38,7 +38,6 @@ from app.components.condition_scoring import (
 )
 from app.components.embedder import Embedder
 from app.components.memory_answer import (
-    Suggestion,
     compose_answer,
     template_headline,
     unknown_place_notices,
@@ -52,8 +51,12 @@ from app.db.repositories.memory_record_repository import (
     MemoryRecord,
     MemoryRecordSource,
 )
-from app.schemas.common import Place, Track
-from app.schemas.memory_search import MatchedRecord, MemorySearchRequest, MemorySearchResponse
+from app.schemas.memory_search import (
+    MemoryRecordItem,
+    MemorySearchRequest,
+    MemorySearchResponse,
+    SuggestedRecordItem,
+)
 
 logger = logging.getLogger("muro.memory_search")
 
@@ -86,6 +89,7 @@ class MemorySearchService:
         scan_limit: int = 5000,
         condition_candidates: int = 50,
         display_count: int = 5,
+        suggestion_count: int = 3,
         headline_writer: HeadlineWriter | None = None,
         headline_timeout: float = 8.0,
         today: Callable[[], date] = today_kst,
@@ -102,7 +106,8 @@ class MemorySearchService:
         self._condition_weights = condition_weights or ConditionWeights()
         self._scan_limit = scan_limit
         self._condition_candidates = condition_candidates
-        self._display_count = display_count  # 프론트가 먼저 보여주는 건수 (나머지는 "더보기")
+        self._display_count = display_count  # 채팅에 먼저 보이는 건수 (나머지는 "전체보기" 임시 창)
+        self._suggestion_count = suggestion_count  # 제안 토글을 열면 보이는 건수
         self._headline_writer = headline_writer  # 없으면 앞머리는 템플릿 문장
         self._headline_timeout = headline_timeout
         self._today = today
@@ -173,9 +178,8 @@ class MemorySearchService:
         # 조건이 없는 질문은 앞머리에 나열할 조건이 없어서 LLM 없이 템플릿으로 쓴다
         headline = template_headline([], found=len(matched))
         return MemorySearchResponse(
-            answer_text=compose_answer(headline, notices=notices),
-            matched_records=[_to_matched(record, item.score) for record, item in matched],
-            retry_count=0,
+            answer=compose_answer(headline, notices=notices),
+            records=[_to_item(record, item.score) for record, item in matched],
         )
 
     async def _search_with_conditions(
@@ -231,10 +235,10 @@ class MemorySearchService:
         )
 
         # 모든 조건에 맞는 기록(전체, 최대 limit개)과 제안 후보의 상세를 한 번에 읽는다.
-        # 제안은 화면에 먼저 보이는 건수(display_count)가 안 찰 때만, 그 건수까지만 붙인다.
+        # 제안은 채팅에 먼저 보이는 건수(display_count)가 안 찰 때만, 최대 suggestion_count개다.
         shown = min(req.limit, self._display_count)
         exact = ranking.exact[: req.limit + FETCH_SLACK]
-        suggested = ranking.suggestions[: shown + FETCH_SLACK]
+        suggested = ranking.suggestions[: self._suggestion_count + FETCH_SLACK]
         wanted_ids = [r.record_id for r in (*exact, *suggested)]
         details = (
             await self._records.get_many(user_id=req.user_id, record_ids=wanted_ids)
@@ -242,7 +246,9 @@ class MemorySearchService:
             else {}
         )
         matched = _readable(exact, details, req.limit)
-        suggestions = _readable(suggested, details, shown) if len(matched) < shown else []
+        suggestions = (
+            _readable(suggested, details, self._suggestion_count) if len(matched) < shown else []
+        )
 
         logger.info(
             "기억 검색(조건 %s) user=%s 자물쇠 %d → 모두 맞음 %d, 일부 맞음 %d → 반환 %d, 제안 %d",
@@ -261,13 +267,12 @@ class MemorySearchService:
             suggestions=len(suggestions),
         )
         return MemorySearchResponse(
-            answer_text=compose_answer(
-                headline,
-                [Suggestion(record, item.condition.matched) for record, item in suggestions],
-                notices=notices,
-            ),
-            matched_records=[_to_matched(record, item.score) for record, item in matched],
-            retry_count=0,
+            answer=compose_answer(headline, notices=notices),
+            records=[_to_item(record, item.score) for record, item in matched],
+            suggested_records=[
+                _to_suggested_item(record, item.score, item.condition.matched)
+                for record, item in suggestions
+            ],
         )
 
     async def _headline(
@@ -309,21 +314,30 @@ def _readable(ranked: Sequence, details: dict[int, MemoryRecord], limit: int) ->
     return kept
 
 
-def _to_matched(record: MemoryRecord, score: float) -> MatchedRecord:
+def _to_item(record: MemoryRecord, score: float) -> MemoryRecordItem:
     # 백엔드가 곡을 "spotify:track:ID"나 ID로 저장할 수 있다(기능4도 같은 정규화를 함) — ID만 남긴다
     track_id = record.external_track_id.rsplit(":", 1)[-1]
-    return MatchedRecord(
+    d = record.created_at  # 백엔드 DB는 한국시간으로 저장한다
+    return MemoryRecordItem(
         record_id=record.record_id,
-        track=Track(
-            title=record.title,
-            artist_name=record.artist_name,
-            external_track_id=track_id,
-            spotify_uri=f"spotify:track:{track_id}",
-            album_image_url=record.album_image_url,
-            external_url=record.external_url,
-        ),
+        music_track_id=record.music_track_id,
+        title=record.title,
+        artist_name=record.artist_name,
+        place_id=record.place_id,
         # 위경도는 읽지 않는다 — 법정동 이름만
-        place=Place(place_id=record.place_id, name=record.place_name),
-        created_at=record.created_at,
+        place_name=record.place_name,
+        date=f"{d.year}.{d.month:02d}.{d.day:02d}",
+        weather_condition=record.weather_condition,
+        external_track_id=track_id,
+        album_image_url=record.album_image_url,
+        external_url=record.external_url,
         similarity_score=round(score, 4),
+    )
+
+
+def _to_suggested_item(
+    record: MemoryRecord, score: float, matched_conditions: Sequence[str]
+) -> SuggestedRecordItem:
+    return SuggestedRecordItem(
+        **_to_item(record, score).model_dump(), matched_conditions=list(matched_conditions)
     )

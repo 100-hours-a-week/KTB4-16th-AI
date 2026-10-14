@@ -64,6 +64,8 @@ class Settings(BaseSettings):
     # 프론트는 앞 5건을 먼저 보여주고 "더보기"에서 나머지를 보여준다. 모두 맞는 기록이 이 건수보다
     # 적을 때만 일부만 맞는 기록을 문장으로 제안한다 (요청 limit이 더 작으면 그 값)
     memory_search_display_count: int = 5
+    # 제안(일부만 맞는 자물쇠) 토글을 열면 보이는 최대 건수
+    memory_search_suggestion_count: int = 3
     # 답변 앞머리 문장(질문한 조건 + 건수)을 LLM이 쓴다. 꺼 두면 템플릿 문장.
     # LLM에는 조건 이름과 건수만 보낸다 (질문 원문·곡·장소·코멘트는 보내지 않음)
     memory_answer_llm_enabled: bool = False

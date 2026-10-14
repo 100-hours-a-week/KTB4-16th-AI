@@ -15,6 +15,7 @@ def make_record(record_id: int, **overrides) -> MemoryRecord:
     values = {
         "record_id": record_id,
         "created_at": datetime(2026, 8, 24, 18, 30),
+        "music_track_id": 3,
         "title": "밤편지",
         "artist_name": "아이유",
         "external_track_id": "2uwDoSLzTVVmWjsmbo8jhX",
@@ -22,6 +23,7 @@ def make_record(record_id: int, **overrides) -> MemoryRecord:
         "external_url": "https://open.spotify.com/track/2uwDoSLzTVVmWjsmbo8jhX",
         "place_id": 10,
         "place_name": "오산동",
+        "weather_condition": "RAIN",
     }
     values.update(overrides)
     return MemoryRecord(**values)

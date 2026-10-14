@@ -111,8 +111,12 @@ def register_exception_handlers(app: FastAPI) -> None:
             "; ".join(_describe(e) for e in exc.errors()) or "상세 없음",
         )
         first = exc.errors()[0] if exc.errors() else {}
-        loc = [str(part) for part in first.get("loc", ()) if part not in ("body", "path", "query")]
-        field = ".".join(loc) or None
+        loc = list(first.get("loc", ()))
+        if loc and loc[0] in ("body", "path", "query", "header", "cookie"):
+            # 맨 앞은 값이 어디서 왔는지(위치 종류)다. 그 하나만 뗀다 — 필드 이름이 "query"여도
+            # (기억 검색의 query) 지워지지 않게 이름 전체를 걸러 내지 않는다
+            loc = loc[1:]
+        field = ".".join(str(part) for part in loc) or None
         return JSONResponse(
             status_code=InvalidInputError.status_code,
             content=_error_body(InvalidInputError.code, InvalidInputError.message, field),
