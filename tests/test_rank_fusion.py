@@ -2,7 +2,8 @@ import math
 
 import pytest
 
-from app.components.rank_fusion import fuse
+from app.components.condition_scoring import RecordScore
+from app.components.rank_fusion import FusedRecord, combine_with_conditions, fuse
 from tests.memory_fakes import hit
 
 DEFAULTS = {"comment_weight": 0.5, "music_weight": 0.5, "min_similarity": 0.4}
@@ -57,3 +58,84 @@ def test_invalid_weights_are_rejected(comment_weight, music_weight):
             music_weight=music_weight,
             min_similarity=0.4,
         )
+
+
+# ---- 조건 점수와 합치기 -------------------------------------------------------
+
+
+def _cond(record_id, score, matched=("가을",), missed=()):
+    return RecordScore(record_id, score, tuple(matched), tuple(missed))
+
+
+def _vector(record_id, score):
+    return FusedRecord(record_id, score, None, None)
+
+
+def test_records_are_split_into_exact_and_suggestions():
+    ranking = combine_with_conditions(
+        [_vector(1, 0.5), _vector(2, 0.5)],
+        {
+            1: _cond(1, 1.0, matched=("가을", "서울숲"), missed=()),
+            2: _cond(2, 0.5, matched=("가을",), missed=("서울숲",)),
+        },
+        condition_weight=0.5,
+    )
+
+    assert [r.record_id for r in ranking.exact] == [1]
+    assert [r.record_id for r in ranking.suggestions] == [2]
+    assert ranking.suggestions[0].condition.missed == ("서울숲",)
+
+
+def test_final_score_mixes_vector_and_condition_scores():
+    ranking = combine_with_conditions([_vector(1, 0.8)], {1: _cond(1, 0.6)}, condition_weight=0.25)
+
+    (only,) = ranking.exact
+    assert math.isclose(only.score, 0.75 * 0.8 + 0.25 * 0.6)
+    assert math.isclose(only.vector_score, 0.8)
+
+
+def test_record_found_only_by_conditions_is_kept_with_zero_vector_score():
+    ranking = combine_with_conditions([], {7: _cond(7, 1.0)}, condition_weight=0.5)
+
+    (only,) = ranking.exact
+    assert only.record_id == 7 and only.vector_score == 0.0
+    assert math.isclose(only.score, 0.5)
+
+
+def test_record_matching_no_condition_is_left_out_even_with_high_vector_score():
+    ranking = combine_with_conditions(
+        [_vector(1, 0.99)],
+        {1: _cond(1, 0.0, matched=(), missed=("가을",))},
+        condition_weight=0.5,
+    )
+
+    assert ranking.exact == [] and ranking.suggestions == []
+
+
+def test_vector_hit_without_condition_data_is_left_out():
+    # 최근 N개 읽기 범위 밖의 오래된 기록 등 — 조건을 비교할 수 없으면 결과에 넣지 않는다
+    ranking = combine_with_conditions([_vector(9, 0.9)], {}, condition_weight=0.5)
+
+    assert ranking.exact == [] and ranking.suggestions == []
+
+
+def test_ranking_is_by_final_score_then_newer_record_first():
+    ranking = combine_with_conditions(
+        [_vector(1, 0.2), _vector(2, 0.9), _vector(3, 0.9), _vector(4, 0.9)],
+        {
+            1: _cond(1, 1.0, matched=("가을", "서울숲")),
+            2: _cond(2, 1.0, matched=("가을", "서울숲")),
+            3: _cond(3, 1.0, matched=("가을", "서울숲")),
+            4: _cond(4, 0.5, matched=("가을",), missed=("서울숲",)),
+        },
+        condition_weight=0.5,
+    )
+
+    assert [r.record_id for r in ranking.exact] == [3, 2, 1]  # 2·3은 같은 점수 → 3이 최근
+    assert [r.record_id for r in ranking.suggestions] == [4]
+
+
+@pytest.mark.parametrize("weight", [-0.1, 1.1])
+def test_invalid_condition_weight_is_rejected(weight):
+    with pytest.raises(ValueError):
+        combine_with_conditions([], {}, condition_weight=weight)

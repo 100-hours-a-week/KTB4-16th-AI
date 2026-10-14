@@ -26,8 +26,10 @@ from app.clients.spotify_client import (
     SpotifySearchClient,
     SpotifyServiceAccountClient,
 )
+from app.components.answer_headline import HeadlineWriter
 from app.components.category_vectors import CategoryVectors
 from app.components.clip_tagger import ClipTagger
+from app.components.condition_scoring import ConditionWeights
 from app.components.embedder import Embedder
 from app.components.moderation_model import (
     FakeModerationModel,
@@ -36,6 +38,7 @@ from app.components.moderation_model import (
 )
 from app.components.query_rewriter import QueryRewriter
 from app.components.question_generator import QuestionGenerator
+from app.components.question_parser import QuestionParser
 from app.components.reranker import Reranker
 from app.components.song_curator import SongCurator
 from app.components.vector_search import MemoryVectorSearch, RecordSearch, VectorSearch
@@ -50,6 +53,7 @@ from app.db.repositories.balance_stats_repository import (
 from app.db.repositories.embedding_repository import EmbeddingRepository, EmbeddingStore
 from app.db.repositories.job_repository import JobRepository
 from app.db.repositories.memory_record_repository import (
+    ConditionRow,
     MemoryRecord,
     MemoryRecordRepository,
     MemoryRecordSource,
@@ -228,6 +232,15 @@ class _DbMemoryRecords:
         except SQLAlchemyError as e:
             raise UpstreamError("백엔드 DB에서 자물쇠 상세를 읽지 못했어요.") from e
 
+    async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
+        try:
+            async with mysql.get_sessionmaker()() as mysql_session:
+                return await MemoryRecordRepository(mysql_session).list_condition_rows(
+                    user_id=user_id, limit=limit
+                )
+        except SQLAlchemyError as e:
+            raise UpstreamError("백엔드 DB에서 자물쇠 정보를 읽지 못했어요.") from e
+
 
 class _NoMemoryRecords:
     """백엔드 DB가 없는 로컬·테스트 환경 — 상세를 못 읽어서 결과가 비어 있다."""
@@ -235,12 +248,21 @@ class _NoMemoryRecords:
     async def get_many(self, *, user_id: int, record_ids: list[int]) -> dict[int, MemoryRecord]:
         return {}
 
+    async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
+        return []
+
 
 def get_memory_record_source() -> MemoryRecordSource:
     s = get_settings()
     if s.ai_client_mode == "fake" or not s.backend_mysql_url:
         return _NoMemoryRecords()
     return _DbMemoryRecords()
+
+
+@lru_cache
+def get_question_parser() -> QuestionParser:
+    # 사전·코드표·규칙 파일은 프로세스당 한 번만 읽는다
+    return QuestionParser.load_default()
 
 
 async def get_memory_search_service(
@@ -256,6 +278,21 @@ async def get_memory_search_service(
         comment_weight=s.memory_search_comment_weight,
         music_weight=s.memory_search_music_weight,
         candidates=s.memory_search_candidates,
+        parser=get_question_parser(),
+        condition_weight=s.memory_search_condition_weight,
+        condition_weights=ConditionWeights(
+            location=s.memory_search_location_weight,
+            other=s.memory_search_other_condition_weight,
+        ),
+        scan_limit=s.memory_search_scan_limit,
+        condition_candidates=s.memory_search_condition_candidates,
+        display_count=s.memory_search_display_count,
+        suggestion_count=s.memory_search_suggestion_count,
+        # 답변 앞머리 문장 — 꺼 두면(기본) 템플릿 문장. LLM에는 조건 이름과 건수만 보낸다
+        headline_writer=(
+            HeadlineWriter(get_clients().llm_general) if s.memory_answer_llm_enabled else None
+        ),
+        headline_timeout=s.memory_answer_llm_timeout_seconds,
     )
 
 

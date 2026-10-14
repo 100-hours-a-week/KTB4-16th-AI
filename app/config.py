@@ -55,6 +55,21 @@ class Settings(BaseSettings):
     memory_search_comment_weight: float = 0.5
     memory_search_music_weight: float = 0.5
     memory_search_candidates: int = 20  # 검색기마다 가져오는 후보 수
+    # 질문에 조건(장소·계절·날씨·기분 등)이 있을 때의 점수 — 마찬가지로 시험지로 정할 초기값
+    memory_search_condition_weight: float = 0.5  # 최종 점수에서 조건 점수의 몫 (나머지는 벡터)
+    memory_search_location_weight: float = 2.0  # 조건 점수 안에서 장소·지역·동 조건의 가중치
+    memory_search_other_condition_weight: float = 1.0  # 그 밖의 조건
+    memory_search_scan_limit: int = 5000  # 조건 비교를 위해 읽는 자물쇠의 최대 개수 (최근순)
+    memory_search_condition_candidates: int = 50  # 조건으로만 후보가 되는 기록의 최대 개수
+    # 프론트는 앞 5건을 먼저 보여주고 "더보기"에서 나머지를 보여준다. 모두 맞는 기록이 이 건수보다
+    # 적을 때만 일부만 맞는 기록을 문장으로 제안한다 (요청 limit이 더 작으면 그 값)
+    memory_search_display_count: int = 5
+    # 제안(일부만 맞는 자물쇠) 토글을 열면 보이는 최대 건수
+    memory_search_suggestion_count: int = 3
+    # 답변 앞머리 문장(질문한 조건 + 건수)을 LLM이 쓴다. 꺼 두면 템플릿 문장.
+    # LLM에는 조건 이름과 건수만 보낸다 (질문 원문·곡·장소·코멘트는 보내지 않음)
+    memory_answer_llm_enabled: bool = False
+    memory_answer_llm_timeout_seconds: float = 8.0  # 넘기면 템플릿 문장으로 대신한다
 
     # CLIP 이미지 임베딩 — Replicate openai/clip (clip-vit-large-patch14)
     # V2에 RunPod 직접 서빙으로 교체 예정. 모델이 바뀌면 차원 변경 → 전체 재임베딩
