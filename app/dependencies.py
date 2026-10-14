@@ -25,6 +25,7 @@ from app.clients.spotify_client import (
     SpotifySearchClient,
     SpotifyServiceAccountClient,
 )
+from app.components.axis_vectors import AxisVectors
 from app.components.category_vectors import CategoryVectors
 from app.components.clip_tagger import ClipTagger
 from app.components.embedder import Embedder
@@ -174,8 +175,14 @@ def get_category_vectors() -> CategoryVectors:
     return CategoryVectors(get_clients().clip)
 
 
+@lru_cache
+def get_axis_vectors() -> AxisVectors:
+    """다축 태그 벡터 캐시도 프로세스당 1개. 첫 사용 때 태그 문장을 CLIP으로 인코딩한다."""
+    return AxisVectors(get_clients().clip)
+
+
 def get_clip_tagger() -> ClipTagger:
-    return ClipTagger(get_clients().clip, get_category_vectors())
+    return ClipTagger(get_clients().clip, get_category_vectors(), get_axis_vectors())
 
 
 def get_query_rewriter() -> QueryRewriter:

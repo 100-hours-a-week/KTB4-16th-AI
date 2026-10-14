@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from app.components.report_summarizer import ReportSummarizer
+from app.components.report_summarizer import PhotoAxisStat, ReportSummarizer
 from app.config import get_settings
 from app.db.mysql import get_sessionmaker as get_mysql_sessionmaker
 from app.db.postgres import get_sessionmaker as get_postgres_sessionmaker
@@ -17,6 +17,7 @@ from app.db.repositories.report_repository import (
     ReportRepository,
 )
 from app.dependencies import get_clients, get_clip_tagger
+from app.exceptions import ClipError
 
 JOB_TYPE = "report"
 
@@ -107,11 +108,14 @@ async def handle(payload: dict[str, Any]) -> None:
 
     photo_tags_by_record = await _classify_photos(image_vectors)
     photo_category_distribution = _category_distribution(photo_tags_by_record)
+    photo_axes = _axis_stats(await _classify_axes(image_vectors))
     record_lines = _build_record_lines(records, moods, photo_tags_by_record)
 
     clients = get_clients()
     summarizer = ReportSummarizer(clients.llm_general)
-    summary = await summarizer.summarize(record_lines, stats, photo_category_distribution)
+    summary = await summarizer.summarize(
+        record_lines, stats, photo_category_distribution, photo_axes
+    )
 
     # stats(기분·아티스트·장소)는 저장 안 함 — 백엔드가 자기 MySQL 원본으로 직접 계산하기로
     # 협의됨. 위에서 요약 텍스트를 쓸 때만 내부적으로 썼다.
@@ -291,6 +295,49 @@ async def _classify_photos(image_vectors: dict[int, list[float]]) -> dict[int, l
     for record_id, vector in image_vectors.items():
         result[record_id] = await tagger.tag_from_vector(vector, top_k=1)
     return result
+
+
+# 한 축에서 태그가 정해진 사진이 이 장수보다 적으면 회고 글에 싣지 않는다
+# (1~2장의 비율은 패턴이 아니다). 실제 사진으로 시험하기 전의 임시값이다.
+MIN_AXIS_PHOTOS = 3
+
+
+async def _classify_axes(image_vectors: dict[int, list[float]]) -> dict[int, dict[str, str]]:
+    """레코드별 다축 태그(축 이름 → 태그). 저장된 벡터만 쓰므로 사진마다 CLIP을 부르지 않는다.
+
+    CLIP을 부르는 건 프로세스에서 처음 쓸 때 태그 문장을 인코딩하는 한 번뿐이다. 그게 실패해도
+    다축 태그는 회고 글을 풍성하게 하는 부가 정보라서, RECAP 전체를 실패시키지 않고 건너뛴다.
+    """
+    if not image_vectors:
+        return {}
+
+    tagger = get_clip_tagger()
+    try:
+        return {
+            record_id: await tagger.classify_axes(vector)
+            for record_id, vector in image_vectors.items()
+        }
+    except ClipError:
+        logger.warning("다축 태그 벡터를 준비하지 못해 사진 특징 없이 요약해요.", exc_info=True)
+        return {}
+
+
+def _axis_stats(axes_by_record: dict[int, dict[str, str]]) -> dict[str, PhotoAxisStat]:
+    """축별로 태그가 정해진 사진만 세서 비중을 낸다. 불확실해서 빠진 사진은 분모에 넣지 않는다."""
+    counters: dict[str, Counter[str]] = {}
+    for tags in axes_by_record.values():
+        for axis_name, tag in tags.items():
+            counters.setdefault(axis_name, Counter())[tag] += 1
+
+    stats = {}
+    for axis_name, counter in counters.items():
+        total = sum(counter.values())
+        if total < MIN_AXIS_PHOTOS:
+            continue
+        stats[axis_name] = PhotoAxisStat(
+            count=total, ratios={tag: count / total for tag, count in counter.items()}
+        )
+    return stats
 
 
 def _category_distribution(photo_tags_by_record: dict[int, list[str]]) -> dict[str, float]:

@@ -1,8 +1,14 @@
 import pytest
 
+from app.components.report_summarizer import PhotoAxisStat
+from app.exceptions import ClipError
+from app.workers import report_worker
 from app.workers.report_worker import (
+    MIN_AXIS_PHOTOS,
     BatchScope,
     PhotoSceneStat,
+    _axis_stats,
+    _classify_axes,
     _describe_weather,
     _photo_scene_stats,
 )
@@ -89,3 +95,67 @@ def test_photo_scene_stats_counts_and_orders_by_frequency_descending():
 
 def test_photo_scene_stats_empty_when_no_records():
     assert _photo_scene_stats({}) == []
+
+
+def test_axis_stats_counts_only_photos_that_have_a_tag_on_that_axis():
+    axes_by_record = {
+        1: {"사진 종류": "진짜 사진", "대상": "음식·음료"},
+        2: {"사진 종류": "진짜 사진", "대상": "음식·음료"},
+        3: {"사진 종류": "진짜 사진", "대상": "여러 사람"},
+        4: {"사진 종류": "진짜 사진"},  # 대상이 불확실해서 빠진 사진 — 대상의 분모에 넣지 않는다
+        5: {},  # 사진 종류부터 불확실
+    }
+
+    stats = _axis_stats(axes_by_record)
+
+    assert stats["사진 종류"] == PhotoAxisStat(count=4, ratios={"진짜 사진": 1.0})
+    assert stats["대상"].count == 3
+    assert stats["대상"].ratios == {"음식·음료": 2 / 3, "여러 사람": 1 / 3}
+
+
+def test_axis_stats_drops_axes_with_too_few_photos():
+    axes_by_record = {i: {"표정·감정": "웃음·신남"} for i in range(MIN_AXIS_PHOTOS - 1)} | {
+        99: {"대상": "반려동물"}
+    }
+
+    assert _axis_stats(axes_by_record) == {}
+
+
+def test_axis_stats_empty_when_no_photos():
+    assert _axis_stats({}) == {}
+
+
+class StubAxisTagger:
+    def __init__(self, error: Exception | None = None):
+        self._error = error
+
+    async def classify_axes(self, vector):
+        if self._error:
+            raise self._error
+        return {"사진 종류": "진짜 사진"}
+
+
+async def test_classify_axes_returns_tags_by_record(monkeypatch):
+    monkeypatch.setattr(report_worker, "get_clip_tagger", lambda: StubAxisTagger())
+
+    result = await _classify_axes({1: [0.1], 2: [0.2]})
+
+    assert result == {1: {"사진 종류": "진짜 사진"}, 2: {"사진 종류": "진짜 사진"}}
+
+
+async def test_classify_axes_skips_instead_of_failing_the_report_when_clip_is_down(monkeypatch):
+    """태그 문장을 CLIP으로 인코딩하지 못해도 RECAP 요약은 계속된다 (사진 특징만 빠진다)."""
+    monkeypatch.setattr(
+        report_worker, "get_clip_tagger", lambda: StubAxisTagger(ClipError("CLIP 장애"))
+    )
+
+    assert await _classify_axes({1: [0.1]}) == {}
+
+
+async def test_classify_axes_does_not_touch_clip_when_there_are_no_photos(monkeypatch):
+    def boom():
+        raise AssertionError("사진이 없으면 태거를 만들 필요도 없다")
+
+    monkeypatch.setattr(report_worker, "get_clip_tagger", boom)
+
+    assert await _classify_axes({}) == {}
