@@ -11,7 +11,7 @@ from typing import Protocol
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import RecordEmbedding
+from app.db.models import RecordEmbedding, TrackMood
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,24 @@ class RecordSearch(Protocol):
     async def similar_by_comment(
         self, user_id: int, query_vector: list[float], limit: int
     ) -> list[SimilarRecord]: ...
+
+
+class MemoryVectorSearch(Protocol):
+    """기능5 기억 검색이 쓰는 두 검색 — 코멘트 벡터와 곡 분위기 벡터."""
+
+    async def similar_by_comment(
+        self, user_id: int, query_vector: list[float], limit: int
+    ) -> list[SimilarRecord]: ...
+
+    async def similar_by_music(
+        self, user_id: int, query_vector: list[float], limit: int
+    ) -> list[SimilarRecord]: ...
+
+    async def similarities_for(
+        self, user_id: int, record_ids: list[int], query_vector: list[float]
+    ) -> tuple[list[SimilarRecord], list[SimilarRecord]]: ...
+
+    async def moods_by_record(self, user_id: int) -> dict[int, tuple[str, ...]]: ...
 
 
 class VectorSearch:
@@ -62,3 +80,90 @@ class VectorSearch:
             )
             for row in rows
         ]
+
+    async def similar_by_music(
+        self, user_id: int, query_vector: list[float], limit: int
+    ) -> list[SimilarRecord]:
+        """이 사용자의 자물쇠 중 곡 분위기 설명이 query와 가장 비슷한 것부터 limit개.
+
+        record_embeddings.music_embedding은 LLM이 곡 제목·아티스트로 쓴 무드 설명을
+        임베딩한 값이다(기능4). 코멘트를 안 쓴 자물쇠도 항상 이 벡터가 있다.
+        """
+        distance = RecordEmbedding.music_embedding.cosine_distance(query_vector)
+        rows = await self._session.execute(
+            select(
+                RecordEmbedding.record_id,
+                RecordEmbedding.external_track_id,
+                distance.label("distance"),
+            )
+            .where(RecordEmbedding.user_id == user_id)
+            .order_by(distance)
+            .limit(limit)
+        )
+        return [
+            SimilarRecord(
+                record_id=row.record_id,
+                external_track_id=row.external_track_id,
+                similarity=1.0 - float(row.distance),
+            )
+            for row in rows
+        ]
+
+    async def similarities_for(
+        self, user_id: int, record_ids: list[int], query_vector: list[float]
+    ) -> tuple[list[SimilarRecord], list[SimilarRecord]]:
+        """지정한 자물쇠들의 질문과의 유사도를 (코멘트, 곡 분위기) 순서로 돌려준다.
+
+        조건(장소·계절 등)만으로 후보가 된 기록은 위 두 검색의 상위 후보에 없어서 유사도가 없다.
+        순위를 정하려고 그 기록들만 따로 구한다. 다른 사용자의 기록은 user_id 조건으로 빠진다.
+        """
+        if not record_ids:
+            return [], []
+
+        comment_distance = RecordEmbedding.comment_embedding.cosine_distance(query_vector)
+        comment_rows = await self._session.execute(
+            select(
+                RecordEmbedding.record_id,
+                RecordEmbedding.external_track_id,
+                comment_distance.label("distance"),
+            ).where(
+                RecordEmbedding.user_id == user_id,
+                RecordEmbedding.record_id.in_(record_ids),
+                RecordEmbedding.comment_embedding.is_not(None),
+            )
+        )
+        music_distance = RecordEmbedding.music_embedding.cosine_distance(query_vector)
+        music_rows = await self._session.execute(
+            select(
+                RecordEmbedding.record_id,
+                RecordEmbedding.external_track_id,
+                music_distance.label("distance"),
+            ).where(
+                RecordEmbedding.user_id == user_id,
+                RecordEmbedding.record_id.in_(record_ids),
+            )
+        )
+        return _to_hits(comment_rows), _to_hits(music_rows)
+
+    async def moods_by_record(self, user_id: int) -> dict[int, tuple[str, ...]]:
+        """이 사용자의 자물쇠마다 곡 무드 태그(track_moods.moods)를 돌려준다.
+
+        태그가 아직 없는 곡(예전에 만든 캐시)은 빈 튜플이다. 곡 정보가 없는 자물쇠는 빠진다.
+        """
+        rows = await self._session.execute(
+            select(RecordEmbedding.record_id, TrackMood.moods)
+            .join(TrackMood, RecordEmbedding.external_track_id == TrackMood.external_track_id)
+            .where(RecordEmbedding.user_id == user_id)
+        )
+        return {row.record_id: tuple(row.moods or ()) for row in rows}
+
+
+def _to_hits(rows) -> list[SimilarRecord]:
+    return [
+        SimilarRecord(
+            record_id=row.record_id,
+            external_track_id=row.external_track_id,
+            similarity=1.0 - float(row.distance),
+        )
+        for row in rows
+    ]
