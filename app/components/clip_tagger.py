@@ -1,9 +1,15 @@
 """CLIP 인코딩·zero-shot 태깅."""
 
+import logging
+from dataclasses import dataclass, field
+
 from app.clients.clip_client import ClipClient
 from app.components.axis_vectors import AxisVectors, pick_tag
 from app.components.category_vectors import CategoryVectors
 from app.components.vector_math import cosine_similarity
+from app.exceptions import ClipError
+
+logger = logging.getLogger("muro.clip_tagger")
 
 # 실측 기준(영어 태그, 사무실 야근 사진): 1위 20.8%, 2위 16.1%, 3위 14.6%,
 # 노이즈는 8~13%대. TOP_K는 넉넉히 잡고 THRESHOLD로 노이즈를 거른다.
@@ -12,6 +18,14 @@ THRESHOLD = 0.15
 
 # 장소 축은 mood_tags.yaml(CategoryVectors)에 있고, 나머지 축은 axis_tags.yaml(AxisVectors)에 있다
 SCENE_AXIS = "scene"
+
+
+@dataclass(frozen=True)
+class PhotoAnalysis:
+    """사진 1장의 분석 결과. 장소 태그와 다축 태그(축 이름 → 태그)."""
+
+    scene_tags: list[str]
+    axes: dict[str, str] = field(default_factory=dict)
 
 
 class ClipTagger:
@@ -44,6 +58,24 @@ class ClipTagger:
         """
         image_vector = await self._client.encode_image(image_url)
         return await self.tag_from_vector(image_vector, top_k, at_least_one=True)
+
+    async def analyze(self, image_url: str, top_k: int = TOP_K) -> PhotoAnalysis:
+        """기능3 사진 추천용 — 사진 벡터를 한 번만 만들어 장소 태그와 다축 태그를 함께 얻는다.
+
+        장소 태그는 tag()와 같은 방식이라 실패(ClipError)도 똑같이 올려보낸다. 다축 태그는 곡을
+        더 잘 고르기 위한 부가 정보라서, 분류하지 못해도(축 벡터가 없거나 태그 문장 인코딩이
+        실패) 장소 태그만으로 계속하도록 빈 dict를 돌려준다.
+        """
+        image_vector = await self._client.encode_image(image_url)
+        scene_tags = await self.tag_from_vector(image_vector, top_k, at_least_one=True)
+        if self._axes is None:
+            return PhotoAnalysis(scene_tags=scene_tags)
+        try:
+            axes = await self.classify_axes(image_vector)
+        except ClipError:
+            logger.warning("다축 태그를 분류하지 못해 장소 태그만 써요.", exc_info=True)
+            axes = {}
+        return PhotoAnalysis(scene_tags=scene_tags, axes=axes)
 
     async def tag_from_vector(
         self,

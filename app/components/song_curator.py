@@ -101,12 +101,15 @@ class SongCurator:
         return self._llm.model
 
     async def curate_from_tags(
-        self, tags: list[str], exclude: list[SongCandidate] | None = None
+        self,
+        tags: list[str],
+        exclude: list[SongCandidate] | None = None,
+        axes: dict[str, str] | None = None,
     ) -> CurationResult:
-        """기능3 — 사진 CLIP 태그로 추천."""
+        """기능3 — 사진 CLIP 태그로 추천. axes는 다축 태그(축 이름 → 태그), 없으면 장소 태그만."""
         if not tags:
             raise LLMError("태그가 없으면 곡을 추천할 수 없어요.")
-        return await self.curate(f"사진에서 뽑은 분위기 태그: {', '.join(tags)}", exclude)
+        return await self.curate(photo_situation(tags, axes), exclude)
 
     async def curate(
         self, situation: str, exclude: list[SongCandidate] | None = None
@@ -126,6 +129,30 @@ class SongCurator:
             system=SYSTEM_PROMPT, prompt=prompt, max_tokens=SONG_MAX_TOKENS
         )
         return _parse(response)
+
+
+# 아래 이름은 app/axis_tags.yaml의 축·태그 이름과 같아야 한다 (시험이 둘이 맞는지 확인한다)
+KIND_AXIS = "사진 종류"
+MEME_KIND = "그림·짤"
+EXPRESSION_AXIS = "표정·감정"
+
+
+def photo_situation(tags: list[str], axes: dict[str, str] | None = None) -> str:
+    """Claude에 보내는 사진 상황 글. 다축 태그가 없으면 예전 문장 그대로다.
+
+    그림·짤은 장소 태그가 의미 없는 값이 나온다(실측: 픽셀 만화 짤이 "콘서트") — 표정·감정이
+    정해졌으면 장소 태그는 빼서 엉뚱한 곡으로 이끌지 않는다.
+    """
+    if not axes:
+        return f"사진에서 뽑은 분위기 태그: {', '.join(tags)}"
+
+    parts = []
+    if kind := axes.get(KIND_AXIS):
+        parts.append(f"{KIND_AXIS}: {kind}")
+    if not (axes.get(KIND_AXIS) == MEME_KIND and EXPRESSION_AXIS in axes):
+        parts.append(f"장소 태그: {', '.join(tags)}")
+    parts += [f"{name}: {value}" for name, value in axes.items() if name != KIND_AXIS]
+    return "사진에서 뽑은 정보 — " + " / ".join(parts)
 
 
 def _pick(values: str, vocab: list[str]) -> tuple[str, ...]:

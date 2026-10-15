@@ -1,6 +1,7 @@
 import pytest
 
 from app.clients.spotify_client import SpotifyError
+from app.components.clip_tagger import PhotoAnalysis
 from app.components.reranker import Reranker
 from app.components.song_curator import CurationResult, SongCandidate
 from app.exceptions import ClipError, ExternalApiFailedError, LLMError
@@ -9,14 +10,20 @@ from app.services.photo_recommend_service import PhotoRecommendService
 
 
 class StubClipTagger:
-    def __init__(self, tags: list[str] | None = None, error: Exception | None = None):
+    def __init__(
+        self,
+        tags: list[str] | None = None,
+        error: Exception | None = None,
+        axes: dict[str, str] | None = None,
+    ):
         self._tags = tags if tags is not None else []
         self._error = error
+        self._axes = axes or {}
 
-    async def tag(self, image_url: str, top_k: int = 3) -> list[str]:
+    async def analyze(self, image_url: str, top_k: int = 3) -> PhotoAnalysis:
         if self._error:
             raise self._error
-        return self._tags
+        return PhotoAnalysis(scene_tags=self._tags, axes=self._axes)
 
 
 class StubSongCurator:
@@ -32,10 +39,15 @@ class StubSongCurator:
         self._error = error
         self._extra = extra or CurationResult((), (), [])
         self.excludes: list[list[SongCandidate]] = []
+        self.axes_seen: list[dict[str, str] | None] = []
 
     async def curate_from_tags(
-        self, tags: list[str], exclude: list[SongCandidate] | None = None
+        self,
+        tags: list[str],
+        exclude: list[SongCandidate] | None = None,
+        axes: dict[str, str] | None = None,
     ) -> CurationResult:
+        self.axes_seen.append(axes)
         if exclude:
             self.excludes.append(exclude)
             return self._extra
@@ -160,7 +172,7 @@ async def test_top_up_failure_keeps_what_we_have():
     results = {_q("A", "Song 0"): [_track_json("t0", "Song 0", "A")]}
 
     class TopUpFails(StubSongCurator):
-        async def curate_from_tags(self, tags, exclude=None):
+        async def curate_from_tags(self, tags, exclude=None, axes=None):
             if exclude:
                 raise LLMError("장애")
             return _curation(songs=first)
@@ -297,3 +309,56 @@ async def test_all_songs_missing_is_empty_but_not_degraded():
 
     assert res.degraded is False
     assert res.tracks == []
+
+
+AXES = {"사진 종류": "진짜 사진", "대상": "여러 사람", "분위기": "밤의 따뜻한 조명"}
+
+
+async def test_axes_go_to_the_song_curator_but_mood_tags_stay_scene_only():
+    """다축 태그는 Claude에 보내는 정보에만 쓴다 — 백엔드로 가는 moodTags는 장소 태그 그대로."""
+    curator = StubSongCurator(curation=_curation(songs=[_song("아이유", "밤편지")]))
+    service = PhotoRecommendService(
+        clip_tagger=StubClipTagger(tags=["카페"], axes=AXES),
+        song_curator=curator,
+        reranker=Reranker(),
+        spotify_search=StubSpotifySearch(
+            {_q("아이유", "밤편지"): [_track_json("t1", "밤편지", "아이유")]}
+        ),
+    )
+
+    res = await service.recommend(_req())
+
+    assert res.mood_tags == ["카페"]
+    assert curator.axes_seen[0] == AXES
+
+
+async def test_top_up_call_also_carries_the_axes():
+    first = [_song("A", "Song 0")]
+    extra = [_song("B", f"More {i}") for i in range(4)]
+    results = {_q("A", "Song 0"): [_track_json("t0", "Song 0", "A")]}
+    results |= {_q("B", f"More {i}"): [_track_json(f"m{i}", f"More {i}", "B")] for i in range(4)}
+    curator = StubSongCurator(curation=_curation(songs=first), extra=_curation(songs=extra))
+    service = PhotoRecommendService(
+        clip_tagger=StubClipTagger(tags=["카페"], axes=AXES),
+        song_curator=curator,
+        reranker=Reranker(),
+        spotify_search=StubSpotifySearch(results),
+    )
+
+    await service.recommend(_req())
+
+    assert curator.axes_seen == [AXES, AXES]  # 첫 추천과 보충 추천 둘 다
+
+
+async def test_without_axes_the_curator_gets_none_like_before():
+    curator = StubSongCurator()
+    service = PhotoRecommendService(
+        clip_tagger=StubClipTagger(tags=["카페"]),
+        song_curator=curator,
+        reranker=Reranker(),
+        spotify_search=StubSpotifySearch({}),
+    )
+
+    await service.recommend(_req())
+
+    assert curator.axes_seen[0] == {}
