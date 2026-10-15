@@ -1,0 +1,27 @@
+axes:
+  - key: kind
+    ko: 사진 종류
+    margin: 0.1
+    tags:
+      - ko: 진짜 사진
+        sentences: [real photo, camera photo]
+      - ko: 그림·짤
+        sentences: [cartoon]
+  - key: subject
+    ko: 대상
+    when: 진짜 사진
+    margin: 0.1
+    tags:
+      - ko: 음식
+        sentences: [food]
+      - ko: 풍경
+        sentences: [landscape]
+  - key: expression
+    ko: 표정
+    when: 그림·짤
+    margin: 0.1
+    tags:
+      - ko: 웃음
+        sentences: [laugh]
+      - ko: 슬픔
+        sentences: [cry]

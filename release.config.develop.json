@@ -1,0 +1,21 @@
+{
+  "branches": ["develop"],
+  "tagFormat": "dev-v${version}",
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    [
+      "@semantic-release/github",
+      {
+        "successComment": false,
+        "failComment": false
+      }
+    ],
+    [
+      "@semantic-release/exec",
+      {
+        "prepareCmd": "docker buildx build --platform linux/amd64 -f Dockerfile --secret id=hf_token,env=HF_TOKEN -t \"$IMAGE_BASE:dev-${nextRelease.version}\" --push ."
+      }
+    ]
+  ]
+}

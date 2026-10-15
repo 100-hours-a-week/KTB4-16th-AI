@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from app.components.report_summarizer import ReportSummarizer
+from app.components.photo_tags import split_photo_tags
+from app.components.report_summarizer import PhotoAxisStat, ReportSummarizer
 from app.config import get_settings
 from app.db.mysql import get_sessionmaker as get_mysql_sessionmaker
 from app.db.postgres import get_sessionmaker as get_postgres_sessionmaker
@@ -15,8 +16,10 @@ from app.db.repositories.report_repository import (
     MonthlyReportRepository,
     RecordSummary,
     ReportRepository,
+    StoredPhotoTags,
 )
-from app.dependencies import get_clients, get_clip_tagger
+from app.dependencies import get_clients, get_clip_tagger, get_tag_version
+from app.exceptions import ClipError
 
 JOB_TYPE = "report"
 
@@ -47,6 +50,48 @@ def _describe_weather(raw: str) -> str:
     return WEATHER_KO.get(raw.upper(), raw)
 
 
+@dataclass(frozen=True)
+class BatchScope:
+    """배치 하나를 가리키는 값 — job 키 접두사와 알림 키를 한 곳에서 만든다.
+
+    batch_request_id가 있으면 그 값으로 구분한다(같은 달 수동 트리거를 2번 보내도 서로
+    다른 배치). 없으면(구버전 백엔드) 예전처럼 연·월로 구분한다.
+
+    - job 키: "{id}:{userId}" / "{year}-{month}-{userId}". ID에는 ':'를 못 쓰게 검증해서
+      "abc"의 접두사가 "abc-1"의 job과 겹치지 않는다.
+    - 알림 키: "batch:{id}" / "{year}-{month}". 접두사를 붙여서 ID가 우연히 "2026-9" 같은
+      모양이어도 연·월 키와 겹치지 않는다.
+    """
+
+    year: int
+    month: int
+    batch_request_id: str | None = None
+
+    @property
+    def job_prefix(self) -> str:
+        if self.batch_request_id:
+            return f"{self.batch_request_id}:"
+        return f"{self.year}-{self.month}-"
+
+    @property
+    def notify_key(self) -> str:
+        if self.batch_request_id:
+            return f"batch:{self.batch_request_id}"
+        return f"{self.year}-{self.month}"
+
+    def job_key(self, user_id: int) -> str:
+        return f"{self.job_prefix}{user_id}"
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any]) -> "BatchScope":
+        # 이 기능이 들어오기 전에 큐에 들어간 job엔 batch_request_id가 없다 → 연·월로 동작
+        return cls(
+            year=payload["year"],
+            month=payload["month"],
+            batch_request_id=payload.get("batch_request_id"),
+        )
+
+
 async def handle(payload: dict[str, Any]) -> None:
     user_id: int = payload["user_id"]
     year: int = payload["year"]
@@ -61,15 +106,20 @@ async def handle(payload: dict[str, Any]) -> None:
         record_ids = [r.record_id for r in records]
         moods = await repo.get_mood_texts(record_ids)
         image_vectors = await repo.get_image_embeddings(record_ids)
+        stored_tags = await repo.get_photo_tags(record_ids)
         stats = await repo.get_stats(user_id=user_id, year=year, month=month)
 
-    photo_tags_by_record = await _classify_photos(image_vectors)
+    tag_version = get_tag_version()
+    photo_tags_by_record = await _classify_photos(image_vectors, stored_tags, tag_version)
     photo_category_distribution = _category_distribution(photo_tags_by_record)
+    photo_axes = _axis_stats(await _classify_axes(image_vectors, stored_tags, tag_version))
     record_lines = _build_record_lines(records, moods, photo_tags_by_record)
 
     clients = get_clients()
     summarizer = ReportSummarizer(clients.llm_general)
-    summary = await summarizer.summarize(record_lines, stats, photo_category_distribution)
+    summary = await summarizer.summarize(
+        record_lines, stats, photo_category_distribution, photo_axes
+    )
 
     # stats(기분·아티스트·장소)는 저장 안 함 — 백엔드가 자기 MySQL 원본으로 직접 계산하기로
     # 협의됨. 위에서 요약 텍스트를 쓸 때만 내부적으로 썼다.
@@ -92,10 +142,10 @@ async def on_finished(payload: dict[str, Any]) -> None:
     실패(재시도 소진)일 때 아무도 알림을 안 보낸다 — 앞서 성공한 job들은 그때
     "아직 남은 job 있음"을 보고 넘어갔기 때문. 그래서 성공·실패 양쪽이 지나는 여기로 뺐다.
     """
-    await _enqueue_notify_if_batch_complete(year=payload["year"], month=payload["month"])
+    await _enqueue_notify_if_batch_complete(scope=BatchScope.from_payload(payload))
 
 
-async def _enqueue_notify_if_batch_complete(*, year: int, month: int) -> None:
+async def _enqueue_notify_if_batch_complete(*, scope: BatchScope) -> None:
     """이 job으로 배치가 다 끝났으면, 완료 알림 전송을 별도 job으로 큐에 넣는다.
 
     1. 남은(pending·running) job이 0개면 배치가 끝난 것. 이 job의 상태는
@@ -107,24 +157,28 @@ async def _enqueue_notify_if_batch_complete(*, year: int, month: int) -> None:
        claimed 마커만 있고 바로 clients.backend.notify_report_ready를 부르면,
        그 호출 자체가 실패했을 때 재시도할 방법이 없어 배치 알림이 영영 유실된다.
     """
-    dedupe_prefix = f"{year}-{month}-"
-
     async with get_postgres_sessionmaker()() as session:
         jobs = JobRepository(session)
-        remaining = await jobs.count_incomplete(job_type=JOB_TYPE, dedupe_key_prefix=dedupe_prefix)
+        remaining = await jobs.count_incomplete(
+            job_type=JOB_TYPE, dedupe_key_prefix=scope.job_prefix
+        )
         if remaining > 0:
             return  # 아직 다른 사용자 job이 처리 중 — 마지막 job이 알림 job을 큐에 넣을 것
 
         claimed = await jobs.try_claim_once(
-            job_type=BATCH_NOTIFY_JOB_TYPE, dedupe_key=f"{year}-{month}"
+            job_type=BATCH_NOTIFY_JOB_TYPE, dedupe_key=scope.notify_key
         )
         if not claimed:
             return  # 다른 job이 이미 이 배치의 알림 job을 큐에 넣었음(동시 완료 레이스)
 
         await jobs.enqueue(
             job_type=BATCH_NOTIFY_JOB_TYPE,
-            dedupe_key=f"{year}-{month}",
-            payload={"year": year, "month": month},
+            dedupe_key=scope.notify_key,
+            payload={
+                "year": scope.year,
+                "month": scope.month,
+                "batch_request_id": scope.batch_request_id,
+            },
             max_attempts=get_settings().job_max_attempts,
         )
 
@@ -138,16 +192,17 @@ async def handle_batch_notify(payload: dict[str, Any]) -> None:
     이 함수가 실패(예외)하면 worker_main이 일반 job과 똑같이 재시도한다 — 전송
     실패가 조용히 유실되지 않는다.
     """
-    year: int = payload["year"]
-    month: int = payload["month"]
-    dedupe_prefix = f"{year}-{month}-"
+    scope = BatchScope.from_payload(payload)
+    year, month = scope.year, scope.month
 
     async with get_postgres_sessionmaker()() as session:
         jobs = JobRepository(session)
         completed_ids = await jobs.completed_user_ids(
-            job_type=JOB_TYPE, dedupe_key_prefix=dedupe_prefix
+            job_type=JOB_TYPE, dedupe_key_prefix=scope.job_prefix
         )
-        failed_ids = await jobs.failed_user_ids(job_type=JOB_TYPE, dedupe_key_prefix=dedupe_prefix)
+        failed_ids = await jobs.failed_user_ids(
+            job_type=JOB_TYPE, dedupe_key_prefix=scope.job_prefix
+        )
         reports = await MonthlyReportRepository(session).get_many(
             user_ids=completed_ids, year=year, month=month
         )
@@ -178,11 +233,13 @@ async def handle_batch_notify(payload: dict[str, Any]) -> None:
         month=month,
         generated_at=datetime.now(UTC).isoformat(),
         results=results,
+        batch_request_id=scope.batch_request_id,
     )
     logger.info(
-        "배치 완료 알림 전송 %s-%s: 성공 %d명, 실패 %d명",
+        "배치 완료 알림 전송 %s-%s (batchRequestId=%s): 성공 %d명, 실패 %d명",
         year,
         month,
+        scope.batch_request_id,
         len(reports),
         len(failed_ids),
     )
@@ -226,22 +283,95 @@ def _build_record_lines(
 OTHER_CATEGORY = "기타"  # 카테고리 목록 자체가 비어있는 등, 정말 예외적인 경우의 방어용
 
 
-async def _classify_photos(image_vectors: dict[int, list[float]]) -> dict[int, list[str]]:
-    """레코드별 사진 카테고리 태그(최대 1개). CLIP을 다시 호출하지 않는다.
+def _saved_tags(
+    stored_tags: dict[int, StoredPhotoTags] | None, tag_version: str | None, record_id: int
+) -> dict[str, str] | None:
+    """기능4가 저장해 둔 사진 태그. 지금 태그 목록으로 분류된 것일 때만 돌려준다.
 
-    ClipTagger.tag_from_vector()는 이미 계산된 벡터와 캐싱된 카테고리 라벨
-    벡터의 코사인 유사도만 비교한다. develop 병합본엔 임계치를 끄는 옵션이
-    없어져서(항상 THRESHOLD 적용), 임계치 미달이면 빈 리스트가 올 수 있다 —
-    그 경우 _category_distribution이 OTHER_CATEGORY("기타")로 처리한다.
+    저장된 태그가 없거나(NULL: 예전에 저장된 행·분류 실패), 다른 태그 목록으로 분류된 것이면
+    (버전이 다름) None — 그 사진은 호출부가 저장된 벡터로 다시 분류한다.
     """
-    if not image_vectors:
-        return {}
+    saved = (stored_tags or {}).get(record_id)
+    if saved is None or saved.tags is None or tag_version is None:
+        return None
+    return saved.tags if saved.tag_version == tag_version else None
 
-    tagger = get_clip_tagger()
+
+async def _classify_photos(
+    image_vectors: dict[int, list[float]],
+    stored_tags: dict[int, StoredPhotoTags] | None = None,
+    tag_version: str | None = None,
+) -> dict[int, list[str]]:
+    """레코드별 사진 카테고리 태그(최대 1개). 사진마다 CLIP을 다시 호출하지 않는다.
+
+    저장된 태그가 있으면 그 "장소" 태그를 쓰고, 없으면 ClipTagger.tag_from_vector()로 이미
+    계산된 벡터와 캐싱된 카테고리 라벨 벡터의 코사인 유사도만 비교한다. 어느 쪽이든 임계치 미달이면
+    빈 리스트가 오고, 그 경우 _category_distribution이 OTHER_CATEGORY("기타")로 처리한다.
+    """
     result: dict[int, list[str]] = {}
+    tagger = None
     for record_id, vector in image_vectors.items():
+        if (saved := _saved_tags(stored_tags, tag_version, record_id)) is not None:
+            result[record_id] = split_photo_tags(saved)[0]
+            continue
+        tagger = tagger or get_clip_tagger()
         result[record_id] = await tagger.tag_from_vector(vector, top_k=1)
     return result
+
+
+# 한 축에서 태그가 정해진 사진이 이 장수보다 적으면 회고 글에 싣지 않는다
+# (1~2장의 비율은 패턴이 아니다). 실제 사진으로 시험하기 전의 임시값이다.
+MIN_AXIS_PHOTOS = 3
+
+
+async def _classify_axes(
+    image_vectors: dict[int, list[float]],
+    stored_tags: dict[int, StoredPhotoTags] | None = None,
+    tag_version: str | None = None,
+) -> dict[int, dict[str, str]]:
+    """레코드별 다축 태그(축 이름 → 태그). 저장된 태그를 우선 쓰고, 없으면 저장된 벡터로 분류한다.
+
+    저장된 태그만으로 충분하면 CLIP도 태그 벡터 준비도 필요 없다. 다시 분류해야 하는 사진이 있을
+    때만 프로세스에서 처음 쓸 때 태그 문장을 인코딩하는데, 그게 실패해도(ClipError) 다축 태그는
+    회고 글을 풍성하게 하는 부가 정보라서 RECAP 전체를 실패시키지 않는다. 그 사진들만 건너뛴다.
+    """
+    result: dict[int, dict[str, str]] = {}
+    to_compute: dict[int, list[float]] = {}
+    for record_id, vector in image_vectors.items():
+        if (saved := _saved_tags(stored_tags, tag_version, record_id)) is not None:
+            result[record_id] = split_photo_tags(saved)[1]
+        else:
+            to_compute[record_id] = vector
+
+    if to_compute:
+        tagger = get_clip_tagger()
+        try:
+            for record_id, vector in to_compute.items():
+                result[record_id] = await tagger.classify_axes(vector)
+        except ClipError:
+            logger.warning(
+                "다축 태그 벡터를 준비하지 못해 일부 사진은 특징 없이 요약해요.", exc_info=True
+            )
+
+    return {record_id: result[record_id] for record_id in image_vectors if record_id in result}
+
+
+def _axis_stats(axes_by_record: dict[int, dict[str, str]]) -> dict[str, PhotoAxisStat]:
+    """축별로 태그가 정해진 사진만 세서 비중을 낸다. 불확실해서 빠진 사진은 분모에 넣지 않는다."""
+    counters: dict[str, Counter[str]] = {}
+    for tags in axes_by_record.values():
+        for axis_name, tag in tags.items():
+            counters.setdefault(axis_name, Counter())[tag] += 1
+
+    stats = {}
+    for axis_name, counter in counters.items():
+        total = sum(counter.values())
+        if total < MIN_AXIS_PHOTOS:
+            continue
+        stats[axis_name] = PhotoAxisStat(
+            count=total, ratios={tag: count / total for tag, count in counter.items()}
+        )
+    return stats
 
 
 def _category_distribution(photo_tags_by_record: dict[int, list[str]]) -> dict[str, float]:

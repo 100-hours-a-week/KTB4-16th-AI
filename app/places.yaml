@@ -1,0 +1,395 @@
+# 기능5 기억 검색 — 명소 사전 (서울·경기). 질문의 명소 이름을 중심 좌표로 바꿔 자물쇠 좌표와의 거리로 점수를 낸다.
+#
+# center: [위도, 경도] — OpenStreetMap(Nominatim) 조회 결과를 기대 구·시와 대조해 채웠다 (소수 4자리).
+#         © OpenStreetMap contributors (ODbL) https://www.openstreetmap.org/copyright
+#         넓은 곳(공원·섬)은 조회된 대표점이라 실제 중심과 다를 수 있다 — 반경으로 흡수한다.
+# aliases: 사용자가 부를 만한 다른 이름. 이름·별칭은 전체에서 고유해야 한다.
+# radius_km: 항목에 있으면 유형 기본값 대신 쓴다.
+# 반경은 초기값이다 — 시험 질문으로 조정한다.
+# '# 확인 필요' 주석이 붙은 항목은 지도에서 위치를 확인한 뒤 주석을 지운다.
+#
+# 법정동 이름과 같은 곳(연남동, 익선동 등)은 넣지 않는다 — 질문의 동 이름을 legalDongName과 직접 비교한다.
+type_radius_km:
+  downtown: 1.0
+  landmark: 0.7
+  park: 1.5
+  waterfront: 2.0
+  campus: 1.0
+
+places:
+  - name: 홍대
+    aliases: [홍대입구, 홍대 앞, 홍대거리]
+    type: downtown
+    center: [37.5575, 126.9248]
+  - name: 신촌
+    aliases: [신촌역]
+    type: downtown
+    center: [37.5598, 126.9424]
+  - name: 망리단길
+    aliases: [망원시장]
+    type: downtown
+    center: [37.5566, 126.9061]
+  - name: 성수
+    aliases: [성수 카페거리, 성수역]
+    type: downtown
+    center: [37.5454, 127.0536]
+  - name: 건대입구
+    aliases: [건대, 건대 앞]
+    type: downtown
+    center: [37.5409, 127.0681]
+  - name: 왕십리
+    aliases: [왕십리역]
+    type: downtown
+    center: [37.5614, 127.0384]
+  - name: 이태원
+    aliases: [이태원역]
+    type: downtown
+    center: [37.5345, 126.9944]
+  - name: 경리단길
+    type: downtown
+    center: [37.54, 126.992]
+  - name: 해방촌
+    type: downtown
+    center: [37.5435, 126.9856]
+  - name: 용리단길
+    aliases: [삼각지]
+    type: downtown
+    center: [37.5302, 126.9717]
+  - name: 용산역
+    aliases: [아이파크몰]
+    type: downtown
+    center: [37.5298, 126.9646]
+  - name: 서울역
+    type: downtown
+    center: [37.5534, 126.9698]
+  - name: 명동  # 확인 필요: 2번째 결과 사용
+    aliases: [명동역]
+    type: downtown
+    center: [37.5612, 126.988]
+  - name: 을지로
+    aliases: [힙지로, 을지로3가]
+    type: downtown
+    center: [37.5666, 126.9924]
+  - name: 동대문
+    aliases: [동대문 패션타운, 동대문시장]
+    type: downtown
+    center: [37.5655, 127.0092]
+  - name: 종각
+    aliases: [젊음의거리]
+    type: downtown
+    center: [37.5702, 126.9832]
+  - name: 대학로
+    aliases: [혜화, 마로니에공원]
+    type: downtown
+    center: [37.5839, 127.0014]
+  - name: 서촌  # 확인 필요: 첫 검색어로는 못 찾아 '통인시장'로 찾음
+    aliases: [통인시장]
+    type: downtown
+    center: [37.5808, 126.97]
+  - name: 동묘
+    aliases: [동묘앞, 동묘 벼룩시장]
+    type: downtown
+    center: [37.5735, 127.0174]
+  - name: 강남역
+    aliases: [강남 먹자골목]
+    type: downtown
+    center: [37.4943, 127.0296]
+  - name: 가로수길
+    aliases: [신사동 가로수길]
+    type: downtown
+    center: [37.5206, 127.0232]
+  - name: 압구정 로데오
+    type: downtown
+    center: [37.5283, 127.0396]
+  - name: 서래마을
+    type: downtown
+    center: [37.4966, 126.9979]
+  - name: 고속터미널
+    aliases: [고터, 센트럴시티]
+    type: downtown
+    center: [37.505, 127.0049]
+  - name: 잠실
+    aliases: [잠실역, 롯데월드몰]
+    type: downtown
+    center: [37.5127, 127.0973]
+  - name: 송리단길
+    type: downtown
+    center: [37.5092, 127.1103]
+  - name: 샤로수길
+    aliases: [서울대입구]
+    type: downtown
+    center: [37.4783, 126.9558]
+  - name: 문래창작촌
+    aliases: [문래역]
+    type: downtown
+    center: [37.5142, 126.8974]
+  - name: 노량진
+    aliases: [노량진 수산시장]
+    type: downtown
+    center: [37.5137, 126.9434]
+  - name: 신림
+    aliases: [신림역, 순대타운]
+    type: downtown
+    center: [37.4852, 126.9296]
+  - name: 광화문광장
+    aliases: [광화문]
+    type: landmark
+    center: [37.5728, 126.9769]
+  - name: 북촌한옥마을
+    aliases: [북촌]
+    type: landmark
+    center: [37.5824, 126.9859]
+  - name: 남대문시장
+    aliases: [남대문]
+    type: landmark
+    center: [37.5593, 126.9773]
+  - name: 광장시장
+    type: landmark
+    center: [37.5702, 126.9995]
+  - name: 코엑스
+    aliases: [코엑스몰, 별마당도서관]
+    type: landmark
+    center: [37.5119, 127.0591]
+  - name: 롯데월드타워
+    aliases: [롯데타워, 롯데월드]
+    type: landmark
+    center: [37.5126, 127.1027]
+  - name: 더현대 서울
+    aliases: [더현대]
+    type: landmark
+    center: [37.526, 126.9284]
+  - name: 영등포 타임스퀘어
+    aliases: [타임스퀘어]
+    type: landmark
+    center: [37.5172, 126.904]
+  - name: 서울로7017  # 확인 필요: 첫 검색어로는 못 찾아 '서울로 7017'로 찾음
+    aliases: [서울로]
+    type: landmark
+    center: [37.5567, 126.9714]
+  - name: 노들섬
+    type: landmark
+    center: [37.5176, 126.9586]
+  - name: 세빛섬
+    aliases: [세빛둥둥섬]
+    type: landmark
+    center: [37.5117, 126.9949]
+  - name: N서울타워  # 확인 필요: 첫 검색어로는 못 찾아 '남산서울타워'로 찾음
+    aliases: [남산타워, 남산서울타워, 남산]
+    type: landmark
+    center: [37.5513, 126.9883]
+  - name: 경복궁
+    type: landmark
+    center: [37.5798, 126.9767]
+  - name: 창덕궁
+    type: landmark
+    center: [37.5824, 126.9917]
+  - name: 덕수궁
+    aliases: [덕수궁 돌담길]
+    type: landmark
+    center: [37.5662, 126.9752]
+  - name: 국립중앙박물관
+    aliases: [국중박]
+    type: landmark
+    center: [37.524, 126.9803]
+  - name: 동대문디자인플라자
+    aliases: [DDP]
+    type: landmark
+    center: [37.5671, 127.0099]
+  - name: 서울숲
+    aliases: [서울숲공원]
+    type: park
+    center: [37.5433, 127.0332]
+  - name: 도산공원
+    type: park
+    center: [37.5242, 127.0352]
+  - name: 석촌호수
+    aliases: [석촌호수공원]
+    type: park
+    center: [37.5101, 127.1041]
+  - name: 올림픽공원
+    type: park
+    center: [37.5193, 127.1217]
+  - name: 북서울꿈의숲
+    aliases: [꿈의숲]
+    type: park
+    center: [37.6189, 127.0441]
+  - name: 어린이대공원
+    type: park
+    center: [37.5489, 127.0805]
+  - name: 월드컵공원
+    aliases: [하늘공원, 노을공원]
+    type: park
+    center: [37.5736, 126.8704]
+  - name: 선유도공원
+    aliases: [선유도]
+    type: park
+    center: [37.5434, 126.9003]
+  - name: 서울식물원
+    type: park
+    center: [37.5711, 126.8347]
+  - name: 낙산공원
+    type: park
+    center: [37.5805, 127.0076]
+  - name: 경의선숲길  # 확인 필요: 경의선숲길은 긴 선형 공원이라 연남동(연트럴파크 구간) 중심점으로 잡음 — 공덕·가좌 쪽은 멀 수 있음
+    aliases: [연트럴파크]
+    type: park
+    center: [37.5626, 126.922]
+  - name: 청계천
+    aliases: [청계광장]
+    type: park
+    center: [37.5692, 126.978]
+    radius_km: 2.0
+  - name: 반포한강공원
+    aliases: [달빛무지개분수, 잠수교]
+    type: waterfront
+    center: [37.5089, 126.9939]
+  - name: 여의도한강공원
+    type: waterfront
+    center: [37.5257, 126.9361]
+  - name: 뚝섬한강공원
+    aliases: [뚝섬유원지]
+    type: waterfront
+    center: [37.5298, 127.0681]
+  - name: 망원한강공원
+    type: waterfront
+    center: [37.5502, 126.9022]
+  - name: 잠실한강공원
+    type: waterfront
+    center: [37.5176, 127.0843]
+  - name: 이촌한강공원
+    type: waterfront
+    center: [37.5185, 126.9674]
+  - name: 난지한강공원
+    type: waterfront
+    center: [37.5664, 126.8769]
+  - name: 광나루한강공원  # 확인 필요: OSM이 기대한 광진·강동구 대신 송파구(풍납동)로 표시해 지역 조건을 넓힘
+    type: waterfront
+    center: [37.5409, 127.1157]
+  - name: 잠원한강공원  # 확인 필요: OSM이 기대한 서초구 대신 강남구(신사동)로 표시해 지역 조건을 넓힘
+    type: waterfront
+    center: [37.5251, 127.016]
+  - name: 양화한강공원
+    type: waterfront
+    center: [37.5403, 126.8999]
+  - name: 서울대학교
+    aliases: [서울대]
+    type: campus
+    center: [37.4581, 126.9522]
+  - name: 연세대학교
+    aliases: [연대, 연세대]
+    type: campus
+    center: [37.5678, 126.9394]
+  - name: 고려대학교
+    aliases: [고대, 고려대]
+    type: campus
+    center: [37.588, 127.0324]
+  - name: 이화여자대학교
+    aliases: [이대, 이화여대]
+    type: campus
+    center: [37.5643, 126.9469]
+  - name: 건국대학교
+    aliases: [건국대]
+    type: campus
+    center: [37.5418, 127.0771]
+  - name: 한양대학교
+    aliases: [한양대]
+    type: campus
+    center: [37.557, 127.0471]
+  - name: 경희대학교
+    aliases: [경희대]
+    type: campus
+    center: [37.5971, 127.052]
+  - name: 성균관대학교
+    aliases: [성균관대]
+    type: campus
+    center: [37.587, 126.9906]
+  - name: 서강대학교
+    aliases: [서강대]
+    type: campus
+    center: [37.5521, 126.941]
+  - name: 중앙대학교
+    aliases: [중앙대, 중대]
+    type: campus
+    center: [37.5043, 126.9563]
+  - name: 수원역
+    aliases: [수원 로데오거리]
+    type: downtown
+    center: [37.2656, 127.0002]
+  - name: 인계동 나혜석거리
+    aliases: [나혜석거리]
+    type: downtown
+    center: [37.2639, 127.0347]
+  - name: 수원화성
+    aliases: [화성행궁, 행궁동, 행리단길]
+    type: landmark
+    center: [37.2822, 127.0144]
+    radius_km: 1.5
+  - name: 광교호수공원
+    type: park
+    center: [37.2834, 127.0665]
+  - name: 판교
+    aliases: [판교역, 현대백화점 판교점]
+    type: downtown
+    center: [37.3947, 127.1112]
+  - name: 서현역
+    aliases: [분당 서현]
+    type: downtown
+    center: [37.3849, 127.1233]
+  - name: 일산 라페스타
+    aliases: [라페스타, 일산 웨스턴돔]
+    type: downtown
+    center: [37.6613, 126.7688]
+  - name: 일산호수공원
+    type: park
+    center: [37.6575, 126.7642]
+  - name: 에버랜드
+    type: landmark
+    center: [37.2939, 127.2048]
+    radius_km: 1.5
+  - name: 한국민속촌
+    aliases: [민속촌]
+    type: landmark
+    center: [37.2595, 127.121]
+    radius_km: 1.0
+  - name: 범계역
+    aliases: [평촌 범계]
+    type: downtown
+    center: [37.3899, 126.9509]
+  - name: 스타필드 하남
+    aliases: [스타필드]
+    type: landmark
+    center: [37.5454, 127.2241]
+  - name: 헤이리예술마을  # 확인 필요: 첫 검색어로는 못 찾아 '헤이리'로 찾음
+    aliases: [헤이리]
+    type: landmark
+    center: [37.7888, 126.6992]
+  - name: 임진각
+    type: landmark
+    center: [37.8923, 126.744]
+  - name: 아침고요수목원
+    type: landmark
+    center: [37.7417, 127.352]
+  - name: 두물머리  # 확인 필요: 첫 검색어로는 못 찾아 '양평 두물머리'로 찾음
+    type: landmark
+    center: [37.5328, 127.3159]
+  - name: 서울대공원
+    aliases: [서울랜드]
+    type: park
+    center: [37.4339, 127.0114]
+    radius_km: 1.5
+  - name: 광명동굴
+    type: landmark
+    center: [37.4268, 126.8655]
+  - name: 동탄호수공원
+    aliases: [동탄 호수]
+    type: park
+    center: [37.1671, 127.1066]
+  - name: 대부도
+    aliases: [방아머리 해변]
+    type: waterfront
+    center: [37.2517, 126.6007]
+    radius_km: 4.0
+  - name: 물의정원  # 확인 필요: 첫 검색어로는 못 찾아 '물의 정원'로 찾음
+    aliases: [북한강 물의정원]
+    type: landmark
+    center: [37.5568, 127.3149]

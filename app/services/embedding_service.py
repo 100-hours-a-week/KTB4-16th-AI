@@ -1,12 +1,21 @@
-"""임베딩 인덱싱 처리 순서: 사진·음악·코멘트 세 갈래를 병렬로 만들고 한 행으로 저장."""
+"""임베딩 인덱싱 처리 순서: 사진·음악·코멘트 세 갈래를 병렬로 만들고 한 행으로 저장.
+
+저장할 때 사진 벡터로 사진을 한 번 분류해 태그(장소 + 다축)도 같이 저장한다. RECAP 같은 곳이
+저장된 태그를 세기만 하면 되고, 태그 목록을 바꿨을 때도 저장된 벡터로 다시 분류할 수 있다.
+"""
 
 import asyncio
+import logging
 
 from app.components.clip_tagger import ClipTagger
 from app.components.embedder import Embedder
+from app.components.photo_tags import build_photo_tags
 from app.components.track_mood_resolver import TrackMoodResolver
 from app.db.repositories.embedding_repository import EmbeddingStore, RecordEmbeddingData
+from app.exceptions import ClipError
 from app.schemas.embeddings import EmbeddingGenerateRequest, EmbeddingTrack
+
+logger = logging.getLogger("muro.embedding")
 
 
 class EmbeddingService:
@@ -16,11 +25,13 @@ class EmbeddingService:
         embedder: Embedder,
         track_moods: TrackMoodResolver,
         store: EmbeddingStore,
+        tag_version: str | None = None,
     ):
         self._clip = clip_tagger
         self._embedder = embedder
         self._track_moods = track_moods
         self._store = store
+        self._tag_version = tag_version
 
     async def generate(self, req: EmbeddingGenerateRequest) -> None:
         image_vec, (mood_text, music_vec), comment_vec = await asyncio.gather(
@@ -28,6 +39,7 @@ class EmbeddingService:
             self._embed_music(req.track),
             self._embed_comment(req.comment),
         )
+        photo_tags = await self._classify_photo(image_vec)
         await self._store.upsert(
             RecordEmbeddingData(
                 record_id=req.record_id,
@@ -41,9 +53,25 @@ class EmbeddingService:
                     "image": self._clip.model,
                     "text": self._embedder.model,
                     "moodVersion": self._track_moods.mood_version,
+                    **({"tagVersion": self._tag_version} if self._tag_version else {}),
                 },
+                photo_tags=photo_tags,
             )
         )
+
+    async def _classify_photo(self, image_vector: list[float]) -> dict[str, str] | None:
+        """저장된 벡터로 사진을 분류한다 (CLIP 이미지 호출 없음). 실패하면 None.
+
+        태그는 부가 정보라서, 태그 문장 인코딩이 실패(ClipError)해도 임베딩 저장은 계속한다.
+        None으로 저장된 행은 태그 목록이 준비된 뒤 저장된 벡터로 다시 분류하면 된다.
+        """
+        try:
+            scene = await self._clip.tag_from_vector(image_vector, top_k=1)
+            axes = await self._clip.classify_axes(image_vector)
+        except ClipError:
+            logger.warning("사진 태그를 만들지 못해 태그 없이 저장해요.", exc_info=True)
+            return None
+        return build_photo_tags(scene, axes)
 
     async def _embed_music(self, track: EmbeddingTrack) -> tuple[str, list[float]]:
         """같은 곡은 무드를 한 번만 만든다 — 스포티파이 곡 ID로 캐시를 먼저 찾는다."""

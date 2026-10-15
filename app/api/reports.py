@@ -19,6 +19,8 @@ router = APIRouter(prefix="/api", tags=["기능2 RECAP"])
     "/reports/batch-generate",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=ReportBatchQueuedResponse,
+    # batchRequestId 없이 온 요청엔 응답에도 그 필드를 안 넣는다 — 기존 응답 모양 그대로
+    response_model_exclude_none=True,
 )
 async def batch_generate(
     req: ReportBatchGenerateRequest,

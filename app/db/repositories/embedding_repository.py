@@ -20,6 +20,7 @@ class RecordEmbeddingData:
     comment_embedding: list[float] | None
     music_mood_text: str
     model_versions: dict[str, Any]
+    photo_tags: dict[str, str] | None = None
 
 
 class EmbeddingStore(Protocol):
@@ -60,6 +61,7 @@ class EmbeddingRepository:
             "comment_embedding": data.comment_embedding,
             "music_mood_text": data.music_mood_text,
             "model_versions": data.model_versions,
+            "photo_tags": data.photo_tags,
         }
         stmt = insert(RecordEmbedding).values(**values)
         stmt = stmt.on_conflict_do_update(

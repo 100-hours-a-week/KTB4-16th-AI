@@ -41,8 +41,16 @@ def test_missing_field_is_400_with_camel_field(client, record_payload):
 
 
 def test_unimplemented_feature_is_501(client):
+    # 기억 검색(기능5)이 구현되어, 아직 구현 전인 YouTube 플레이리스트 저장으로 확인한다
     res = client.post(
-        "/api/memory-search", json={"userId": "u_1", "queryText": "비 오던 날"}, headers=AUTH
+        "/api/playlist/save",
+        json={
+            "userId": 1,
+            "trackUris": ["spotify:track:aaa"],
+            "platform": "youtube",
+            "title": "t",
+        },
+        headers=AUTH,
     )
     assert res.status_code == 501
     assert res.json()["code"] == "NOT_IMPLEMENTED"

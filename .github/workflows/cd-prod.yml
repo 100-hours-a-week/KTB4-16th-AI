@@ -1,0 +1,213 @@
+name: AI CD prod
+
+# 처음에는 수동 실행(workflow_dispatch)만 쓴다. 충분히 테스트한 뒤 아래 on 블록에
+# workflow_run(workflows: ["AI CI prod"], types: [completed], branches: [main])을 추가해서 자동 연결한다.
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "배포할 이미지 태그 (비우면 가장 최근 태그)"
+        required: false
+        type: string
+
+env:
+  SERVICE: ai
+  MIG_NAME: mulo-v2-ai-mig
+  MIG_FLAG: "--zone=asia-northeast3-a"
+  MAX_SURGE: "1"
+  MAX_UNAVAILABLE: "0"
+  REPLACEMENT_METHOD: substitute
+
+jobs:
+  # ============================================================
+  # 1단계: 배포할 이미지 태그와 현재 인스턴스 템플릿을 확인한다. (VM은 건드리지 않는다)
+  # ============================================================
+  prepare:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # GCP WIF 인증용 OIDC 토큰 발급 권한
+    outputs:
+      image_tag: ${{ steps.image.outputs.tag }}
+      image: ${{ steps.image.outputs.image }}
+      prev_template: ${{ steps.current.outputs.template }}
+      new_template: ${{ steps.name.outputs.template }}
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      # 이미지는 CD가 빌드하지 않고, CI가 push해둔 것을 그대로 쓴다.
+      # 수동 실행 때 태그를 넣으면 그 태그를, 비우면 가장 최근 태그를 쓴다.
+      - id: image
+        env:
+          INPUT_TAG: ${{ inputs.image_tag }}
+          IMAGE_REPO: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.PROJECT_REPOSITORY }}/${{ secrets.IMAGE_NAME }}
+        run: |
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG=$(gcloud artifacts docker images list "$IMAGE_REPO" \
+              --include-tags --sort-by="~UPDATE_TIME" \
+              --format="value(TAGS)" | tr ',' '\n' | grep -m1 -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true)
+          fi
+          if [ -z "$TAG" ]; then
+            echo "배포할 이미지 태그를 찾을 수 없습니다."
+            exit 1
+          fi
+          # 해당 태그의 이미지가 실제로 있는지 확인한다.
+          gcloud artifacts docker images describe "$IMAGE_REPO:$TAG" > /dev/null
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "image=$IMAGE_REPO:$TAG" >> "$GITHUB_OUTPUT"
+
+      # 롤백할 때 되돌아갈 현재 인스턴스 템플릿 이름
+      - id: current
+        run: |
+          TEMPLATE=$(gcloud compute instance-groups managed describe "$MIG_NAME" $MIG_FLAG \
+            --format="value(versions[0].instanceTemplate.basename())")
+          if [ -z "$TEMPLATE" ]; then
+            echo "$MIG_NAME 의 현재 인스턴스 템플릿을 찾을 수 없습니다."
+            exit 1
+          fi
+          echo "template=$TEMPLATE" >> "$GITHUB_OUTPUT"
+
+      # 새 템플릿 이름: 서비스-tpl-태그-실행번호 (소문자, 숫자, 하이픈만 가능)
+      - id: name
+        env:
+          TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          SAFE=$(echo "$TAG" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-' | sed 's/-*$//')
+          echo "template=${SERVICE}-tpl-${SAFE}-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+
+  # ============================================================
+  # 2단계: 새 인스턴스 템플릿을 만들고 MIG를 교체한다.
+  # environment: production 에 지정한 승인자가 승인해야 시작한다.
+  # ============================================================
+  rolling-update:
+    needs: prepare
+    runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: cd-ai-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      IMAGE: ${{ needs.prepare.outputs.image }}
+      PREV_TEMPLATE: ${{ needs.prepare.outputs.prev_template }}
+      NEW_TEMPLATE: ${{ needs.prepare.outputs.new_template }}
+    steps:
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      # 현재 템플릿을 복사하고 이미지 태그 메타데이터만 바꾼 새 템플릿을 만든다.
+      # VM은 부팅할 때 이 태그의 이미지를 받아서 실행한다.
+      - name: Create instance template
+        run: |
+          gcloud compute instance-templates create "$NEW_TEMPLATE" \
+            --source-instance-template="$PREV_TEMPLATE" \
+            --metadata=app-image="$IMAGE"
+
+      - id: start
+        name: Start rolling update
+        run: |
+          gcloud compute instance-groups managed rolling-action start-update "$MIG_NAME" $MIG_FLAG \
+            --version=template="$NEW_TEMPLATE" \
+            --type=proactive \
+            --minimal-action=replace \
+            --most-disruptive-allowed-action=replace \
+            --replacement-method="$REPLACEMENT_METHOD" \
+            --max-surge="$MAX_SURGE" \
+            --max-unavailable="$MAX_UNAVAILABLE"
+
+      # 모든 VM이 새 템플릿으로 교체되고 헬스체크를 통과할 때까지 기다린다.
+      - name: Wait until all instances are updated
+        run: |
+          gcloud compute instance-groups managed wait-until "$MIG_NAME" $MIG_FLAG \
+            --version-target-reached --timeout=900
+
+      - name: Wait until the group is stable
+        run: |
+          gcloud compute instance-groups managed wait-until "$MIG_NAME" $MIG_FLAG \
+            --stable --timeout=300
+
+      # 교체 도중 실패하면 이전 템플릿으로 되돌린다. (교체를 시작한 경우에만)
+      - name: Rollback to previous template
+        if: ${{ failure() && steps.start.outcome == 'success' }}
+        run: |
+          gcloud compute instance-groups managed rolling-action start-update "$MIG_NAME" $MIG_FLAG \
+            --version=template="$PREV_TEMPLATE" \
+            --type=proactive \
+            --minimal-action=replace \
+            --most-disruptive-allowed-action=replace \
+            --replacement-method="$REPLACEMENT_METHOD" \
+            --max-surge="$MAX_SURGE" \
+            --max-unavailable="$MAX_UNAVAILABLE"
+          gcloud compute instance-groups managed wait-until "$MIG_NAME" $MIG_FLAG \
+            --version-target-reached --timeout=900
+
+      # 오래된 템플릿은 최근 5개만 남기고 지운다. (사용 중인 템플릿은 삭제되지 않는다)
+      - name: Delete old instance templates
+        if: ${{ success() }}
+        continue-on-error: true
+        run: |
+          gcloud compute instance-templates list \
+            --filter="name~^${SERVICE}-tpl-" \
+            --sort-by="~creationTimestamp" \
+            --format="value(name)" \
+            | tail -n +6 \
+            | while read -r T; do
+                gcloud compute instance-templates delete "$T" --quiet || true
+              done
+
+  # 배포 결과 알림
+  notify:
+    name: Discord notification
+    runs-on: ubuntu-latest
+    needs: [prepare, rolling-update]
+    if: ${{ always() && needs.prepare.result != 'skipped' }}
+    permissions: {}
+
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+    steps:
+      - name: Send CD result to Discord
+        if: ${{ env.DISCORD_WEBHOOK != '' }}
+        uses: Ilshidur/action-discord@0.3.2
+        with:
+          args: "AI 배포 결과 알림"
+        env:
+          DISCORD_USERNAME: MURO_BOT
+          DISCORD_EMBEDS: |
+            [
+              {
+                "title": "AI 배포: ${{ needs.rolling-update.result }}",
+                "description": "이미지 태그: ${{ needs.prepare.outputs.image_tag }}",
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "color": ${{ needs.rolling-update.result == 'success' && 3066993 || 15158332 }},
+                "fields": [
+                  {
+                    "name": "실행한 사람",
+                    "value": ${{ toJSON(github.actor) }},
+                    "inline": true
+                  },
+                  {
+                    "name": "배포 방식",
+                    "value": "Rolling Update",
+                    "inline": true
+                  }
+                ]
+              }
+            ]

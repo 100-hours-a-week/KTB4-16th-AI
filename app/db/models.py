@@ -43,6 +43,11 @@ class RecordEmbedding(Base):
     )
     music_mood_text: Mapped[str] = mapped_column(Text)
     model_versions: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    # 사진 분류 결과 (축 이름 → 태그). NULL은 분류 안 함/실패, {}는 붙일 태그 없음.
+    # none_as_null: 파이썬 None을 JSON null이 아니라 SQL NULL로 저장한다
+    photo_tags: Mapped[dict[str, str] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

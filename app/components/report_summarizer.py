@@ -1,16 +1,29 @@
-"""자물쇠별 요약 줄 + 사진 카테고리 비중 → 한 줄짜리 AI 리캡 문장.
+"""자물쇠별 요약 줄 + 사진 카테고리 비중·사진 특징 → 한 줄짜리 AI 리캡 문장.
 
 자물쇠 1건당 한 줄(곡 무드·기분점수·날씨·장소·사진 태그·코멘트를 합친 것)과, 기능2
-워커가 저장된 이미지 벡터로 분류한 사진 카테고리 비중을 모아 그 달에 반복된 패턴을
-한 문장으로 뽑아낸다. 화면(리포트 상세)에 카드 헤드라인으로 그대로 노출되는 문구라
-길게 쓰지 않는다. 곡·가수 지식이 필요 없는 언어 작업이라 llm_general(곧 로컬로
-옮길 갈래)을 쓴다.
+워커가 저장된 이미지 벡터로 분류한 사진 카테고리 비중, 다축 태그(사진 종류·대상·분위기·
+표정·감정)로 센 사진 특징을 모아 그 달에 반복된 패턴을 한 문장으로 뽑아낸다. 화면(리포트
+상세)에 카드 헤드라인으로 그대로 노출되는 문구라 길게 쓰지 않는다. 곡·가수 지식이 필요 없는
+언어 작업이라 llm_general(곧 로컬로 옮길 갈래)을 쓴다.
 """
+
+from dataclasses import dataclass
 
 from app.clients.llm_client import LLMClient
 from app.db.repositories.report_repository import ReportStats
 
-PROMPT_VERSION = "report-summary-v6"
+PROMPT_VERSION = "report-summary-v7"
+
+# 사진 특징에서 축마다 프롬프트에 싣는 태그 수. 문장이 한 문장이라 상위 몇 개면 충분하다.
+AXIS_TOP_TAGS = 3
+
+
+@dataclass(frozen=True)
+class PhotoAxisStat:
+    """다축 태그 한 축의 집계. count는 그 축에서 태그가 정해진 사진 수, ratios는 태그별 비중."""
+
+    count: int
+    ratios: dict[str, float]
 
 
 SYSTEM_PROMPT = """너는 사용자의 한 달 기록을 보고 AI 리캡 한 문장을 만드는 어시스턴트다.
@@ -21,6 +34,9 @@ SYSTEM_PROMPT = """너는 사용자의 한 달 기록을 보고 AI 리캡 한 �
 [이달의 기록]에는 자물쇠 1건당 한 줄씩, 곡 분위기·기분점수·날씨·장소·사진·코멘트 중
 있는 값만 나열되어 있다. 기분점수는 -50(안 좋음)~50(좋음) 사이 값, 0이 중간값이다.
 [이달의 사진 분위기 비중]은 그 달 사진 전체를 분류한 비율이다.
+[이달의 사진 특징]은 사진을 사진 종류·대상·분위기(빛·색감)·표정·감정으로 나눈 비율이고,
+괄호 안은 그 축에서 분류된 사진 수다. 사진에서 알 수 있는 것은 대상의 종류와 빛·색감,
+그림·짤의 표정뿐이다.
 
 - 결과는 "당신은"으로 시작하는 **한 문장**만 쓴다. 두 문장 이상 쓰지 않는다.
 - 이 사람이 이번 달 반복적으로 보인 패턴(자주 겹친 날씨·장소·곡 분위기의 조합)을
@@ -33,6 +49,8 @@ SYSTEM_PROMPT = """너는 사용자의 한 달 기록을 보고 AI 리캡 한 �
 - 뚜렷하게 반복되는 패턴이 안 보이면, 있는 정보 중 가장 눈에 띄는 것 위주로 자연스럽게
   한 문장으로 압축한다.
 - 코멘트가 있으면 참고만 하고 그대로 인용하지 않는다.
+- 사진 특징은 뚜렷하게 앞서는 것이 있을 때만 짧게 곁들인다. '친구', '가족', '연인'처럼
+  사진만으로 알 수 없는 관계나 사진 속 사건은 추측하지 않는다.
 - 다정하고 담백한 톤으로 쓴다.
 - 한 문장 외의 말은 쓰지 않는다."""
 
@@ -50,6 +68,15 @@ def _truncate_recap_text(text: str, limit: int = AI_RECAP_TEXT_LIMIT) -> str:
     return text[: limit - 1] + "…"
 
 
+def _format_photo_axes(photo_axes: dict[str, PhotoAxisStat]) -> str:
+    lines = []
+    for axis_name, stat in photo_axes.items():
+        ranked = sorted(stat.ratios.items(), key=lambda pair: pair[1], reverse=True)
+        tags = ", ".join(f"{tag} {ratio:.0%}" for tag, ratio in ranked[:AXIS_TOP_TAGS])
+        lines.append(f"{axis_name}({stat.count}장): {tags}")
+    return "\n".join(lines)
+
+
 class ReportSummarizer:
     def __init__(self, llm: LLMClient):
         self._llm = llm
@@ -63,6 +90,7 @@ class ReportSummarizer:
         record_lines: list[str],
         stats: ReportStats,
         photo_categories: dict[str, float] | None = None,
+        photo_axes: dict[str, PhotoAxisStat] | None = None,
     ) -> str:
         """자물쇠 요약 줄과 사진 카테고리가 둘 다 없으면 LLM을 부르지 않는다."""
         photo_categories = photo_categories or {}
@@ -84,6 +112,8 @@ class ReportSummarizer:
             ranked = sorted(photo_categories.items(), key=lambda pair: pair[1], reverse=True)
             category_line = ", ".join(f"{name} {ratio:.0%}" for name, ratio in ranked)
             sections.append(f"[이달의 사진 분위기 비중]\n{category_line}")
+        if photo_axes:
+            sections.append(f"[이달의 사진 특징]\n{_format_photo_axes(photo_axes)}")
 
         prompt = "\n\n".join(sections)
         summary = await self._llm.complete(system=SYSTEM_PROMPT, prompt=prompt, max_tokens=150)

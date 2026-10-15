@@ -1,11 +1,13 @@
 """공통 의존성: 내부 인증, DB 세션, 외부 클라이언트 조립."""
 
+import logging
 import secrets
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from functools import lru_cache
 
 from fastapi import Depends, Header
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.anthropic_client import AnthropicClient
@@ -25,8 +27,11 @@ from app.clients.spotify_client import (
     SpotifySearchClient,
     SpotifyServiceAccountClient,
 )
+from app.components.answer_headline import HeadlineWriter
+from app.components.axis_vectors import AxisVectors
 from app.components.category_vectors import CategoryVectors
 from app.components.clip_tagger import ClipTagger
+from app.components.condition_scoring import ConditionWeights
 from app.components.embedder import Embedder
 from app.components.moderation_model import (
     FakeModerationModel,
@@ -35,9 +40,12 @@ from app.components.moderation_model import (
 )
 from app.components.query_rewriter import QueryRewriter
 from app.components.question_generator import QuestionGenerator
+from app.components.question_parser import QuestionParser
 from app.components.reranker import Reranker
 from app.components.song_curator import SongCurator
-from app.components.vector_search import RecordSearch, VectorSearch
+from app.components.tag_vector_file import PrecomputedVectors, read_vectors_file
+from app.components.tag_version import compute_tag_version
+from app.components.vector_search import MemoryVectorSearch, RecordSearch, VectorSearch
 from app.config import get_settings
 from app.db import mysql, postgres
 from app.db.postgres import get_session
@@ -48,10 +56,17 @@ from app.db.repositories.balance_stats_repository import (
 )
 from app.db.repositories.embedding_repository import EmbeddingRepository, EmbeddingStore
 from app.db.repositories.job_repository import JobRepository
+from app.db.repositories.memory_record_repository import (
+    ConditionRow,
+    MemoryRecord,
+    MemoryRecordRepository,
+    MemoryRecordSource,
+)
 from app.db.repositories.report_repository import MonthlyReportRepository
 from app.db.repositories.track_lookup_repository import TrackLookupRepository, TrackLookupStore
-from app.exceptions import UnauthorizedError
+from app.exceptions import UnauthorizedError, UpstreamError
 from app.services.balance_service import BalanceService
+from app.services.memory_search_service import MemorySearchService
 from app.services.moderation_service import ModerationService
 
 
@@ -59,6 +74,9 @@ async def verify_internal_token(x_internal_token: str | None = Header(default=No
     expected = get_settings().internal_token
     if not secrets.compare_digest(x_internal_token or "", expected):
         raise UnauthorizedError()
+
+
+logger = logging.getLogger("muro.dependencies")
 
 
 @dataclass(frozen=True)
@@ -168,14 +186,51 @@ def get_spotify_search_client() -> SpotifySearchClient:
 
 
 @lru_cache
+def get_precomputed_vectors() -> PrecomputedVectors | None:
+    """미리 계산해 둔 태그 벡터(app/tag_vectors.json). 쓸 수 없으면 None.
+
+    파일이 없거나, 지금의 태그 정의·CLIP 모델과 버전이 다르면 쓰지 않는다. 그 경우 아래
+    CategoryVectors·AxisVectors가 첫 사용 때 CLIP으로 직접 계산하는데, 몇 분 걸린다.
+    """
+    vectors = read_vectors_file()
+    if vectors is None:
+        logger.warning("미리 계산한 태그 벡터 파일(app/tag_vectors.json)이 없거나 깨져 있어요.")
+        return None
+    expected = compute_tag_version(get_clients().clip.model)
+    if vectors.version != expected:
+        logger.warning(
+            "미리 계산한 태그 벡터의 버전(%s)이 지금 태그 정의·CLIP 모델(%s, 버전 %s)과 달라서 "
+            "쓰지 않아요. scripts/build_tag_vectors.py로 다시 만드세요.",
+            vectors.version,
+            get_clients().clip.model,
+            expected,
+        )
+        return None
+    return vectors
+
+
+@lru_cache
 def get_category_vectors() -> CategoryVectors:
-    """태그 벡터 캐시는 프로세스당 1개. 첫 호출 때 CategoryVectors.load()가 CLIP을
-    부르고, 그 뒤로는 재사용된다."""
-    return CategoryVectors(get_clients().clip)
+    """태그 벡터 캐시는 프로세스당 1개. 미리 계산한 파일이 있으면 그걸 읽고, 없으면 첫 호출 때
+    CategoryVectors.load()가 CLIP을 부른다. 그 뒤로는 재사용된다."""
+    return CategoryVectors(get_clients().clip, precomputed=get_precomputed_vectors())
+
+
+@lru_cache
+def get_axis_vectors() -> AxisVectors:
+    """다축 태그 벡터 캐시도 프로세스당 1개. 미리 계산한 파일이 있으면 그걸 읽고, 없으면 첫 사용 때
+    태그 문장을 CLIP으로 인코딩한다."""
+    return AxisVectors(get_clients().clip, precomputed=get_precomputed_vectors())
+
+
+@lru_cache
+def get_tag_version() -> str:
+    """저장하는 사진 태그가 어떤 태그 목록·CLIP 모델로 분류됐는지 알려 주는 값."""
+    return compute_tag_version(get_clients().clip.model)
 
 
 def get_clip_tagger() -> ClipTagger:
-    return ClipTagger(get_clients().clip, get_category_vectors())
+    return ClipTagger(get_clients().clip, get_category_vectors(), get_axis_vectors())
 
 
 def get_query_rewriter() -> QueryRewriter:
@@ -201,6 +256,88 @@ async def get_record_search(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncIterator[RecordSearch]:
     yield VectorSearch(session)
+
+
+async def get_memory_vector_search(
+    session: AsyncSession = Depends(get_session),
+) -> AsyncIterator[MemoryVectorSearch]:
+    yield VectorSearch(session)
+
+
+class _DbMemoryRecords:
+    """기억 검색 결과의 상세 — 백엔드 MySQL(읽기 전용)에서 읽는다."""
+
+    async def get_many(self, *, user_id: int, record_ids: list[int]) -> dict[int, MemoryRecord]:
+        try:
+            async with mysql.get_sessionmaker()() as mysql_session:
+                return await MemoryRecordRepository(mysql_session).get_many(
+                    user_id=user_id, record_ids=record_ids
+                )
+        except SQLAlchemyError as e:
+            raise UpstreamError("백엔드 DB에서 자물쇠 상세를 읽지 못했어요.") from e
+
+    async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
+        try:
+            async with mysql.get_sessionmaker()() as mysql_session:
+                return await MemoryRecordRepository(mysql_session).list_condition_rows(
+                    user_id=user_id, limit=limit
+                )
+        except SQLAlchemyError as e:
+            raise UpstreamError("백엔드 DB에서 자물쇠 정보를 읽지 못했어요.") from e
+
+
+class _NoMemoryRecords:
+    """백엔드 DB가 없는 로컬·테스트 환경 — 상세를 못 읽어서 결과가 비어 있다."""
+
+    async def get_many(self, *, user_id: int, record_ids: list[int]) -> dict[int, MemoryRecord]:
+        return {}
+
+    async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
+        return []
+
+
+def get_memory_record_source() -> MemoryRecordSource:
+    s = get_settings()
+    if s.ai_client_mode == "fake" or not s.backend_mysql_url:
+        return _NoMemoryRecords()
+    return _DbMemoryRecords()
+
+
+@lru_cache
+def get_question_parser() -> QuestionParser:
+    # 사전·코드표·규칙 파일은 프로세스당 한 번만 읽는다
+    return QuestionParser.load_default()
+
+
+async def get_memory_search_service(
+    search: MemoryVectorSearch = Depends(get_memory_vector_search),
+    records: MemoryRecordSource = Depends(get_memory_record_source),
+) -> MemorySearchService:
+    s = get_settings()
+    return MemorySearchService(
+        get_embedder(),
+        search,
+        records,
+        min_similarity=s.memory_search_min_similarity,
+        comment_weight=s.memory_search_comment_weight,
+        music_weight=s.memory_search_music_weight,
+        candidates=s.memory_search_candidates,
+        parser=get_question_parser(),
+        condition_weight=s.memory_search_condition_weight,
+        condition_weights=ConditionWeights(
+            location=s.memory_search_location_weight,
+            other=s.memory_search_other_condition_weight,
+        ),
+        scan_limit=s.memory_search_scan_limit,
+        condition_candidates=s.memory_search_condition_candidates,
+        display_count=s.memory_search_display_count,
+        suggestion_count=s.memory_search_suggestion_count,
+        # 답변 앞머리 문장 — 꺼 두면(기본) 템플릿 문장. LLM에는 조건 이름과 건수만 보낸다
+        headline_writer=(
+            HeadlineWriter(get_clients().llm_general) if s.memory_answer_llm_enabled else None
+        ),
+        headline_timeout=s.memory_answer_llm_timeout_seconds,
+    )
 
 
 @lru_cache

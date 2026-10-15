@@ -49,17 +49,19 @@ class PhotoRecommendService:
 
     async def recommend(self, req: PhotoRecommendRequest) -> PhotoRecommendResponse:
         try:
-            tags = await self._clip_tagger.tag(req.image_url)
+            analysis = await self._clip_tagger.analyze(req.image_url)
         except ClipError as e:
             logger.warning("CLIP 태깅 실패, 폴백: %s", e)
             return self._fallback()
 
+        # moodTags(백엔드 응답)는 장소 태그만 담는다. 다축 태그는 Claude에 보내는 정보에만 쓴다.
+        tags, axes = analysis.scene_tags, analysis.axes
         if not tags:
             # 임계치 넘는 태그가 하나도 없음 — 곡을 고를 근거가 없어 폴백과 동일 처리
             return self._fallback()
 
         try:
-            curation = await self._song_curator.curate_from_tags(tags)
+            curation = await self._song_curator.curate_from_tags(tags, axes=axes)
         except LLMError as e:
             logger.warning("곡 추천 실패, 폴백: %s", e)
             return self._fallback(tags=tags)
@@ -76,7 +78,7 @@ class PhotoRecommendService:
             raise ExternalApiFailedError("Spotify 곡 확인에 실패했어요.") from e
 
         if len(candidates) < RESULT_COUNT:
-            candidates = await self._top_up(tags, curation, candidates)
+            candidates = await self._top_up(tags, axes, curation, candidates)
 
         if not candidates:
             # 추천받은 곡이 전부 Spotify에 없었다 — 에러는 아니고 빈 결과
@@ -90,14 +92,20 @@ class PhotoRecommendService:
         )
 
     async def _top_up(
-        self, tags: list[str], curation: CurationResult, candidates: list[TrackCandidate]
+        self,
+        tags: list[str],
+        axes: dict[str, str],
+        curation: CurationResult,
+        candidates: list[TrackCandidate],
     ) -> list[TrackCandidate]:
         """Spotify에서 탈락해 RESULT_COUNT곡이 안 되면 이미 나온 곡을 빼고 한 번만 더 받는다.
 
         보충은 있으면 좋은 것이라, 여기서 실패해도 지금 있는 곡으로 응답한다.
         """
         try:
-            extra = await self._song_curator.curate_from_tags(tags, exclude=curation.songs)
+            extra = await self._song_curator.curate_from_tags(
+                tags, exclude=curation.songs, axes=axes
+            )
             more = await self._resolver.resolve(extra.songs)
         except UpstreamError as e:
             logger.warning("곡 보충 실패, 있는 곡으로 응답: %s", e)

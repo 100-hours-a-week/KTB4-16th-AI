@@ -1,0 +1,9 @@
+[run]
+source = app
+omit =
+    app/__main__.py
+    */migrations/*
+    */tests/*
+
+[report]
+show_missing = true

@@ -196,6 +196,37 @@ class ReportRepository:
         )
         return {row.record_id: list(row.image_embedding) for row in rows}
 
+    async def get_photo_tags(self, record_ids: list[int]) -> dict[int, "StoredPhotoTags"]:
+        """자물쇠 ID들의 저장된 사진 태그와 태그 버전. (AI Postgres record_embeddings)
+
+        기능4가 저장할 때 분류해 둔 값이다. 임베딩이 아직 없는 record_id는 결과에서 빠진다.
+        태그가 없는 행(예전에 저장됐거나 분류에 실패한 행)은 tags가 None이다.
+        """
+        if not record_ids:
+            return {}
+        rows = await self._postgres.execute(
+            select(
+                RecordEmbedding.record_id,
+                RecordEmbedding.photo_tags,
+                RecordEmbedding.model_versions,
+            ).where(RecordEmbedding.record_id.in_(record_ids))
+        )
+        return {
+            row.record_id: StoredPhotoTags(
+                tags=dict(row.photo_tags) if row.photo_tags is not None else None,
+                tag_version=(row.model_versions or {}).get("tagVersion"),
+            )
+            for row in rows
+        }
+
+
+@dataclass(frozen=True)
+class StoredPhotoTags:
+    """저장된 사진 태그. tags가 None이면 저장된 태그가 없다(예전 행·분류 실패)."""
+
+    tags: dict[str, str] | None
+    tag_version: str | None
+
 
 @dataclass(frozen=True)
 class MonthlyReportRecord:

@@ -1,0 +1,117 @@
+# 다축 태그 정의 — 사진 1장을 "사진 종류 → 축별 태그"로 분류한다.
+#
+# 구조
+#   - when이 없는 축(kind)이 1단계다. 사진이 진짜 사진인지 그림·짤인지 먼저 가른다.
+#   - when이 있는 축은 2단계다. 1단계 결과가 when과 같을 때만 그 축을 본다.
+#   - 장소(scene) 축은 mood_tags.yaml에 그대로 있다(기능3·RECAP 차트가 쓴다). 여기엔 넣지 않는다.
+#
+# 태그마다 영어 문장 2~3개를 CLIP으로 벡터화해 평균 낸다(문장형 라벨). 한국어 라벨은 CLIP이
+# 구분하지 못해서(mood_tags.yaml 주석 참고) 영어로 쓴다. ko는 화면·프롬프트에 나가는 표시명이다.
+#
+# margin: 1등과 2등의 코사인 유사도 차이가 이 값보다 작으면 "불확실"로 보고 태그를 붙이지 않는다.
+#
+# ⚠ 문장과 margin은 아직 실제 사진으로 시험하지 않은 임시값이다. 시험용 사진으로 1등-2등 차이를
+#   재서 고쳐야 한다. 날씨 축은 없다(RECAP 날씨 통계는 백엔드 기록의 실제 날씨를 쓴다).
+axes:
+  - key: kind
+    ko: 사진 종류
+    margin: 0.02
+    tags:
+      - ko: 진짜 사진
+        sentences:
+          - a real photograph taken with a camera or a phone
+          - a natural photo of a real place, a person or an object
+      - ko: 그림·짤
+        sentences:
+          - a cartoon, an illustration or a digital drawing
+          - an internet meme image with graphics or text
+          - an anime style picture or an emoji style picture
+
+  - key: subject
+    ko: 대상
+    when: 진짜 사진
+    margin: 0.02
+    tags:
+      - ko: 셀카·1명
+        sentences:
+          - a selfie of one person
+          - a close-up portrait photo of a single person
+      - ko: 커플·두 사람
+        sentences:
+          - a photo of two people together
+          - a couple posing side by side
+      - ko: 여러 사람
+        sentences:
+          - a group photo of many people
+          - friends gathered together around a table
+          - a crowd of people
+      - ko: 음식·음료
+        sentences:
+          - a close-up photo of food on a plate
+          - a cup of coffee or a drink on a table
+          - a dessert or a meal
+      - ko: 반려동물
+        sentences:
+          - a photo of a pet dog
+          - a photo of a pet cat
+      - ko: 풍경·사물
+        sentences:
+          - a landscape or a cityscape with no people
+          - a photo of an object or a street without any people
+
+  - key: vibe
+    ko: 분위기
+    when: 진짜 사진
+    margin: 0.02
+    tags:
+      - ko: 밝은 햇살
+        sentences:
+          - bright sunny daylight with strong sunlight
+          - a sunlit scene with warm natural light and clear shadows
+      - ko: 노을빛
+        sentences:
+          - orange and pink sunset glow in the sky
+          - golden hour light at sunset
+      - ko: 푸르고 밝은
+        sentences:
+          - a bright blue sky and fresh clear blue tones
+          - a cool bright scene full of blue colors
+      - ko: 흐린 회색빛
+        sentences:
+          - gray overcast light on a cloudy day
+          - a dull gloomy gray scene
+      - ko: 밤의 따뜻한 조명
+        sentences:
+          - warm yellow lights glowing at night
+          - cozy warm lamp light in the evening
+      - ko: 어둡고 차가운 밤
+        sentences:
+          - a dark cold night with blue shadows
+          - a dim dark scene with very little light
+
+  - key: expression
+    ko: 표정·감정
+    when: 그림·짤
+    margin: 0.02
+    tags:
+      - ko: 웃음·신남
+        sentences:
+          - a laughing face full of excitement
+          - a happy cartoon character cheering with a big smile
+      - ko: 슬픔·눈물
+        sentences:
+          - a sad face crying with tears
+          - a sorrowful cartoon character in tears
+      - ko: 지침·무기력
+        sentences:
+          - a tired and exhausted face
+          - a sleepy lazy cartoon character lying down
+          - a burnt out and hopeless face
+      - ko: 화남
+        sentences:
+          - an angry furious face
+          - an angry cartoon character shouting
+      - ko: 설렘·사랑
+        sentences:
+          - a face with heart shaped eyes in love
+          - a cartoon with hearts and blushing cheeks
