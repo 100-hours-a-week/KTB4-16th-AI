@@ -92,6 +92,14 @@ class Settings(BaseSettings):
     # 기능6 오늘의 질문 — 최근 며칠치 자물쇠로 장르별 통계를 낼지, 최대 몇 건까지 볼지
     balance_stats_days: int = 90
     balance_stats_limit: int = 5000
+    # 기능6 매일 배치 (KST) — 시작 시각에 다음 날 몫을 계산하고, 마감까지 재시도해 끝낸다.
+    # 백엔드는 마감 이후에 뷰를 읽는다 (be_user_music_genres, be_vote_questions)
+    balance_daily_start: str = "23:00"
+    balance_daily_deadline: str = "23:40"
+    # 그룹 인원이 이보다 적은 장르의 사용자는 공통 그룹으로 (매칭할 사람이 모이지 않으므로)
+    balance_min_group_size: int = 2  # 10/15 결정: 1:1 매칭이라 2명부터 그룹 유지, 오픈 후 매칭 성공률로 조정
+    # 그룹마다 미리 채워 둘 날짜 수 (배치가 하루 실패해도 질문이 비지 않게)
+    balance_question_days_ahead: int = 2
 
     # 외부 API 공통
     external_timeout_seconds: float = 20.0
