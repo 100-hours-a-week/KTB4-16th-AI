@@ -9,7 +9,12 @@ from app.components.track_mood_resolver import TrackMoodResolver
 from app.db.postgres import get_sessionmaker
 from app.db.repositories.embedding_repository import EmbeddingRepository
 from app.db.repositories.track_mood_repository import TrackMoodRepository
-from app.dependencies import get_category_vectors, get_clients
+from app.dependencies import (
+    get_axis_vectors,
+    get_category_vectors,
+    get_clients,
+    get_tag_version,
+)
 from app.schemas.embeddings import EmbeddingGenerateRequest
 from app.services.embedding_service import EmbeddingService
 
@@ -21,7 +26,7 @@ async def handle(payload: dict[str, Any]) -> None:
     clients = get_clients()
     async with get_sessionmaker()() as session:
         service = EmbeddingService(
-            clip_tagger=ClipTagger(clients.clip, get_category_vectors()),
+            clip_tagger=ClipTagger(clients.clip, get_category_vectors(), get_axis_vectors()),
             embedder=Embedder(clients.embedding),
             track_moods=TrackMoodResolver(
                 mood_tagger=MusicMoodTagger(clients.llm_knowledge),
@@ -29,5 +34,6 @@ async def handle(payload: dict[str, Any]) -> None:
                 store=TrackMoodRepository(session),
             ),
             store=EmbeddingRepository(session),
+            tag_version=get_tag_version(),
         )
         await service.generate(req)

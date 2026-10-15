@@ -223,6 +223,12 @@ def get_axis_vectors() -> AxisVectors:
     return AxisVectors(get_clients().clip, precomputed=get_precomputed_vectors())
 
 
+@lru_cache
+def get_tag_version() -> str:
+    """저장하는 사진 태그가 어떤 태그 목록·CLIP 모델로 분류됐는지 알려 주는 값."""
+    return compute_tag_version(get_clients().clip.model)
+
+
 def get_clip_tagger() -> ClipTagger:
     return ClipTagger(get_clients().clip, get_category_vectors(), get_axis_vectors())
 
