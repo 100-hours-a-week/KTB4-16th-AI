@@ -1,0 +1,176 @@
+name: AI CD dev
+
+# develop CI(ci-dev.yml)가 성공하면 자동으로 개발 서버에 배포한다.
+# workflow_dispatch는 개발 서버에 다시 배포하고 싶을 때 수동으로 쓴다.
+# 주의: workflow_run으로 실행되는 워크플로는 기본 브랜치(main)에 있는 파일 기준으로 실행된다.
+on:
+  workflow_run:
+    workflows: ["AI CI dev"]
+    types: [completed]
+    branches: [develop]
+  workflow_dispatch:
+
+env:
+  ZONE: asia-northeast3-a
+  DEV_VM_NAME: mulo-v2-dev-vm   # Terraform이 만든 개발 VM 이름
+
+jobs:
+  deploy:
+    name: Deploy to Develop VM
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    concurrency:
+      group: cd-ai-develop
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write   # GCP WIF 인증용 OIDC 토큰 발급 권한
+    outputs:
+      vm: ${{ steps.develop.outputs.vm }}
+
+    steps:
+      # WIF로 GCP 서비스 계정 인증 (키 파일 없이 임시 토큰 발급)
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID_Develop }}
+          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER_Develop }}
+          service_account: ${{ secrets.SERVICE_ACCOUNT_Develop }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      # 1. DEV_VM_NAME 이름의 개발 VM을 찾는다.
+      - id: develop
+        run: |
+          VM=$(gcloud compute instances list \
+            --filter="name=${{ env.DEV_VM_NAME }}" \
+            --zones="${{ env.ZONE }}" \
+            --format="value(name)")
+          if [ -z "$VM" ]; then
+            echo "${{ env.DEV_VM_NAME }} VM을 찾을 수 없습니다."
+            exit 1
+          fi
+          echo "vm=$VM" >> "$GITHUB_OUTPUT"
+
+      # 2. CI(semantic-release)가 방금 push한 이미지 중 가장 최근 태그를 조회한다.
+      - id: image
+        run: |
+          TAG=$(gcloud artifacts docker images list \
+            "${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID_Develop }}/${{ secrets.PROJECT_REPOSITORY }}/${{ secrets.IMAGE_NAME }}" \
+            --include-tags --sort-by="~UPDATE_TIME" \
+            --format="value(TAGS)" | tr ',' '\n' | grep -m1 '^dev-' || true)
+          if [ -z "$TAG" ]; then
+            echo "조회된 Docker 이미지 태그가 없습니다."
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      # 3. ai.env 파일을 GitHub Secrets 값으로 생성한다.
+      - run: |
+          cat > ai.env <<ENVEOF
+          APP_ENV=${{ secrets.APP_ENV || 'develop' }}
+          INTERNAL_TOKEN=${{ secrets.AI_INTERNAL_TOKEN || secrets.INTERNAL_TOKEN }}
+          DATABASE_URL=${{ secrets.DATABASE_URL_Develop || secrets.DATABASE_URL }}
+          AI_CLIENT_MODE=${{ secrets.AI_CLIENT_MODE }}
+          ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+          LLM_MODEL=${{ secrets.LLM_MODEL }}
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+          TEXT_EMBEDDING_MODEL=${{ secrets.TEXT_EMBEDDING_MODEL }}
+          TEXT_EMBEDDING_DIM=${{ secrets.TEXT_EMBEDDING_DIM }}
+          REPLICATE_API_TOKEN=${{ secrets.REPLICATE_API_TOKEN }}
+          CLIP_MODEL=${{ secrets.CLIP_MODEL }}
+          CLIP_EMBEDDING_DIM=${{ secrets.CLIP_EMBEDDING_DIM }}
+          SPOTIFY_CLIENT_ID=${{ secrets.SPOTIFY_CLIENT_ID }}
+          SPOTIFY_CLIENT_SECRET=${{ secrets.SPOTIFY_CLIENT_SECRET }}
+          YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}
+          BACKEND_MYSQL_URL=${{ secrets.BACKEND_MYSQL_URL_Develop || secrets.BACKEND_MYSQL_URL }}
+          BACKEND_INTERNAL_URL=${{ secrets.BACKEND_INTERNAL_URL_Develop || secrets.BACKEND_INTERNAL_URL }}
+          RUN_WORKER=true
+          ENVEOF
+
+      # 4. env 파일을 develop VM으로 전송하고, 새 이미지를 pull해서 ai 컨테이너만 교체한다.
+      #    같은 VM 위의 backend/frontend/nginx 컨테이너는 건드리지 않는다.
+      - run: |
+          gcloud compute scp ai.env "${{ steps.develop.outputs.vm }}:~/app/ai.env" \
+            --zone="${{ env.ZONE }}" --tunnel-through-iap
+
+          gcloud compute ssh "${{ steps.develop.outputs.vm }}" \
+            --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
+              set -e
+              sudo gcloud auth configure-docker '${{ secrets.GCP_REGION }}-docker.pkg.dev' --quiet
+              cd ~/app
+              export IMAGE_TAG=${{ steps.image.outputs.tag }}
+              export GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_Develop }}
+              sudo --preserve-env=IMAGE_TAG,GCP_PROJECT_ID docker compose pull ai
+              sudo --preserve-env=IMAGE_TAG,GCP_PROJECT_ID docker compose up -d ai
+            "
+
+      # 5. 컨테이너가 healthy 상태가 될 때까지 대기
+      - name: "Wait for ai container to be healthy"
+        run: |
+          gcloud compute ssh "${{ steps.develop.outputs.vm }}" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
+            for i in \$(seq 1 20); do
+              status=\$(sudo docker inspect ai --format='{{.State.Health.Status}}' 2>/dev/null || echo 'unhealthy')
+              if [ \"\$status\" = \"healthy\" ]; then
+                echo \"ai healthy (시도 \$i/20)\"
+                exit 0
+              fi
+              echo \"대기 중... (\$i/20) 현재 상태: \$status\"
+              sleep 3
+            done
+            echo \"ai가 60초 안에 healthy가 되지 않았습니다.\"
+            exit 1
+          "
+
+      # nginx는 컨테이너 DNS를 시작/리로드 시점에만 캐싱하므로, 방금 재생성된
+      # ai의 새 IP를 반영하도록 reload한다.
+      - name: "Reload nginx to pick up new container IP"
+        run: |
+          gcloud compute ssh "${{ steps.develop.outputs.vm }}" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
+            sudo docker exec nginx nginx -s reload
+          "
+
+  notify:
+    name: Discord notification
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: ${{ always() && needs.deploy.result != 'skipped' }}
+    permissions: {}
+
+    env:
+      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+    steps:
+      - name: Send CD result to Discord
+        if: ${{ env.DISCORD_WEBHOOK != '' }}
+        uses: Ilshidur/action-discord@0.3.2
+        with:
+          args: "AI Develop 배포 결과 알림"
+        env:
+          DISCORD_USERNAME: MURO_BOT
+          DISCORD_EMBEDS: |
+            [
+              {
+                "title": "AI Develop 배포: ${{ needs.deploy.result }}",
+                "description": ${{ toJSON(github.event.workflow_run.head_commit.message || '수동 실행') }},
+                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
+                "color": ${{ needs.deploy.result == 'success' && 3066993 || 15158332 }},
+                "fields": [
+                  {
+                    "name": "커밋",
+                    "value": "[커밋 확인](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha || github.sha }})",
+                    "inline": true
+                  },
+                  {
+                    "name": "푸시한 사람",
+                    "value": ${{ toJSON(github.event.workflow_run.actor.login || github.actor) }},
+                    "inline": true
+                  },
+                  {
+                    "name": "브랜치",
+                    "value": "develop",
+                    "inline": true
+                  }
+                ]
+              }
+            ]
