@@ -96,8 +96,9 @@ class Settings(BaseSettings):
     # 백엔드는 마감 이후에 뷰를 읽는다 (be_user_music_genres, be_vote_questions)
     balance_daily_start: str = "23:00"
     balance_daily_deadline: str = "23:40"
-    # 그룹 인원이 이보다 적은 장르의 사용자는 공통 그룹으로 (매칭할 사람이 모이지 않으므로)
-    balance_min_group_size: int = 2  # 10/15 결정: 1:1 매칭이라 2명부터 그룹 유지, 오픈 후 매칭 성공률로 조정
+    # 그룹 인원이 이보다 적은 장르의 사용자는 공통 그룹으로 (매칭할 사람이 모이지 않으므로).
+    # 1:1 매칭이라 2명부터 그룹 유지(10/15 결정), 오픈 후 매칭 성공률을 보고 조정한다
+    balance_min_group_size: int = 2
     # 그룹마다 미리 채워 둘 날짜 수 (배치가 하루 실패해도 질문이 비지 않게)
     balance_question_days_ahead: int = 2
 
