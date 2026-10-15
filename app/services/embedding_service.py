@@ -9,16 +9,13 @@ import logging
 
 from app.components.clip_tagger import ClipTagger
 from app.components.embedder import Embedder
+from app.components.photo_tags import build_photo_tags
 from app.components.track_mood_resolver import TrackMoodResolver
 from app.db.repositories.embedding_repository import EmbeddingStore, RecordEmbeddingData
 from app.exceptions import ClipError
 from app.schemas.embeddings import EmbeddingGenerateRequest, EmbeddingTrack
 
 logger = logging.getLogger("muro.embedding")
-
-# photo_tags에서 장소(mood_tags.yaml) 태그의 키. 다축 태그는 축 이름
-# (사진 종류·대상·분위기·표정·감정)을 키로 쓴다
-SCENE_KEY = "장소"
 
 
 class EmbeddingService:
@@ -74,7 +71,7 @@ class EmbeddingService:
         except ClipError:
             logger.warning("사진 태그를 만들지 못해 태그 없이 저장해요.", exc_info=True)
             return None
-        return {**({SCENE_KEY: scene[0]} if scene else {}), **axes}
+        return build_photo_tags(scene, axes)
 
     async def _embed_music(self, track: EmbeddingTrack) -> tuple[str, list[float]]:
         """같은 곡은 무드를 한 번만 만든다 — 스포티파이 곡 ID로 캐시를 먼저 찾는다."""

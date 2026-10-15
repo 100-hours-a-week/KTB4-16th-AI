@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from app.components.photo_tags import split_photo_tags
 from app.components.report_summarizer import PhotoAxisStat, ReportSummarizer
 from app.config import get_settings
 from app.db.mysql import get_sessionmaker as get_mysql_sessionmaker
@@ -15,8 +16,9 @@ from app.db.repositories.report_repository import (
     MonthlyReportRepository,
     RecordSummary,
     ReportRepository,
+    StoredPhotoTags,
 )
-from app.dependencies import get_clients, get_clip_tagger
+from app.dependencies import get_clients, get_clip_tagger, get_tag_version
 from app.exceptions import ClipError
 
 JOB_TYPE = "report"
@@ -104,11 +106,13 @@ async def handle(payload: dict[str, Any]) -> None:
         record_ids = [r.record_id for r in records]
         moods = await repo.get_mood_texts(record_ids)
         image_vectors = await repo.get_image_embeddings(record_ids)
+        stored_tags = await repo.get_photo_tags(record_ids)
         stats = await repo.get_stats(user_id=user_id, year=year, month=month)
 
-    photo_tags_by_record = await _classify_photos(image_vectors)
+    tag_version = get_tag_version()
+    photo_tags_by_record = await _classify_photos(image_vectors, stored_tags, tag_version)
     photo_category_distribution = _category_distribution(photo_tags_by_record)
-    photo_axes = _axis_stats(await _classify_axes(image_vectors))
+    photo_axes = _axis_stats(await _classify_axes(image_vectors, stored_tags, tag_version))
     record_lines = _build_record_lines(records, moods, photo_tags_by_record)
 
     clients = get_clients()
@@ -279,20 +283,38 @@ def _build_record_lines(
 OTHER_CATEGORY = "기타"  # 카테고리 목록 자체가 비어있는 등, 정말 예외적인 경우의 방어용
 
 
-async def _classify_photos(image_vectors: dict[int, list[float]]) -> dict[int, list[str]]:
-    """레코드별 사진 카테고리 태그(최대 1개). CLIP을 다시 호출하지 않는다.
+def _saved_tags(
+    stored_tags: dict[int, StoredPhotoTags] | None, tag_version: str | None, record_id: int
+) -> dict[str, str] | None:
+    """기능4가 저장해 둔 사진 태그. 지금 태그 목록으로 분류된 것일 때만 돌려준다.
 
-    ClipTagger.tag_from_vector()는 이미 계산된 벡터와 캐싱된 카테고리 라벨
-    벡터의 코사인 유사도만 비교한다. develop 병합본엔 임계치를 끄는 옵션이
-    없어져서(항상 THRESHOLD 적용), 임계치 미달이면 빈 리스트가 올 수 있다 —
-    그 경우 _category_distribution이 OTHER_CATEGORY("기타")로 처리한다.
+    저장된 태그가 없거나(NULL: 예전에 저장된 행·분류 실패), 다른 태그 목록으로 분류된 것이면
+    (버전이 다름) None — 그 사진은 호출부가 저장된 벡터로 다시 분류한다.
     """
-    if not image_vectors:
-        return {}
+    saved = (stored_tags or {}).get(record_id)
+    if saved is None or saved.tags is None or tag_version is None:
+        return None
+    return saved.tags if saved.tag_version == tag_version else None
 
-    tagger = get_clip_tagger()
+
+async def _classify_photos(
+    image_vectors: dict[int, list[float]],
+    stored_tags: dict[int, StoredPhotoTags] | None = None,
+    tag_version: str | None = None,
+) -> dict[int, list[str]]:
+    """레코드별 사진 카테고리 태그(최대 1개). 사진마다 CLIP을 다시 호출하지 않는다.
+
+    저장된 태그가 있으면 그 "장소" 태그를 쓰고, 없으면 ClipTagger.tag_from_vector()로 이미
+    계산된 벡터와 캐싱된 카테고리 라벨 벡터의 코사인 유사도만 비교한다. 어느 쪽이든 임계치 미달이면
+    빈 리스트가 오고, 그 경우 _category_distribution이 OTHER_CATEGORY("기타")로 처리한다.
+    """
     result: dict[int, list[str]] = {}
+    tagger = None
     for record_id, vector in image_vectors.items():
+        if (saved := _saved_tags(stored_tags, tag_version, record_id)) is not None:
+            result[record_id] = split_photo_tags(saved)[0]
+            continue
+        tagger = tagger or get_clip_tagger()
         result[record_id] = await tagger.tag_from_vector(vector, top_k=1)
     return result
 
@@ -302,24 +324,36 @@ async def _classify_photos(image_vectors: dict[int, list[float]]) -> dict[int, l
 MIN_AXIS_PHOTOS = 3
 
 
-async def _classify_axes(image_vectors: dict[int, list[float]]) -> dict[int, dict[str, str]]:
-    """레코드별 다축 태그(축 이름 → 태그). 저장된 벡터만 쓰므로 사진마다 CLIP을 부르지 않는다.
+async def _classify_axes(
+    image_vectors: dict[int, list[float]],
+    stored_tags: dict[int, StoredPhotoTags] | None = None,
+    tag_version: str | None = None,
+) -> dict[int, dict[str, str]]:
+    """레코드별 다축 태그(축 이름 → 태그). 저장된 태그를 우선 쓰고, 없으면 저장된 벡터로 분류한다.
 
-    CLIP을 부르는 건 프로세스에서 처음 쓸 때 태그 문장을 인코딩하는 한 번뿐이다. 그게 실패해도
-    다축 태그는 회고 글을 풍성하게 하는 부가 정보라서, RECAP 전체를 실패시키지 않고 건너뛴다.
+    저장된 태그만으로 충분하면 CLIP도 태그 벡터 준비도 필요 없다. 다시 분류해야 하는 사진이 있을
+    때만 프로세스에서 처음 쓸 때 태그 문장을 인코딩하는데, 그게 실패해도(ClipError) 다축 태그는
+    회고 글을 풍성하게 하는 부가 정보라서 RECAP 전체를 실패시키지 않는다. 그 사진들만 건너뛴다.
     """
-    if not image_vectors:
-        return {}
+    result: dict[int, dict[str, str]] = {}
+    to_compute: dict[int, list[float]] = {}
+    for record_id, vector in image_vectors.items():
+        if (saved := _saved_tags(stored_tags, tag_version, record_id)) is not None:
+            result[record_id] = split_photo_tags(saved)[1]
+        else:
+            to_compute[record_id] = vector
 
-    tagger = get_clip_tagger()
-    try:
-        return {
-            record_id: await tagger.classify_axes(vector)
-            for record_id, vector in image_vectors.items()
-        }
-    except ClipError:
-        logger.warning("다축 태그 벡터를 준비하지 못해 사진 특징 없이 요약해요.", exc_info=True)
-        return {}
+    if to_compute:
+        tagger = get_clip_tagger()
+        try:
+            for record_id, vector in to_compute.items():
+                result[record_id] = await tagger.classify_axes(vector)
+        except ClipError:
+            logger.warning(
+                "다축 태그 벡터를 준비하지 못해 일부 사진은 특징 없이 요약해요.", exc_info=True
+            )
+
+    return {record_id: result[record_id] for record_id in image_vectors if record_id in result}
 
 
 def _axis_stats(axes_by_record: dict[int, dict[str, str]]) -> dict[str, PhotoAxisStat]:

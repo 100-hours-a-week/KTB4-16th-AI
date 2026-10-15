@@ -1,6 +1,7 @@
 import pytest
 
 from app.components.report_summarizer import PhotoAxisStat
+from app.db.repositories.report_repository import StoredPhotoTags
 from app.exceptions import ClipError
 from app.workers import report_worker
 from app.workers.report_worker import (
@@ -9,6 +10,7 @@ from app.workers.report_worker import (
     PhotoSceneStat,
     _axis_stats,
     _classify_axes,
+    _classify_photos,
     _describe_weather,
     _photo_scene_stats,
 )
@@ -159,3 +161,115 @@ async def test_classify_axes_does_not_touch_clip_when_there_are_no_photos(monkey
     monkeypatch.setattr(report_worker, "get_clip_tagger", boom)
 
     assert await _classify_axes({}) == {}
+
+
+# --- 저장된 태그를 읽는 경로 ---------------------------------------------------------
+
+VERSION = "tv-now"
+SAVED = StoredPhotoTags(
+    tags={"장소": "카페", "사진 종류": "진짜 사진", "대상": "여러 사람"}, tag_version=VERSION
+)
+
+
+class RecordingTagger:
+    """벡터로 다시 분류할 때만 불린다. 불린 사진을 기록해서 "다시 계산했는가"를 확인한다."""
+
+    def __init__(self, error: Exception | None = None):
+        self._error = error
+        self.scene_calls: list[list[float]] = []
+        self.axes_calls: list[list[float]] = []
+
+    async def tag_from_vector(self, vector, top_k=3, **kwargs):
+        self.scene_calls.append(vector)
+        return ["노을"]
+
+    async def classify_axes(self, vector):
+        if self._error:
+            raise self._error
+        self.axes_calls.append(vector)
+        return {"사진 종류": "그림·짤", "표정·감정": "웃음·신남"}
+
+
+def _tagger_must_not_be_built(monkeypatch):
+    def boom():
+        raise AssertionError("저장된 태그만으로 충분하면 태거를 만들 필요도 없다")
+
+    monkeypatch.setattr(report_worker, "get_clip_tagger", boom)
+
+
+async def test_photos_use_the_saved_scene_tag_without_reclassifying(monkeypatch):
+    _tagger_must_not_be_built(monkeypatch)
+
+    result = await _classify_photos({1: [0.1]}, {1: SAVED}, VERSION)
+
+    assert result == {1: ["카페"]}
+
+
+async def test_photos_without_saved_tags_are_classified_from_the_vector(monkeypatch):
+    tagger = RecordingTagger()
+    monkeypatch.setattr(report_worker, "get_clip_tagger", lambda: tagger)
+    stored = {
+        1: StoredPhotoTags(tags=None, tag_version=None),  # 예전에 저장된 행·분류 실패
+        2: StoredPhotoTags(tags=SAVED.tags, tag_version="tv-old"),  # 다른 태그 목록으로 분류됨
+    }
+
+    result = await _classify_photos({1: [0.1], 2: [0.2], 3: [0.3]}, stored, VERSION)
+
+    assert result == {1: ["노을"], 2: ["노을"], 3: ["노을"]}  # 3은 저장된 행 자체가 없다
+    assert tagger.scene_calls == [[0.1], [0.2], [0.3]]
+
+
+async def test_saved_empty_tags_mean_no_confident_tag_not_reclassify(monkeypatch):
+    """{}는 "분류했지만 붙일 태그가 없음"이다. 다시 계산하지 않고 기타로 센다."""
+    _tagger_must_not_be_built(monkeypatch)
+    stored = {1: StoredPhotoTags(tags={}, tag_version=VERSION)}
+
+    assert await _classify_photos({1: [0.1]}, stored, VERSION) == {1: []}
+
+
+async def test_photos_mix_saved_and_recomputed_in_one_run(monkeypatch):
+    tagger = RecordingTagger()
+    monkeypatch.setattr(report_worker, "get_clip_tagger", lambda: tagger)
+
+    result = await _classify_photos({1: [0.1], 2: [0.2]}, {1: SAVED}, VERSION)
+
+    assert result == {1: ["카페"], 2: ["노을"]}
+    assert tagger.scene_calls == [[0.2]]  # 저장된 1번은 다시 계산하지 않았다
+
+
+async def test_without_a_current_tag_version_nothing_saved_is_trusted(monkeypatch):
+    tagger = RecordingTagger()
+    monkeypatch.setattr(report_worker, "get_clip_tagger", lambda: tagger)
+
+    result = await _classify_photos({1: [0.1]}, {1: SAVED}, None)
+
+    assert result == {1: ["노을"]}
+
+
+async def test_axes_use_saved_tags_and_leave_out_the_scene_tag(monkeypatch):
+    _tagger_must_not_be_built(monkeypatch)
+
+    result = await _classify_axes({1: [0.1]}, {1: SAVED}, VERSION)
+
+    assert result == {1: {"사진 종류": "진짜 사진", "대상": "여러 사람"}}  # "장소"는 다축이 아님
+
+
+async def test_axes_recompute_only_the_photos_without_usable_saved_tags(monkeypatch):
+    tagger = RecordingTagger()
+    monkeypatch.setattr(report_worker, "get_clip_tagger", lambda: tagger)
+
+    result = await _classify_axes({2: [0.2], 1: [0.1]}, {1: SAVED}, VERSION)
+
+    assert list(result) == [2, 1]  # 사진 순서는 그대로
+    assert result[1] == {"사진 종류": "진짜 사진", "대상": "여러 사람"}
+    assert result[2] == {"사진 종류": "그림·짤", "표정·감정": "웃음·신남"}
+    assert tagger.axes_calls == [[0.2]]
+
+
+async def test_axes_clip_failure_keeps_saved_tags_and_skips_only_the_rest(monkeypatch):
+    tagger = RecordingTagger(error=ClipError("태그 문장 인코딩 실패"))
+    monkeypatch.setattr(report_worker, "get_clip_tagger", lambda: tagger)
+
+    result = await _classify_axes({1: [0.1], 2: [0.2]}, {1: SAVED}, VERSION)
+
+    assert result == {1: {"사진 종류": "진짜 사진", "대상": "여러 사람"}}
