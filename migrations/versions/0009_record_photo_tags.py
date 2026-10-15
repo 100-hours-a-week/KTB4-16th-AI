@@ -7,8 +7,8 @@
 어떤 태그 목록으로 분류했는지는 model_versions의 tagVersion에 남긴다.
 기존 행은 NULL로 두고 값을 채우지 않는다(저장된 이미지 벡터로 나중에 다시 계산할 수 있다).
 
-Revision ID: 0008
-Revises: 0007
+Revision ID: 0009
+Revises: 0008
 Create Date: 2026-10-15
 """
 
@@ -18,8 +18,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects.postgresql import JSONB
 
-revision: str = "0008"
-down_revision: str | None = "0007"
+revision: str = "0009"
+down_revision: str | None = "0008"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

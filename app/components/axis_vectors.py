@@ -4,13 +4,18 @@
 프로세스가 켜져 있는 동안 한 번만 인코딩하고 메모리에 들고 있는다(category_vectors.py와 같다).
 """
 
+import asyncio
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 
 from app.clients.clip_client import ClipClient
+from app.components.tag_vector_file import PrecomputedVectors
 from app.components.vector_math import cosine_similarity, normalized_mean
+
+logger = logging.getLogger("muro.axis_vectors")
 
 # app/components/axis_vectors.py 기준 app/axis_tags.yaml
 DEFAULT_AXES_PATH = Path(__file__).resolve().parent.parent / "axis_tags.yaml"
@@ -91,10 +96,18 @@ def load_axis_specs(path: Path) -> list[AxisSpec]:
 class AxisVectors:
     """축별 태그 벡터 캐시. `load()`는 첫 사용 때 한 번 부른다."""
 
-    def __init__(self, clip: ClipClient, path: Path = DEFAULT_AXES_PATH):
+    def __init__(
+        self,
+        clip: ClipClient,
+        path: Path = DEFAULT_AXES_PATH,
+        precomputed: PrecomputedVectors | None = None,
+    ):
         self._clip = clip
         self._path = path
+        self._precomputed = precomputed
         self._axes: list[LoadedAxis] = []
+        # 요청 여러 개가 동시에 처음 부르면 각자 CLIP을 부르지 않고 한 번만 계산하게 한다
+        self._lock = asyncio.Lock()
 
     @property
     def loaded(self) -> bool:
@@ -120,8 +133,39 @@ class AxisVectors:
         return [axis for axis in self._axes if axis.when == root_tag]
 
     async def load(self) -> None:
-        specs = load_axis_specs(self._path)
+        async with self._lock:
+            if self._axes:  # 기다리는 동안 다른 요청이 이미 끝냈다
+                return
+            specs = load_axis_specs(self._path)
+            self._axes = self._from_precomputed(specs) or await self._encode(specs)
+
+    def _from_precomputed(self, specs: list[AxisSpec]) -> list[LoadedAxis] | None:
+        """미리 계산한 벡터가 모든 축·태그에 있고 CLIP 차원과 맞을 때만 쓴다. 아니면 None."""
+        if self._precomputed is None:
+            return None
+        dim = getattr(self._clip, "dim", None)
+        axes = []
+        for spec in specs:
+            by_tag = self._precomputed.axes.get(spec.key, {})
+            vectors = [by_tag.get(tag.ko) for tag in spec.tags]
+            if any(v is None or (dim is not None and len(v) != dim) for v in vectors):
+                return None
+            tags = tuple(
+                AxisTagVector(ko=tag.ko, vector=vector)
+                for tag, vector in zip(spec.tags, vectors, strict=True)  # type: ignore[arg-type]
+            )
+            axes.append(
+                LoadedAxis(key=spec.key, ko=spec.ko, margin=spec.margin, when=spec.when, tags=tags)
+            )
+        return axes
+
+    async def _encode(self, specs: list[AxisSpec]) -> list[LoadedAxis]:
         sentences = [s for spec in specs for tag in spec.tags for s in tag.sentences]
+        logger.warning(
+            "미리 계산한 다축 태그 벡터를 쓸 수 없어 CLIP으로 문장 %d개를 인코딩해요 "
+            "(몇 분 걸릴 수 있음)",
+            len(sentences),
+        )
         vectors = iter(await self._clip.encode_text(sentences))
         axes = []
         for spec in specs:
@@ -134,7 +178,7 @@ class AxisVectors:
                     key=spec.key, ko=spec.ko, margin=spec.margin, when=spec.when, tags=tuple(tags)
                 )
             )
-        self._axes = axes
+        return axes
 
 
 def pick_tag(image_vector: list[float], axis: LoadedAxis) -> str | None:

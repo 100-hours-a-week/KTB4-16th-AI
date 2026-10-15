@@ -17,10 +17,11 @@ def test_migrations_have_a_single_head():
     assert len(_script().get_heads()) == 1
 
 
-def test_photo_tags_migration_follows_the_previous_head():
-    revision = _script().get_revision("0008")
+def test_photo_tags_migration_follows_the_balance_daily_migration():
+    """0008은 기능6(오늘의 질문 배치)이 먼저 썼다. 번호가 겹쳐서 이쪽을 0009로 올렸다."""
+    revision = _script().get_revision("0009")
 
-    assert revision.down_revision == "0007"
+    assert revision.down_revision == "0008"
 
 
 def test_photo_tags_is_stored_as_sql_null_when_empty():
