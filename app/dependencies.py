@@ -1,5 +1,6 @@
 """공통 의존성: 내부 인증, DB 세션, 외부 클라이언트 조립."""
 
+import logging
 import secrets
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -42,6 +43,8 @@ from app.components.question_generator import QuestionGenerator
 from app.components.question_parser import QuestionParser
 from app.components.reranker import Reranker
 from app.components.song_curator import SongCurator
+from app.components.tag_vector_file import PrecomputedVectors, read_vectors_file
+from app.components.tag_version import compute_tag_version
 from app.components.vector_search import MemoryVectorSearch, RecordSearch, VectorSearch
 from app.config import get_settings
 from app.db import mysql, postgres
@@ -71,6 +74,9 @@ async def verify_internal_token(x_internal_token: str | None = Header(default=No
     expected = get_settings().internal_token
     if not secrets.compare_digest(x_internal_token or "", expected):
         raise UnauthorizedError()
+
+
+logger = logging.getLogger("muro.dependencies")
 
 
 @dataclass(frozen=True)
@@ -180,16 +186,41 @@ def get_spotify_search_client() -> SpotifySearchClient:
 
 
 @lru_cache
+def get_precomputed_vectors() -> PrecomputedVectors | None:
+    """미리 계산해 둔 태그 벡터(app/tag_vectors.json). 쓸 수 없으면 None.
+
+    파일이 없거나, 지금의 태그 정의·CLIP 모델과 버전이 다르면 쓰지 않는다. 그 경우 아래
+    CategoryVectors·AxisVectors가 첫 사용 때 CLIP으로 직접 계산하는데, 몇 분 걸린다.
+    """
+    vectors = read_vectors_file()
+    if vectors is None:
+        logger.warning("미리 계산한 태그 벡터 파일(app/tag_vectors.json)이 없거나 깨져 있어요.")
+        return None
+    expected = compute_tag_version(get_clients().clip.model)
+    if vectors.version != expected:
+        logger.warning(
+            "미리 계산한 태그 벡터의 버전(%s)이 지금 태그 정의·CLIP 모델(%s, 버전 %s)과 달라서 "
+            "쓰지 않아요. scripts/build_tag_vectors.py로 다시 만드세요.",
+            vectors.version,
+            get_clients().clip.model,
+            expected,
+        )
+        return None
+    return vectors
+
+
+@lru_cache
 def get_category_vectors() -> CategoryVectors:
-    """태그 벡터 캐시는 프로세스당 1개. 첫 호출 때 CategoryVectors.load()가 CLIP을
-    부르고, 그 뒤로는 재사용된다."""
-    return CategoryVectors(get_clients().clip)
+    """태그 벡터 캐시는 프로세스당 1개. 미리 계산한 파일이 있으면 그걸 읽고, 없으면 첫 호출 때
+    CategoryVectors.load()가 CLIP을 부른다. 그 뒤로는 재사용된다."""
+    return CategoryVectors(get_clients().clip, precomputed=get_precomputed_vectors())
 
 
 @lru_cache
 def get_axis_vectors() -> AxisVectors:
-    """다축 태그 벡터 캐시도 프로세스당 1개. 첫 사용 때 태그 문장을 CLIP으로 인코딩한다."""
-    return AxisVectors(get_clients().clip)
+    """다축 태그 벡터 캐시도 프로세스당 1개. 미리 계산한 파일이 있으면 그걸 읽고, 없으면 첫 사용 때
+    태그 문장을 CLIP으로 인코딩한다."""
+    return AxisVectors(get_clients().clip, precomputed=get_precomputed_vectors())
 
 
 def get_clip_tagger() -> ClipTagger:
