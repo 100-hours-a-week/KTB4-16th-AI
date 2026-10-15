@@ -55,6 +55,30 @@ class JobRepository:
         await self._session.commit()
         return job_id
 
+    async def enqueue_if_absent(
+        self, *, job_type: str, dedupe_key: str, payload: dict[str, Any], max_attempts: int
+    ) -> bool:
+        """같은 (job_type, dedupe_key)가 이미 있으면(상태 무관) 아무것도 안 한다.
+
+        매일 배치처럼 "하루에 한 번만" 넣어야 하는 작업용 — enqueue는 끝난 작업도 다시
+        pending으로 돌리지만, 이건 이미 돌았거나 도는 중이면 그대로 둔다. 서버가 2대여도
+        유니크 키 덕분에 한 번만 들어간다. 새로 넣었으면 True.
+        """
+        stmt = (
+            insert(AiJob)
+            .values(
+                job_type=job_type,
+                dedupe_key=dedupe_key,
+                payload=payload,
+                max_attempts=max_attempts,
+            )
+            .on_conflict_do_nothing(constraint="uq_ai_jobs_type_key")
+            .returning(AiJob.id)
+        )
+        inserted = (await self._session.execute(stmt)).scalar_one_or_none()
+        await self._session.commit()
+        return inserted is not None
+
     async def claim(self, *, stale_after_seconds: int) -> ClaimedJob | None:
         """실행할 작업 1건을 잠그고 running으로 바꾼다.
 
