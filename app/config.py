@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     gateway_port: int = 8000
     moderation_port: int = 8001
 
+    # Prometheus 지표 (GET /metrics). 인증 없이 열리므로 외부에 노출되지 않는 내부망에서만
+    # 가져가야 한다. 인프라 사정으로 꺼야 할 때 METRICS_ENABLED=false
+    metrics_enabled: bool = True
+
     # 워커 (Postgres 기반 작업 큐)
     # 블루그린 대기 VM은 false — 워커는 LB를 안 거치고 공유 DB 큐에서 직접 작업을 가져가서,
     # 대기 VM에서도 돌면 다른 버전 코드가 운영 작업을 처리해 버린다. CD가 트래픽 전환 때 바꾼다.
