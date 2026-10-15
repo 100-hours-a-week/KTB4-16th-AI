@@ -42,6 +42,7 @@ from app.components.question_generator import QuestionGenerator
 from app.components.question_parser import QuestionParser
 from app.components.reranker import Reranker
 from app.components.song_curator import SongCurator
+from app.components.tag_version import compute_tag_version
 from app.components.vector_search import MemoryVectorSearch, RecordSearch, VectorSearch
 from app.config import get_settings
 from app.db import mysql, postgres
@@ -190,6 +191,12 @@ def get_category_vectors() -> CategoryVectors:
 def get_axis_vectors() -> AxisVectors:
     """다축 태그 벡터 캐시도 프로세스당 1개. 첫 사용 때 태그 문장을 CLIP으로 인코딩한다."""
     return AxisVectors(get_clients().clip)
+
+
+@lru_cache
+def get_tag_version() -> str:
+    """저장하는 사진 태그가 어떤 태그 목록·CLIP 모델로 분류됐는지 알려 주는 값."""
+    return compute_tag_version(get_clients().clip.model)
 
 
 def get_clip_tagger() -> ClipTagger:
