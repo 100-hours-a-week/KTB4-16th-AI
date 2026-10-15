@@ -1,0 +1,54 @@
+# 로컬 개발용: pgvector + 마이그레이션 + ① gateway + ③ worker
+# 실행: docker compose -f docker-compose.dev.yml up --build
+x-app: &app
+  build: .
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DATABASE_URL: postgresql+asyncpg://muro:muro@postgres:5432/muro_ai
+  volumes:
+    - ./app:/app/app
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: muro
+      POSTGRES_PASSWORD: muro
+      POSTGRES_DB: muro_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U muro -d muro_ai"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *app
+    command: alembic upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  gateway:
+    <<: *app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *app
+    command: python -m app.worker_main
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
