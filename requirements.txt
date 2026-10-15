@@ -16,3 +16,7 @@ pyyaml>=6.0,<7
 # 모니터링: Prometheus 지표 수집 (GET /metrics)
 prometheus-fastapi-instrumentator>=8.1,<9
 prometheus-client>=0.26,<1
+# 기능6 모더레이션 모델 추론 (PyTorch 없이 ONNX)
+onnxruntime>=1.19,<2
+tokenizers>=0.20,<1
+numpy>=1.26,<3

@@ -34,7 +34,7 @@ from app.clients.llm_client import LLMClient
 from app.components.music_tags import GENRE_VOCAB, MOOD_VOCAB
 from app.exceptions import LLMError
 
-PROMPT_VERSION = "song-curate-v6"
+PROMPT_VERSION = "song-curate-v7"
 
 # Spotify 확인 단계에서 일부가 탈락하므로(일반 6~7/8, 인디 2~4/8 실측) 최종 5곡보다 넉넉히 받는다.
 CANDIDATE_COUNT = 10
