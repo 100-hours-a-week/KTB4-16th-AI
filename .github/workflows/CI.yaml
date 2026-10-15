@@ -246,6 +246,7 @@ jobs:
           BACKEND_MYSQL_URL=${{ secrets.BACKEND_MYSQL_URL_Develop || secrets.BACKEND_MYSQL_URL }}
           BACKEND_INTERNAL_URL=${{ secrets.BACKEND_INTERNAL_URL_Develop || secrets.BACKEND_INTERNAL_URL }}
           RUN_WORKER=true
+          GCS_PHOTO_BUCKET=${{ secrets.GCS_PHOTO_BUCKET_Develop }}
           ENVEOF
 
       # 4. env 파일을 develop VM으로 전송하고, 새 이미지를 pull해서 ai 컨테이너만 교체한다.
