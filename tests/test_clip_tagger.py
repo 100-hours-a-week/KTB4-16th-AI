@@ -4,7 +4,8 @@ import pytest
 
 from app.components.axis_vectors import AxisVectors
 from app.components.category_vectors import CategoryVectors
-from app.components.clip_tagger import ClipTagger
+from app.components.clip_tagger import ClipTagger, PhotoAnalysis
+from app.exceptions import ClipError
 
 FIXTURE_YAML = Path(__file__).parent / "fixtures" / "mood_tags_sample.yaml"
 
@@ -224,3 +225,76 @@ async def test_axis_vectors_load_once_across_calls():
     await tagger.tag_from_vector([1.0, 0, 1.0, 0, 0, 0], axis="kind")
 
     assert client.text_calls == 1
+
+
+# --- analyze (기능3) -----------------------------------------------------------
+
+
+class AnalyzeClient(AxisClipClient):
+    """장소 라벨과 다축 문장을 모두 인코딩하고, 이미지 벡터를 고정해 돌려준다."""
+
+    def __init__(self, image_vector: list[float]):
+        super().__init__()
+        self._image_vector = image_vector
+        self.image_calls = 0
+
+    async def encode_image(self, image_url: str) -> list[float]:
+        self.image_calls += 1
+        return self._image_vector
+
+    async def encode_text(self, texts: list[str]) -> list[list[float]]:
+        scene = {"sunset": [0, 0, 1.0, 0, 0, 0], "night street": [0, 0, 0, 1.0, 0, 0]}
+        return [scene[t] if t in scene else AXIS_TEXT_VECTORS[t] for t in texts]
+
+
+async def test_analyze_gives_scene_tags_and_axes_from_one_image_encoding():
+    client = AnalyzeClient(image_vector=[1.0, 0, 1.0, 0, 0, 0])  # 진짜 사진 + 음식/노을 방향
+    tagger = ClipTagger(
+        client, CategoryVectors(client, path=FIXTURE_YAML), AxisVectors(client, path=AXIS_YAML)
+    )
+
+    analysis = await tagger.analyze("https://img/1.jpg")
+
+    assert analysis.scene_tags == ["노을"]
+    assert analysis.axes == {"사진 종류": "진짜 사진", "대상": "음식"}
+    assert client.image_calls == 1  # 사진 CLIP 호출은 한 번만
+
+
+async def test_analyze_keeps_scene_tags_when_axis_vectors_cannot_be_made():
+    """태그 문장 인코딩이 실패해도(ClipError) 장소 태그로 추천을 계속한다."""
+    client = AnalyzeClient(image_vector=[1.0, 0, 1.0, 0, 0, 0])
+
+    class BrokenAxisClient(AxisClipClient):
+        async def encode_text(self, texts: list[str]) -> list[list[float]]:
+            raise ClipError("태그 문장 인코딩 실패")
+
+    tagger = ClipTagger(
+        client,
+        CategoryVectors(client, path=FIXTURE_YAML),
+        AxisVectors(BrokenAxisClient(), path=AXIS_YAML),
+    )
+
+    analysis = await tagger.analyze("https://img/1.jpg")
+
+    assert analysis == PhotoAnalysis(scene_tags=["노을"], axes={})
+
+
+async def test_analyze_without_axis_vectors_returns_scene_tags_only():
+    client = AnalyzeClient(image_vector=[1.0, 0, 1.0, 0, 0, 0])
+    tagger = ClipTagger(client, CategoryVectors(client, path=FIXTURE_YAML))
+
+    analysis = await tagger.analyze("https://img/1.jpg")
+
+    assert analysis == PhotoAnalysis(scene_tags=["노을"], axes={})
+
+
+async def test_analyze_still_raises_when_the_image_itself_fails():
+    class ImageFails(AnalyzeClient):
+        async def encode_image(self, image_url: str) -> list[float]:
+            raise ClipError("이미지 인코딩 실패")
+
+    client = ImageFails(image_vector=[])
+    tagger = ClipTagger(client, CategoryVectors(client, path=FIXTURE_YAML))
+
+    with pytest.raises(ClipError):
+        await tagger.analyze("https://img/1.jpg")

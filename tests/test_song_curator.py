@@ -1,6 +1,13 @@
 import pytest
 
-from app.components.song_curator import SongCurator
+from app.components.axis_vectors import DEFAULT_AXES_PATH, load_axis_specs
+from app.components.song_curator import (
+    EXPRESSION_AXIS,
+    KIND_AXIS,
+    MEME_KIND,
+    SongCurator,
+    photo_situation,
+)
 from app.exceptions import LLMError
 
 
@@ -115,3 +122,55 @@ async def test_old_genre_names_are_dropped():
     curation = await SongCurator(ScriptedLLM(response)).curate("상황: 파티")
     assert curation.situation_genres == ("랩/힙합",)
     assert curation.songs[0].genre == ""
+
+
+def test_situation_without_axes_is_the_old_sentence():
+    assert photo_situation(["카페", "실내"]) == "사진에서 뽑은 분위기 태그: 카페, 실내"
+    assert photo_situation(["카페"], {}) == "사진에서 뽑은 분위기 태그: 카페"
+
+
+def test_situation_of_a_real_photo_lists_kind_scene_and_other_axes():
+    axes = {"사진 종류": "진짜 사진", "대상": "여러 사람", "분위기": "밤의 따뜻한 조명"}
+
+    assert photo_situation(["카페"], axes) == (
+        "사진에서 뽑은 정보 — 사진 종류: 진짜 사진 / 장소 태그: 카페 / "
+        "대상: 여러 사람 / 분위기: 밤의 따뜻한 조명"
+    )
+
+
+def test_situation_of_a_meme_with_expression_drops_the_meaningless_scene_tag():
+    axes = {"사진 종류": "그림·짤", "표정·감정": "슬픔·눈물"}
+
+    situation = photo_situation(["콘서트"], axes)
+
+    assert situation == "사진에서 뽑은 정보 — 사진 종류: 그림·짤 / 표정·감정: 슬픔·눈물"
+    assert "콘서트" not in situation
+
+
+def test_situation_of_a_meme_without_expression_keeps_the_scene_tag():
+    """표정이 불확실하면 알려 줄 게 장소 태그뿐이라 그대로 보낸다."""
+    assert photo_situation(["콘서트"], {"사진 종류": "그림·짤"}) == (
+        "사진에서 뽑은 정보 — 사진 종류: 그림·짤 / 장소 태그: 콘서트"
+    )
+
+
+async def test_curate_from_tags_sends_the_axes_to_the_llm():
+    llm = ScriptedLLM(HAPPY_RESPONSE)
+
+    await SongCurator(llm).curate_from_tags(
+        ["카페"], axes={"사진 종류": "진짜 사진", "대상": "음식·음료"}
+    )
+
+    assert llm.last_prompt == (
+        "사진에서 뽑은 정보 — 사진 종류: 진짜 사진 / 장소 태그: 카페 / 대상: 음식·음료"
+    )
+
+
+def test_axis_names_used_in_the_situation_exist_in_the_axes_file():
+    """song_curator의 이름 상수가 axis_tags.yaml과 달라지면 그림·짤 규칙이 조용히 안 먹는다."""
+    specs = {s.ko: s for s in load_axis_specs(DEFAULT_AXES_PATH)}
+
+    assert KIND_AXIS in specs
+    assert MEME_KIND in {t.ko for t in specs[KIND_AXIS].tags}
+    assert EXPRESSION_AXIS in specs
+    assert specs[EXPRESSION_AXIS].when == MEME_KIND
