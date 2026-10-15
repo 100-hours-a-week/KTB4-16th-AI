@@ -1,12 +1,13 @@
 """AI PostgreSQL 테이블 정의."""
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     ARRAY,
     BigInteger,
+    Date,
     DateTime,
     Index,
     Integer,
@@ -141,4 +142,41 @@ class MonthlyReport(Base):
     ai_recap_text: Mapped[str] = mapped_column(Text)
     # 백엔드 photoScenes — [{"tag": "카페", "count": 6, "ratio": 43}, ...] 형태, 비중 높은 순
     photo_scenes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default="[]")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserMusicGenre(Base):
+    """기능6 사용자별 취향 투표 그룹 — 매일 배치가 계산, 백엔드는 뷰(be_user_music_genres)로 읽는다.
+
+    값은 13개 장르 + '공통'. 같은 그룹 사용자끼리 같은 질문을 받고 그 안에서 매칭된다.
+    """
+
+    __tablename__ = "user_music_genres"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    music_genre: Mapped[str] = mapped_column(String(50))
+    # records: 저장한 곡 장르 1등 / common: 장르 정보가 없거나 그룹 인원이 적어 공통
+    # merged: 공통 그룹도 작아서 가장 큰 장르 그룹에 합쳐짐
+    source: Mapped[str] = mapped_column(String(20))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class VoteQuestion(Base):
+    """기능6 그룹별 오늘의 질문 — 백엔드는 approved만 뷰(be_vote_questions)로 읽는다.
+
+    (question_date, music_genre)마다 approved 질문은 1개 (부분 유니크 인덱스).
+    사람이 검수해서 rejected로 바꾸면 다음 배치가 그 자리를 다시 채운다.
+    """
+
+    __tablename__ = "vote_questions"
+    __table_args__ = (Index("ix_vote_questions_date_genre", "question_date", "music_genre"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    question_date: Mapped[date] = mapped_column(Date)
+    music_genre: Mapped[str] = mapped_column(String(50))
+    question: Mapped[str] = mapped_column(String(100))
+    option_a: Mapped[str] = mapped_column(String(50))
+    option_b: Mapped[str] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(16), server_default="approved")
+    model_version: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -4,6 +4,7 @@ V2: 질문을 장르 그룹(music_genre)별로 만든다. 백엔드가 users.mus
 질문을 보여주고, 같은 질문에 다른 답을 고른 사람끼리 매칭한다.
 """
 
+from datetime import date as Date
 from typing import Literal
 
 from pydantic import Field
@@ -43,3 +44,13 @@ class BalanceQuestion(CamelModel):
 
 class QuestionGenerateResponse(CamelModel):
     questions: list[BalanceQuestion]
+
+
+class DailyBatchRequest(CamelModel):
+    # 비우면 내일(KST). 운영자가 특정 날짜를 다시 돌릴 때 지정
+    date: Date | None = None
+
+
+class DailyBatchQueuedResponse(CamelModel):
+    status: Literal["QUEUED"] = "QUEUED"
+    date: Date

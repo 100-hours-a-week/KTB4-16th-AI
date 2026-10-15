@@ -6,11 +6,12 @@ ai_jobs 큐를 폴링해 job_type별 핸들러로 분기한다. 포트·FastAPI 
 import asyncio
 import logging
 import signal
+from datetime import UTC, datetime
 
 from app.config import get_settings
 from app.db.postgres import get_engine, get_sessionmaker
 from app.db.repositories.job_repository import ClaimedJob, JobRepository
-from app.workers import embedding_worker, report_worker
+from app.workers import balance_daily_worker, embedding_worker, report_worker
 from app.workers.types import JobFinishedHook, JobHandler
 
 logger = logging.getLogger("muro.worker")
@@ -19,6 +20,7 @@ HANDLERS: dict[str, JobHandler] = {
     embedding_worker.JOB_TYPE: embedding_worker.handle,
     report_worker.JOB_TYPE: report_worker.handle,
     report_worker.BATCH_NOTIFY_JOB_TYPE: report_worker.handle_batch_notify,
+    balance_daily_worker.JOB_TYPE: balance_daily_worker.handle,
 }
 
 # 성공이든 최종 실패든 job이 끝나면 부른다. 핸들러 안(성공 경로)에만 두면 실패로
@@ -78,6 +80,22 @@ async def _on_finished(job: ClaimedJob) -> None:
         logger.exception("job %s 후처리 실패 (%s)", job.id, job.job_type)
 
 
+_scheduled: set = set()
+
+
+async def schedule_daily(now: datetime) -> None:
+    """정해진 시각이 되면 매일 배치를 한 번 넣는다. 같은 날짜는 메모리로 한 번 걸러서
+    매 루프마다 DB를 치지 않고, 서버가 여러 대여도 큐의 유니크 키가 한 번만 받는다."""
+    target = balance_daily_worker.due_date(now)
+    if target is None or target in _scheduled:
+        return
+    try:
+        await balance_daily_worker.enqueue_daily(target)
+        _scheduled.add(target)
+    except Exception:
+        logger.exception("기능6 매일 배치 예약 실패 — 다음 루프에서 다시 시도")
+
+
 async def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     settings = get_settings()
@@ -89,6 +107,7 @@ async def main() -> None:
 
     logger.info("worker 시작 (client mode: %s)", settings.ai_client_mode)
     while not stop.is_set():
+        await schedule_daily(datetime.now(UTC))
         try:
             processed = await run_once()
         except Exception:
