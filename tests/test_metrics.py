@@ -54,7 +54,9 @@ def test_path_parameters_are_recorded_as_templates_not_real_ids(metrics_client):
     body = metrics_client.get("/metrics").text
 
     assert 'handler="/api/embeddings/{recordId}"' in body
-    assert "12345" not in body  # 실제 ID가 지표에 남지 않는다
+    # 실제 ID가 지표에 남지 않는다. 숫자만(12345) 찾으면 본문의 긴 소수(요청 시간·시작 시각)에
+    # 우연히 들어 있는 경우에 실패하므로, 경로 전체로 확인한다
+    assert "/api/embeddings/12345" not in body
 
 
 def test_unknown_paths_are_grouped_into_one_series(metrics_client):
@@ -64,7 +66,9 @@ def test_unknown_paths_are_grouped_into_one_series(metrics_client):
     body = metrics_client.get("/metrics").text
 
     assert _counted(body, "none", "GET", "4xx") == 2.0
-    assert "777" not in body and "888" not in body
+    # 숫자만(777, 888) 찾으면 본문의 긴 소수(요청 시간·시작 시각)에 우연히 들어 있는 경우에
+    # 실패한다(약 9%). 경로 전체로 확인한다
+    assert "/no/such/path/777" not in body and "/another/unknown/888" not in body
 
 
 def test_health_checks_and_metrics_reads_are_not_counted(metrics_client):
