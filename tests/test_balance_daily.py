@@ -1,3 +1,4 @@
+import random
 from datetime import UTC, date, datetime
 
 import pytest
@@ -106,6 +107,7 @@ class FakeGenerator:
 class FakeRepo:
     def __init__(self, spares=()):
         self.approved: dict[tuple, str] = {}
+        self.option_pairs: dict[tuple, set] = {}
         self.spares: list[dict] = list(spares)
 
     async def add_question(
@@ -115,6 +117,7 @@ class FakeRepo:
         if key in self.approved:
             return False
         self.approved[key] = question
+        self.option_pairs[key] = {option_a, option_b}
         return True
 
     async def add_spare(
@@ -142,7 +145,17 @@ async def test_fill_approves_first_candidate_and_banks_the_rest_as_spare():
     generator = FakeGenerator([("질문1", "A1", "B1"), ("질문2", "A2", "B2"), ("질문3", "A3", "B3")])
     used = set()
 
-    await w._fill(repo, generator, FakeStatsSource(), DAY, "발라드", used)
+    await w._fill(
+        repo,
+        generator,
+        FakeStatsSource(),
+        DAY,
+        "발라드",
+        used,
+        None,
+        set(),
+        random.Random(),
+    )
 
     assert repo.approved[(DAY, "발라드")] == "질문1"
     assert [s["question"] for s in repo.spares] == ["질문2", "질문3"]
@@ -154,7 +167,17 @@ async def test_fill_skips_candidates_already_used_recently():
     generator = FakeGenerator([("옛 질문", "A1", "B1"), ("새 질문", "A2", "B2")])
     used = {"옛 질문"}
 
-    await w._fill(repo, generator, FakeStatsSource(), DAY, "댄스", used)
+    await w._fill(
+        repo,
+        generator,
+        FakeStatsSource(),
+        DAY,
+        "댄스",
+        used,
+        None,
+        set(),
+        random.Random(),
+    )
 
     assert repo.approved[(DAY, "댄스")] == "새 질문"
 
@@ -165,7 +188,17 @@ async def test_fill_uses_a_banked_spare_when_no_fresh_candidate():
     generator = FakeGenerator([("옛 질문", "A", "B")])
     used = {"옛 질문"}
 
-    await w._fill(repo, generator, FakeStatsSource(), DAY, "인디음악", used)
+    await w._fill(
+        repo,
+        generator,
+        FakeStatsSource(),
+        DAY,
+        "인디음악",
+        used,
+        None,
+        set(),
+        random.Random(),
+    )
 
     assert repo.approved[(DAY, "인디음악")] == "예비 질문"
     assert repo.spares == []  # 한 번 쓴 예비 질문은 다시 안 쓴다
@@ -178,7 +211,17 @@ async def test_fill_raises_when_no_fresh_candidate_and_no_spare():
     used = {"옛 질문"}
 
     with pytest.raises(GroupFailedError):
-        await w._fill(repo, generator, FakeStatsSource(), DAY, "재즈", used)
+        await w._fill(
+            repo,
+            generator,
+            FakeStatsSource(),
+            DAY,
+            "재즈",
+            used,
+            None,
+            set(),
+            random.Random(),
+        )
 
 
 async def test_fill_does_not_reuse_a_spare_from_a_different_genre():
@@ -187,5 +230,105 @@ async def test_fill_does_not_reuse_a_spare_from_a_different_genre():
     used = {"옛 질문"}
 
     with pytest.raises(GroupFailedError):
-        await w._fill(repo, generator, FakeStatsSource(), DAY, "재즈", used)
+        await w._fill(
+            repo,
+            generator,
+            FakeStatsSource(),
+            DAY,
+            "재즈",
+            used,
+            None,
+            set(),
+            random.Random(),
+        )
     assert repo.spares  # 다른 장르 예비는 그대로 남아 있다
+
+
+# ── 곡 대결 우선 (song_battle_generator, 2026-10-16) ───────────────────────
+
+
+def _pool_song(artist, title, genre, popularity):
+    from app.components.song_pool import PoolSong
+
+    return PoolSong(artist, title, (genre,), ("신나는",), popularity)
+
+
+class ExplodingGenerator:
+    """LLM이 불리면 바로 실패 — 곡 대결이 성공하면 LLM을 아예 안 불러야 한다."""
+
+    model = "should-not-be-called"
+
+    async def generate(self, genre, stats, count):
+        raise AssertionError("곡 대결이 되는데 LLM 취향 질문을 불렀다")
+
+
+async def test_fill_uses_song_battle_without_calling_the_llm():
+    from app.components.song_pool import SongPool
+
+    repo = FakeRepo()
+    pool = SongPool([_pool_song("A", "곡1", "댄스", 50), _pool_song("B", "곡2", "댄스", 55)])
+
+    await w._fill(
+        repo,
+        ExplodingGenerator(),
+        FakeStatsSource(),
+        DAY,
+        "댄스",
+        set(),
+        pool,
+        set(),
+        random.Random(0),
+    )
+
+    from app.components.song_battle_generator import TEMPLATES
+
+    key = (DAY, "댄스")
+    assert repo.approved[key] in TEMPLATES
+    pair = repo.option_pairs[key]
+    assert pair == {"A - 곡1", "B - 곡2"}
+
+
+async def test_fill_falls_back_to_llm_when_pool_has_no_battle_pair():
+    """그 장르 곡 풀이 아예 없으면(예: 재즈) 기존 LLM 취향 질문으로 넘어간다."""
+    from app.components.song_pool import SongPool
+
+    repo = FakeRepo()
+    generator = FakeGenerator([("질문1", "A1", "B1")])
+    pool = SongPool([_pool_song("A", "곡1", "댄스", 50)])  # 재즈 곡 없음
+
+    await w._fill(
+        repo,
+        generator,
+        FakeStatsSource(),
+        DAY,
+        "재즈",
+        set(),
+        pool,
+        set(),
+        random.Random(0),
+    )
+
+    assert repo.approved[(DAY, "재즈")] == "질문1"
+
+
+async def test_fill_does_not_repeat_a_battle_pair_used_recently():
+    from app.components.song_pool import SongPool
+
+    repo = FakeRepo()
+    generator = FakeGenerator([("취향 질문", "A1", "B1")])
+    pool = SongPool([_pool_song("A", "곡1", "댄스", 50), _pool_song("B", "곡2", "댄스", 55)])
+    used_pairs = {frozenset({"A - 곡1", "B - 곡2"})}  # 이미 최근에 나온 유일한 짝
+
+    await w._fill(
+        repo,
+        generator,
+        FakeStatsSource(),
+        DAY,
+        "댄스",
+        set(),
+        pool,
+        used_pairs,
+        random.Random(0),
+    )
+
+    assert repo.approved[(DAY, "댄스")] == "취향 질문"
