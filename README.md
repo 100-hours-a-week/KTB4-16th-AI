@@ -1,12 +1,13 @@
 # Muro AI Server
 
-같은 코드베이스로 프로세스 3개를 띄운다.
+같은 코드베이스로 프로세스 4개를 띄운다.
 
 | 프로세스 | 실행 | 역할 |
 |---|---|---|
 | ① AI Gateway | `uvicorn app.main:app --port 8000` | 동기 API + 비동기 작업 접수(202) |
 | ② Moderation | `uvicorn app.moderation_main:app --port 8001` | 채팅 모더레이션 |
-| ③ Worker | `python -m app.worker_main` | `ai_jobs` 큐 소비 (임베딩·RECAP·클러스터) |
+| ③ Embedding | `uvicorn app.embedding_main:app --port 8002` | 텍스트 임베딩(KURE-v1). 컨테이너 안(127.0.0.1)에서만 열림 |
+| ④ Worker | `python -m app.worker_main` | `ai_jobs` 큐 소비 (임베딩·RECAP·클러스터) |
 
 ## 배포 (한 번에 전체 실행)
 
@@ -17,11 +18,11 @@ python -m app.main
 도커 이미지의 기본 실행 명령이 이것이라, 컨테이너만 띄우면 아래 순서로 알아서 올라간다.
 
 1. DB 마이그레이션 (`alembic upgrade head`) — DB가 늦게 뜨면 3초 간격으로 최대 10번 재시도
-2. ① gateway(8000) ② moderation(8001) ③ worker 동시 실행
+2. ① gateway(8000) ② moderation(8001) ③ embedding(8002) ④ worker 동시 실행
 
-셋 중 하나가 죽으면 나머지도 내리고 컨테이너가 종료된다 (재시작 정책 `restart: always` 권장).
+넷 중 하나가 죽으면 나머지도 내리고 컨테이너가 종료된다 (재시작 정책 `restart: always` 권장).
 컨테이너에 넣어야 할 환경변수는 `.env.example` 참고 (`DATABASE_URL`, `INTERNAL_TOKEN`, API 키들).
-포트는 `GATEWAY_PORT`, `MODERATION_PORT`로 바꿀 수 있다.
+포트는 `GATEWAY_PORT`, `MODERATION_PORT`, `EMBEDDING_PORT`로 바꿀 수 있다.
 
 ## 모델 서빙 계획
 
@@ -29,15 +30,20 @@ python -m app.main
 |---|---|---|
 | LLM — knowledge (음악 무드 묘사, 투표 문항 생성) | Claude API | Claude API 유지 |
 | LLM — general (검색어 리라이팅, 요약, 답변, 클러스터 이름) | Claude API | RunPod 로컬 LLM |
-| 텍스트 임베딩 | OpenAI `text-embedding-3-small` | ④ Embedding Service, GCP CPU (ONNX) |
+| 텍스트 임베딩 | OpenAI `text-embedding-3-small` | ③ Embedding Service, KURE-v1 (ONNX fp32, CPU). 양자화는 V3 |
 | CLIP (사진 임베딩) | Replicate `openai/clip` | RunPod 직접 서빙 |
 | 모더레이션 | — | ② Moderation Service, KcELECTRA, GCP CPU (ONNX) |
 
-- V1 필요 키: `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `REPLICATE_API_TOKEN`
+- 필요 키: `ANTHROPIC_API_KEY`, `REPLICATE_API_TOKEN` (`OPENAI_API_KEY`는 `TEXT_EMBEDDING_PROVIDER=openai`일 때만)
 - LLM은 곡 지식이 필요한 작업(knowledge)과 언어 변환만 하는 작업(general)으로 나눈다. 로컬 LLM은 곡을 잘 몰라 지어낼 위험이 있어서, knowledge는 프론티어에 남긴다 (`LLM_KNOWLEDGE_PROVIDER` / `LLM_GENERAL_PROVIDER`)
 - 모델 교체는 `app/clients/` 구현체만 바꾼다. 서비스·API 코드는 그대로
 - 정밀도(fp32/INT8)는 모델마다 실측으로 정한다. KcELECTRA는 INT8+ONNX에서 recall이 12.5%p 떨어져 fp32+ONNX 채택 (위키 2단계)
 - 임베딩 모델을 바꾸면 벡터 차원·좌표계가 달라지므로 새 마이그레이션 + 전체 재임베딩 필요 (`model_versions` 컬럼으로 추적)
+- 텍스트 임베딩 교체(OpenAI 1536차원 → KURE-v1 1024차원)는 마이그레이션 `0010`이 기존 텍스트 벡터를 비우고,
+  배포 뒤 컨테이너 안에서 `python -m app.tools.reembed_text`(`--dry-run`으로 건수 확인)로 다시 채운다.
+  채우기 전까지 비어 있는 자물쇠는 기억 검색·기능1 검색에서 빠지고, 곡 무드 캐시는 새로 만들어진다
+- KURE 모델 파일은 `scripts/export_kure_onnx.py`로 만들어 팀 HF 비공개 저장소에 올리고, Docker 빌드가 받아 둔다 (약 2.3GB)
+- 유사도 기준값은 임베딩 모델마다 다르다 (`app/config.py`의 `SIMILARITY_DEFAULTS`, 환경변수 `MEMORY_SEARCH_MIN_SIMILARITY`·`PERSONAL_SIMILARITY_MIN`으로 덮어씀). KURE 값 0.65는 합성 시험셋으로 정한 임시값
 
 ## 로컬 실행
 

@@ -29,6 +29,25 @@ RUN --mount=type=secret,id=hf_token \
       echo "hf_token 없음: 모더레이션 모델 없이 빌드"; \
     fi
 
+# 텍스트 임베딩 모델 KURE-v1(ONNX fp32)을 HF 비공개 저장소에서 받는다. 가중치가 약 2.3GB라 이미지가 그만큼 커진다.
+# 모델 파일은 scripts/export_kure_onnx.py로 만들어 올려 둔 것이다.
+# 이 저장소는 모더레이션·곡 풀과 계정이 달라서 별도 읽기 토큰(빌드 시크릿 hf_token_kure)으로 받는다.
+# 마이그레이션 0010이 기존 벡터를 비우는 배포라 모델 없는 이미지를 올리면 안 된다.
+# 그래서 시크릿이 없거나 받기에 하나라도 실패하면 빌드를 멈춘다.
+ARG KURE_MODEL_REPO=wonyyyyyyyyyyy/muro-kure-v1-onnx
+ARG KURE_MODEL_REVISION=v1
+RUN --mount=type=secret,id=hf_token_kure \
+    set -eu; \
+    mkdir -p /models/kure; \
+    if [ ! -s /run/secrets/hf_token_kure ]; then \
+      echo "hf_token_kure 없음: KURE 모델 없이는 빌드할 수 없음" >&2; exit 1; \
+    fi; \
+    for f in kure_v1_fp32.onnx kure_v1_fp32.onnx.data tokenizer.json; do \
+      curl -fsSL -H "Authorization: Bearer $(cat /run/secrets/hf_token_kure)" \
+        -o "/models/kure/$f" \
+        "https://huggingface.co/${KURE_MODEL_REPO}/resolve/${KURE_MODEL_REVISION}/$f"; \
+    done
+
 
 # 2. 런타임 스테이지
 FROM python:3.11-slim
@@ -49,5 +68,6 @@ USER appuser
 
 EXPOSE 8000 8001
 
-# 마이그레이션 → ① gateway(8000) ② moderation(8001) ③ worker 를 한 번에 띄운다 (app/launcher.py)
+# 마이그레이션 → ① gateway(8000) ② moderation(8001) ③ embedding(8002, 컨테이너 안에서만) ④ worker 를
+# 한 번에 띄운다 (app/launcher.py)
 CMD ["python", "-m", "app.main"]
