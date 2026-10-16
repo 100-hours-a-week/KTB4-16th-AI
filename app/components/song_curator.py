@@ -41,7 +41,10 @@ CANDIDATE_COUNT = 10
 # 곡 한 줄이 약 40~60토큰 — 10곡 + 상황 줄이 768에 빠듯해서 늘린다
 SONG_MAX_TOKENS = 1024
 
-SYSTEM_PROMPT = f"""너는 주어진 상황에 어울리는 음악을 추천하는 도우미다.
+
+def system_prompt(count: int = CANDIDATE_COUNT) -> str:
+    """count곡을 추천하게 하는 시스템 프롬프트. 기능3은 곡 풀과 섞어서 적게 받는다."""
+    return f"""너는 주어진 상황에 어울리는 음악을 추천하는 도우미다.
 
 먼저 이 상황 자체에 어울리는 장르를 1~3개, 무드를 2~3개 아래 목록에서만 고른다:
 장르 후보: {", ".join(GENRE_VOCAB)}
@@ -52,7 +55,7 @@ SYSTEM_PROMPT = f"""너는 주어진 상황에 어울리는 음악을 추천하�
 - 추천하는 곡은 위에서 고른 상황 장르·무드에 맞는 곡으로 고른다.
 - 실제로 발매됐고 대중적으로 알려진 가수의 곡만 추천한다.
 - 배경음악·플레이리스트용으로 제작된 곡, 커버·연주 편곡 계정의 곡은 추천하지 않는다.
-- 정확히 {CANDIDATE_COUNT}개를 추천한다.
+- 정확히 {count}개를 추천한다.
 - 각 곡에도 위 목록에서만 장르 1개, 무드 1~2개를 붙인다.
 - 존재가 불확실한 곡은 추천하지 않는다.
 - 곡 제목·가수 이름은 Spotify 표기 그대로 쓴다(영어 제목을 한글로 옮기지 않는다).
@@ -62,7 +65,10 @@ SYSTEM_PROMPT = f"""너는 주어진 상황에 어울리는 음악을 추천하�
 상황: 장르=<장르>,<장르> | 무드=<무드>,<무드>
 곡:
 <가수> - <곡 제목> | 장르=<장르> | 무드=<무드>,<무드>
-(곡 줄을 {CANDIDATE_COUNT}번 쓴다)"""
+(곡 줄을 {count}번 쓴다)"""
+
+
+SYSTEM_PROMPT = system_prompt()
 
 
 @dataclass(frozen=True)
@@ -105,14 +111,18 @@ class SongCurator:
         tags: list[str],
         exclude: list[SongCandidate] | None = None,
         axes: dict[str, str] | None = None,
+        count: int = CANDIDATE_COUNT,
     ) -> CurationResult:
         """기능3 — 사진 CLIP 태그로 추천. axes는 다축 태그(축 이름 → 태그), 없으면 장소 태그만."""
         if not tags:
             raise LLMError("태그가 없으면 곡을 추천할 수 없어요.")
-        return await self.curate(photo_situation(tags, axes), exclude)
+        return await self.curate(photo_situation(tags, axes), exclude, count)
 
     async def curate(
-        self, situation: str, exclude: list[SongCandidate] | None = None
+        self,
+        situation: str,
+        exclude: list[SongCandidate] | None = None,
+        count: int = CANDIDATE_COUNT,
     ) -> CurationResult:
         """상황 설명 문장으로 추천. 기능1은 장소·날씨·시간대를 여기로 넘긴다.
 
@@ -126,7 +136,7 @@ class SongCurator:
             listed = ", ".join(f"{s.artist} - {s.title}" for s in exclude)
             prompt += f"\n이미 추천한 곡이라 다시 추천하지 않는다: {listed}"
         response = await self._llm.complete(
-            system=SYSTEM_PROMPT, prompt=prompt, max_tokens=SONG_MAX_TOKENS
+            system=system_prompt(count), prompt=prompt, max_tokens=SONG_MAX_TOKENS
         )
         return _parse(response)
 

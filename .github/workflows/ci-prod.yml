@@ -224,6 +224,7 @@ jobs:
       - name: Release AI image
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_TOKEN_KURE: ${{ secrets.HF_TOKEN_KURE }}
           GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
         run: |
           cp release.config.main.json .releaserc.json

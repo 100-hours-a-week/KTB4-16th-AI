@@ -58,10 +58,12 @@ class StubSongCurator:
         self._extra = extra or CurationResult((), (), [])
         self.situations: list[str] = []
         self.excludes: list[list[SongCandidate]] = []
+        self.counts: list[int] = []
 
     async def curate(
-        self, situation: str, exclude: list[SongCandidate] | None = None
+        self, situation: str, exclude: list[SongCandidate] | None = None, count: int = 10
     ) -> CurationResult:
+        self.counts.append(count)
         if exclude:
             self.excludes.append(exclude)
             return self._extra
@@ -413,3 +415,87 @@ async def test_tops_up_once_when_fewer_than_5():
 
     assert len(res.tracks) == 5
     assert curator.excludes == [first]
+
+
+# ── 곡 풀 섞기 (최대 5곡 = 곡 풀 3 + LLM 2) ─────────────────────────────
+
+
+def _pool_of(*pairs, genres=("발라드",), moods=("잔잔한", "그리운")):
+    import random
+
+    from app.components.song_pool import PoolSong, SongPool
+
+    return SongPool([PoolSong(a, t, genres, moods) for a, t in pairs], rng=random.Random(0))
+
+
+def _search_for(*pairs):
+    return {_song(a, t).search_query: [_track_json(f"id-{a}-{t}", t, a)] for a, t in pairs}
+
+
+def _mixed_service(*, llm, pool, search, pool_count=3, records=None, tracks=None):
+    curator = StubSongCurator(_curation([_song(a, t) for a, t in llm]))
+    service = ContextRecommendService(
+        embedder=StubEmbedder(),
+        record_search=records or StubRecordSearch(),
+        song_curator=curator,
+        reranker=Reranker(),
+        spotify_search=StubSpotify(search, tracks=tracks),
+        song_pool=_pool_of(*pool),
+        pool_count=pool_count,
+        llm_count=4,
+    )
+    return service, curator
+
+
+async def test_mixes_three_pool_songs_and_two_llm_songs():
+    llm = [("L1", "a"), ("L2", "b"), ("L3", "c"), ("L4", "d")]
+    pool = [("P1", "x"), ("P2", "y"), ("P3", "z"), ("P4", "w")]
+    service, curator = _mixed_service(llm=llm, pool=pool, search=_search_for(*llm, *pool))
+
+    res = await service.recommend(_req(limit=5))
+
+    artists = [t.artist_name for t in res.tracks]
+    assert len(artists) == 5
+    assert sum(a.startswith("P") for a in artists) == 3
+    assert curator.counts == [4]
+    # 점수 순으로 정렬돼 나온다
+    scores = [t.rerank_score for t in res.tracks]
+    assert scores == sorted(scores, reverse=True)
+
+
+async def test_pool_does_not_repeat_songs_the_user_already_heard():
+    llm = [("L1", "a"), ("L2", "b")]
+    pool = [("BTS", "봄날"), ("P2", "y")]
+    records = StubRecordSearch(
+        [SimilarRecord(1, "id-BTS-봄날", PERSONAL_SIMILARITY_THRESHOLD + 0.1)]
+    )
+    tracks = {"id-BTS-봄날": _track_json("id-BTS-봄날", "봄날", "BTS")}
+    service, _ = _mixed_service(
+        llm=llm, pool=pool, search=_search_for(*llm, *pool), records=records, tracks=tracks
+    )
+
+    res = await service.recommend(_req(limit=5))
+
+    assert "봄날" not in [t.title for t in res.tracks]
+
+
+async def test_llm_only_when_pool_disabled():
+    llm = [("L1", "a")]
+    service, curator = _mixed_service(
+        llm=llm, pool=[("P1", "x")], search=_search_for(*llm, ("P1", "x")), pool_count=0
+    )
+
+    res = await service.recommend(_req(limit=5))
+
+    assert [t.artist_name for t in res.tracks] == ["L1"]
+    assert curator.counts[0] == 10
+
+
+async def test_respects_requested_limit_with_pool():
+    llm = [("L1", "a"), ("L2", "b")]
+    pool = [("P1", "x"), ("P2", "y"), ("P3", "z")]
+    service, _ = _mixed_service(llm=llm, pool=pool, search=_search_for(*llm, *pool))
+
+    res = await service.recommend(_req(limit=2))
+
+    assert len(res.tracks) == 2

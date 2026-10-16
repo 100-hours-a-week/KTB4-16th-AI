@@ -30,9 +30,6 @@ jobs:
       id-token: write   # GCP WIF 인증용 OIDC 토큰 발급 권한
     outputs:
       image_tag: ${{ steps.image.outputs.tag }}
-      image: ${{ steps.image.outputs.image }}
-      prev_template: ${{ steps.current.outputs.template }}
-      new_template: ${{ steps.name.outputs.template }}
     steps:
       - id: auth
         uses: google-github-actions/auth@v3
@@ -63,26 +60,6 @@ jobs:
           # 해당 태그의 이미지가 실제로 있는지 확인한다.
           gcloud artifacts docker images describe "$IMAGE_REPO:$TAG" > /dev/null
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "image=$IMAGE_REPO:$TAG" >> "$GITHUB_OUTPUT"
-
-      # 롤백할 때 되돌아갈 현재 인스턴스 템플릿 이름
-      - id: current
-        run: |
-          TEMPLATE=$(gcloud compute instance-groups managed describe "$MIG_NAME" $MIG_FLAG \
-            --format="value(versions[0].instanceTemplate.basename())")
-          if [ -z "$TEMPLATE" ]; then
-            echo "$MIG_NAME 의 현재 인스턴스 템플릿을 찾을 수 없습니다."
-            exit 1
-          fi
-          echo "template=$TEMPLATE" >> "$GITHUB_OUTPUT"
-
-      # 새 템플릿 이름: 서비스-tpl-태그-실행번호 (소문자, 숫자, 하이픈만 가능)
-      - id: name
-        env:
-          TAG: ${{ steps.image.outputs.tag }}
-        run: |
-          SAFE=$(echo "$TAG" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-' | sed 's/-*$//')
-          echo "template=${SERVICE}-tpl-${SAFE}-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
 
   # ============================================================
   # 2단계: 새 인스턴스 템플릿을 만들고 MIG를 교체한다.
@@ -99,9 +76,7 @@ jobs:
       contents: read
       id-token: write
     env:
-      IMAGE: ${{ needs.prepare.outputs.image }}
-      PREV_TEMPLATE: ${{ needs.prepare.outputs.prev_template }}
-      NEW_TEMPLATE: ${{ needs.prepare.outputs.new_template }}
+      TAG: ${{ needs.prepare.outputs.image_tag }}
     steps:
       - id: auth
         uses: google-github-actions/auth@v3
@@ -111,13 +86,91 @@ jobs:
 
       - uses: google-github-actions/setup-gcloud@v3
 
-      # 현재 템플릿을 복사하고 이미지 태그 메타데이터만 바꾼 새 템플릿을 만든다.
-      # VM은 부팅할 때 이 태그의 이미지를 받아서 실행한다.
+      # 현재 MIG가 쓰는 템플릿(롤백 때 되돌아갈 템플릿)과 새 템플릿 이름을 정한다.
+      # 이 값에는 시크릿 값(서비스 이름 등)이 섞여 있어서 job output으로 넘기면 GitHub이 버린다.
+      # 그래서 이 job 안에서 만들어 환경변수로 쓴다.
+      - name: Resolve templates
+        run: |
+          PREV=$(gcloud compute instance-groups managed describe "$MIG_NAME" $MIG_FLAG \
+            --format="value(versions[0].instanceTemplate.basename())")
+          if [ -z "$PREV" ]; then
+            echo "$MIG_NAME 의 현재 인스턴스 템플릿을 찾을 수 없습니다."
+            exit 1
+          fi
+          SAFE=$(echo "$TAG" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-' | sed 's/-*$//')
+          echo "PREV_TEMPLATE=$PREV" >> "$GITHUB_ENV"
+          echo "NEW_TEMPLATE=${SERVICE}-tpl-${SAFE}-${{ github.run_number }}" >> "$GITHUB_ENV"
+
+      # 현재 템플릿을 그대로 복제하고 이미지 태그 메타데이터(app-image-tag)만 바꾼 새 템플릿을 만든다.
+      # gcloud compute instance-templates create에는 기존 템플릿을 복사하는 옵션이 없어서
+      # 현재 템플릿을 읽어 메타데이터만 바꾼 뒤 Compute API로 새 템플릿을 만든다.
+      # 이미지 경로(app-image), 부팅 스크립트, env 시크릿 이름 등 나머지는 그대로다.
+      # VM은 부팅할 때 app-image:app-image-tag 이미지를 받아서 실행한다.
       - name: Create instance template
         run: |
-          gcloud compute instance-templates create "$NEW_TEMPLATE" \
-            --source-instance-template="$PREV_TEMPLATE" \
-            --metadata=app-image="$IMAGE"
+          python3 - <<'PY'
+          import json, os, subprocess, sys, time, urllib.error, urllib.request
+
+          prev_name, new_name, tag = os.environ["PREV_TEMPLATE"], os.environ["NEW_TEMPLATE"], os.environ["TAG"]
+
+          def gcloud(*args):
+              return subprocess.check_output(["gcloud", *args], text=True).strip()
+
+          project = gcloud("config", "get-value", "project")
+          body = json.loads(gcloud("compute", "instance-templates", "describe", prev_name, "--format=json"))
+          for key in ("id", "kind", "selfLink", "selfLinkWithId", "creationTimestamp"):
+              body.pop(key, None)
+          body["name"] = new_name
+          metadata = body["properties"]["metadata"]
+          metadata.pop("fingerprint", None)
+          metadata.pop("kind", None)
+          items = [i for i in metadata["items"] if i["key"] != "app-image-tag"]
+          items.append({"key": "app-image-tag", "value": tag})
+          metadata["items"] = items
+
+          req = urllib.request.Request(
+              f"https://compute.googleapis.com/compute/v1/projects/{project}/global/instanceTemplates",
+              data=json.dumps(body).encode(),
+              headers={"Authorization": "Bearer " + gcloud("auth", "print-access-token"),
+                       "Content-Type": "application/json"},
+              method="POST")
+          try:
+              op = json.load(urllib.request.urlopen(req))
+          except urllib.error.HTTPError as e:
+              sys.exit(f"템플릿 생성 요청 실패: {e.code} {e.read().decode()[:500]}")
+          # 작업이 끝날 때까지 기다린다.
+          for _ in range(60):
+              if op.get("status") == "DONE":
+                  break
+              time.sleep(2)
+              poll = urllib.request.Request(op["selfLink"], headers={"Authorization": "Bearer " + gcloud("auth", "print-access-token")})
+              op = json.load(urllib.request.urlopen(poll))
+          if op.get("status") != "DONE" or op.get("error"):
+              sys.exit(f"템플릿 생성 작업 실패: {json.dumps(op.get('error', op.get('status')))[:500]}")
+          print(f"새 템플릿 {new_name} 생성 완료 (app-image-tag={tag})")
+          PY
+
+      # 새 템플릿이 태그만 바뀌고 나머지 설정은 그대로인지 확인한다. 아니면 교체를 시작하지 않는다.
+      - name: Verify instance template
+        run: |
+          gcloud compute instance-templates describe "$PREV_TEMPLATE" --format=json > prev.json
+          gcloud compute instance-templates describe "$NEW_TEMPLATE" --format=json > new.json
+          python3 - <<'PY'
+          import json, os, sys
+          def meta(f):
+              items = json.load(open(f))["properties"]["metadata"].get("items", [])
+              return {i["key"]: i["value"] for i in items}
+          prev, new = meta("prev.json"), meta("new.json")
+          diff = sorted(k for k in set(prev) | set(new) if prev.get(k) != new.get(k))
+          print("바뀐 메타데이터 키:", diff)
+          if any(k != "app-image-tag" for k in diff):
+              sys.exit("태그 외의 설정이 달라졌습니다. 새 템플릿을 확인하세요.")
+          if new.get("app-image-tag") != os.environ["TAG"]:
+              sys.exit("새 템플릿의 app-image-tag가 배포할 태그와 다릅니다.")
+          if not new.get("startup-script") or not new.get("app-image"):
+              sys.exit("새 템플릿에 부팅 스크립트나 app-image가 없습니다.")
+          print("새 템플릿 확인 완료")
+          PY
 
       - id: start
         name: Start rolling update
@@ -135,12 +188,12 @@ jobs:
       - name: Wait until all instances are updated
         run: |
           gcloud compute instance-groups managed wait-until "$MIG_NAME" $MIG_FLAG \
-            --version-target-reached --timeout=900
+            --version-target-reached --timeout=1800
 
       - name: Wait until the group is stable
         run: |
           gcloud compute instance-groups managed wait-until "$MIG_NAME" $MIG_FLAG \
-            --stable --timeout=300
+            --stable --timeout=600
 
       # 교체 도중 실패하면 이전 템플릿으로 되돌린다. (교체를 시작한 경우에만)
       - name: Rollback to previous template
@@ -155,7 +208,7 @@ jobs:
             --max-surge="$MAX_SURGE" \
             --max-unavailable="$MAX_UNAVAILABLE"
           gcloud compute instance-groups managed wait-until "$MIG_NAME" $MIG_FLAG \
-            --version-target-reached --timeout=900
+            --version-target-reached --timeout=1800
 
       # 오래된 템플릿은 최근 5개만 남기고 지운다. (사용 중인 템플릿은 삭제되지 않는다)
       - name: Delete old instance templates

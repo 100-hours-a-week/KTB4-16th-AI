@@ -1,11 +1,17 @@
 from datetime import UTC, date, datetime
 
+import pytest
+
 from app.components.music_genre_assigner import SavedTrack, assign_genres
+from app.components.music_tags import MUSIC_GENRE_GROUPS
+from app.db.repositories.balance_stats_repository import GenreStats
 from app.workers import balance_daily_worker as w
+from app.workers.balance_daily_worker import GroupFailedError
 from tests.conftest import AUTH
 
 T = datetime(2026, 10, 1, tzinfo=UTC)
 LATER = datetime(2026, 10, 5, tzinfo=UTC)
+DAY = date(2026, 10, 17)
 
 
 def _s(user, track, at=T):
@@ -75,3 +81,111 @@ def test_manual_trigger_defaults_to_tomorrow(client, jobs):
     res = client.post("/api/balance/daily-batch", json={}, headers=AUTH)
     assert res.status_code == 202
     assert date.fromisoformat(res.json()["date"]) > datetime.now(UTC).date()
+
+
+# ── _fill: 14개 그룹 전부 + 예비 질문 (2026-10-16) ─────────────────────────
+
+
+class FakeStatsSource:
+    async def get(self, genre):
+        return GenreStats.empty()
+
+
+class FakeGenerator:
+    """generate 호출마다 candidates 목록을 하나씩 꺼내 준다."""
+
+    model = "fake-llm"
+
+    def __init__(self, *batches):
+        self._batches = list(batches)
+
+    async def generate(self, genre, stats, count):
+        return self._batches.pop(0)
+
+
+class FakeRepo:
+    def __init__(self, spares=()):
+        self.approved: dict[tuple, str] = {}
+        self.spares: list[dict] = list(spares)
+
+    async def add_question(
+        self, *, question_date, music_genre, question, option_a, option_b, model_version
+    ):
+        key = (question_date, music_genre)
+        if key in self.approved:
+            return False
+        self.approved[key] = question
+        return True
+
+    async def add_spare(
+        self, *, question_date, music_genre, question, option_a, option_b, model_version
+    ):
+        self.spares.append({"genre": music_genre, "question": question})
+
+    async def use_spare(self, question_date, music_genre):
+        for i, spare in enumerate(self.spares):
+            if spare["genre"] == music_genre:
+                picked = self.spares.pop(i)
+                self.approved[(question_date, music_genre)] = picked["question"]
+                return picked["question"]
+        return None
+
+
+def test_music_genre_groups_has_13_genres_plus_common():
+    """사용자 수와 상관없이 매일 채우는 그룹 전체 — 13장르 + 공통."""
+    assert len(MUSIC_GENRE_GROUPS) == 14
+    assert "공통" in MUSIC_GENRE_GROUPS
+
+
+async def test_fill_approves_first_candidate_and_banks_the_rest_as_spare():
+    repo = FakeRepo()
+    generator = FakeGenerator([("질문1", "A1", "B1"), ("질문2", "A2", "B2"), ("질문3", "A3", "B3")])
+    used = set()
+
+    await w._fill(repo, generator, FakeStatsSource(), DAY, "발라드", used)
+
+    assert repo.approved[(DAY, "발라드")] == "질문1"
+    assert [s["question"] for s in repo.spares] == ["질문2", "질문3"]
+    assert used == {"질문1", "질문2", "질문3"}
+
+
+async def test_fill_skips_candidates_already_used_recently():
+    repo = FakeRepo()
+    generator = FakeGenerator([("옛 질문", "A1", "B1"), ("새 질문", "A2", "B2")])
+    used = {"옛 질문"}
+
+    await w._fill(repo, generator, FakeStatsSource(), DAY, "댄스", used)
+
+    assert repo.approved[(DAY, "댄스")] == "새 질문"
+
+
+async def test_fill_uses_a_banked_spare_when_no_fresh_candidate():
+    """새 후보가 다 최근 질문과 겹치면 LLM을 또 안 부르고 쌓아 둔 예비 질문을 쓴다."""
+    repo = FakeRepo(spares=[{"genre": "인디음악", "question": "예비 질문"}])
+    generator = FakeGenerator([("옛 질문", "A", "B")])
+    used = {"옛 질문"}
+
+    await w._fill(repo, generator, FakeStatsSource(), DAY, "인디음악", used)
+
+    assert repo.approved[(DAY, "인디음악")] == "예비 질문"
+    assert repo.spares == []  # 한 번 쓴 예비 질문은 다시 안 쓴다
+    assert "예비 질문" in used
+
+
+async def test_fill_raises_when_no_fresh_candidate_and_no_spare():
+    repo = FakeRepo()
+    generator = FakeGenerator([("옛 질문", "A", "B")])
+    used = {"옛 질문"}
+
+    with pytest.raises(GroupFailedError):
+        await w._fill(repo, generator, FakeStatsSource(), DAY, "재즈", used)
+
+
+async def test_fill_does_not_reuse_a_spare_from_a_different_genre():
+    repo = FakeRepo(spares=[{"genre": "트로트", "question": "트로트 예비"}])
+    generator = FakeGenerator([("옛 질문", "A", "B")])
+    used = {"옛 질문"}
+
+    with pytest.raises(GroupFailedError):
+        await w._fill(repo, generator, FakeStatsSource(), DAY, "재즈", used)
+    assert repo.spares  # 다른 장르 예비는 그대로 남아 있다

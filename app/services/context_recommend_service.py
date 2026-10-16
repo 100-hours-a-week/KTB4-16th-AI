@@ -11,17 +11,30 @@
   REGIONAL — 개인 기록은 없고, 백엔드가 넘긴 주변 자물쇠 인기곡(nearbyTracks)이 있을 때
   GENERIC  — 둘 다 없으면 날씨·시간대만으로
 주변 인기곡은 개인 기록이 있어도 프롬프트에 같이 넣는다(근거 표기만 PERSONAL이 우선).
+
+2026-10-16: 기능3처럼 최대 5곡 중 일부(기본 3곡)를 곡 풀(song_pool.py)에서 채운다. LLM이
+한국 곡을 잘 몰라서 실존하는 곡 풀 비중을 절반 이상으로 둔다. 곡 풀은 LLM이 준 상황
+장르·무드로 고르고, 개인 취향(과거 자물쇠 곡)은 LLM 몫에만 반영된다. LLM에게는 그만큼
+적게(기본 4곡) 받는다. 곡 풀 곡도 같은 점수 기준(MIN_RERANK_SCORE)을 넘어야 남는다.
 """
 
 import asyncio
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime
 
 from app.clients.spotify_client import SpotifySearchClient
 from app.components.embedder import Embedder
 from app.components.reranker import Reranker, TrackCandidate
-from app.components.song_curator import CurationResult, SongCurator
+from app.components.song_curator import (
+    CANDIDATE_COUNT,
+    CurationResult,
+    SongCandidate,
+    SongCurator,
+)
+from app.components.song_mix import resolve_both
+from app.components.song_pool import SongPool
 from app.components.track_resolver import TrackResolver
 from app.components.vector_search import RecordSearch
 from app.config import SIMILARITY_DEFAULTS
@@ -80,9 +93,16 @@ class ContextRecommendService:
         reranker: Reranker,
         spotify_search: SpotifySearchClient,
         track_lookups: TrackLookupStore | None = None,
+        song_pool: SongPool | None = None,
+        pool_count: int = 0,
+        llm_count: int = CANDIDATE_COUNT,
         personal_similarity: float = PERSONAL_SIMILARITY_THRESHOLD,
     ):
         self._personal_similarity = personal_similarity
+        self._pool = song_pool if song_pool is not None and pool_count > 0 else None
+        self._pool_count = pool_count if self._pool is not None else 0
+        # 곡 풀을 안 쓰면 예전처럼 LLM에게 넉넉히 받는다
+        self._llm_count = llm_count if self._pool is not None else CANDIDATE_COUNT
         self._embedder = embedder
         self._records = record_search
         self._song_curator = song_curator
@@ -95,41 +115,44 @@ class ContextRecommendService:
         references = await self._personal_references(req.user_id, moment)
         basis = _basis(references, req)
 
+        prompt = _situation_prompt(req, moment, references)
         try:
-            curation = await self._song_curator.curate(_situation_prompt(req, moment, references))
+            curation = await self._song_curator.curate(prompt, count=self._llm_count)
         except LLMError as e:
             logger.warning("곡 추천 실패, 폴백: %s", e)
             return _degraded(req, basis)
 
-        if not curation.songs:
+        pool_songs = self._pick_from_pool(curation, references)
+        if not curation.songs and not pool_songs:
             logger.warning("곡 추천 결과를 파싱하지 못함, 폴백")
             return _degraded(req, basis)
 
         try:
-            candidates = await self._resolver.resolve(curation.songs)
+            llm_found, pool_found = await resolve_both(self._resolver, curation.songs, pool_songs)
         except UpstreamError as e:
             logger.warning("Spotify 확인 실패: %s", e)
             raise ExternalApiFailedError("Spotify 곡 확인에 실패했어요.") from e
 
         already_heard = {r.external_track_id for r in references}
-        candidates = [c for c in candidates if c.external_track_id not in already_heard]
+        llm_found = [c for c in llm_found if c.external_track_id not in already_heard]
+        pool_found = [c for c in pool_found if c.external_track_id not in already_heard]
         limit = min(req.limit, MAX_TRACKS)
-        kept = self._keep(curation, candidates, limit)
+        kept = self._mix(curation, llm_found, pool_found, limit)
 
         if len(kept) < limit:
-            # Spotify 탈락·점수 미달로 모자라면 이미 나온 곡을 빼고 한 번만 더 받는다.
+            # Spotify 탈락·점수 미달로 모자라면 이미 나온 곡을 빼고 LLM에게 한 번만 더 받는다.
             # 보충은 있으면 좋은 것이라 실패해도 지금 있는 곡으로 응답한다.
             try:
                 extra = await self._song_curator.curate(
-                    _situation_prompt(req, moment, references), exclude=curation.songs
+                    prompt, exclude=curation.songs + pool_songs, count=self._llm_count
                 )
                 more = await self._resolver.resolve(extra.songs)
             except UpstreamError as e:
                 logger.warning("곡 보충 실패, 있는 곡으로 응답: %s", e)
             else:
-                seen = {c.external_track_id for c in candidates} | already_heard
-                candidates += [c for c in more if c.external_track_id not in seen]
-                kept = self._keep(curation, candidates, limit)
+                seen = {c.external_track_id for c in llm_found + pool_found} | already_heard
+                llm_found += [c for c in more if c.external_track_id not in seen]
+                kept = self._mix(curation, llm_found, pool_found, limit)
 
         return ContextRecommendResponse(
             request_id=req.request_id,
@@ -139,12 +162,58 @@ class ContextRecommendService:
         )
 
     def _keep(
-        self, curation: CurationResult, candidates: list[TrackCandidate], limit: int
+        self, curation: CurationResult, candidates: list[TrackCandidate]
     ) -> list[tuple[TrackCandidate, float]]:
+        """점수 순으로 줄 세우고 기준 미만은 뺀다."""
         ranked = self._reranker.rank(
             curation.situation_genres, curation.situation_moods, candidates
         )
-        return [(c, score) for c, score in ranked if score >= MIN_RERANK_SCORE][:limit]
+        return [(c, score) for c, score in ranked if score >= MIN_RERANK_SCORE]
+
+    def _mix(
+        self,
+        curation: CurationResult,
+        llm_found: list[TrackCandidate],
+        pool_found: list[TrackCandidate],
+        limit: int,
+    ) -> list[tuple[TrackCandidate, float]]:
+        """곡 풀 pool_count곡 + 나머지는 LLM 곡. 한쪽이 모자라면 다른 쪽으로 채우고 점수 순으로."""
+        pool_kept = self._keep(curation, pool_found)
+        llm_kept = self._keep(curation, llm_found)
+        pool_first = pool_kept[: min(self._pool_count, limit)]
+        ordered = (
+            pool_first
+            + llm_kept[: limit - len(pool_first)]
+            + pool_kept[len(pool_first) :]
+            + llm_kept[limit - len(pool_first) :]
+        )
+        mixed: list[tuple[TrackCandidate, float]] = []
+        seen: set[str] = set()
+        for c, score in ordered:
+            if c.external_track_id in seen:
+                continue
+            seen.add(c.external_track_id)
+            mixed.append((c, score))
+            if len(mixed) == limit:
+                break
+        return sorted(mixed, key=lambda pair: pair[1], reverse=True)
+
+    def _pick_from_pool(
+        self, curation: CurationResult, references: list["ReferenceTrack"]
+    ) -> list[SongCandidate]:
+        if self._pool is None:
+            return []
+        heard = [SongCandidate(_first_artist(r.artist), r.title, "", ()) for r in references]
+        try:
+            return self._pool.pick(
+                curation.situation_genres,
+                curation.situation_moods,
+                self._pool_count,
+                exclude=curation.songs + heard,
+            )
+        except Exception:
+            logger.exception("곡 풀에서 고르기 실패 — LLM 곡만 사용")
+            return []
 
     async def _personal_references(self, user_id: int, moment: str) -> list[ReferenceTrack]:
         """지금 상황과 비슷한 과거 자물쇠에서 들은 곡. 못 찾거나 실패하면 빈 목록(=GENERIC).
@@ -188,6 +257,10 @@ class ContextRecommendService:
                 )
             )
         return references
+
+
+def _first_artist(artists: str) -> str:
+    return re.split(r",\s*", artists)[0]
 
 
 def _basis(references: list[ReferenceTrack], req: ContextRecommendRequest) -> str:

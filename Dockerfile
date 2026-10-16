@@ -29,6 +29,21 @@ RUN --mount=type=secret,id=hf_token \
       echo "hf_token 없음: 모더레이션 모델 없이 빌드"; \
     fi
 
+# 기능3 곡 풀(곡별 장르·무드·설명)도 비공개 HF 데이터 저장소에서 받는다 — 공개 레포에 두지 않는다.
+# 곡 풀을 고치면 HF에 새 태그(pool-v2 ...)를 올리고 아래 태그를 바꿔 커밋한다.
+# 없으면 곡 풀 없이 빌드되고, 사진 추천은 LLM 곡만으로 동작한다.
+ARG SONG_POOL_REPO=dionypark/mulo-song-pool
+ARG SONG_POOL_REVISION=pool-v2
+RUN --mount=type=secret,id=hf_token \
+    mkdir -p /models/song_pool && \
+    if [ -s /run/secrets/hf_token ]; then \
+      curl -fsSL -H "Authorization: Bearer $(cat /run/secrets/hf_token)" \
+        -o /models/song_pool/song_pool.json \
+        "https://huggingface.co/datasets/${SONG_POOL_REPO}/resolve/${SONG_POOL_REVISION}/song_pool.json"; \
+    else \
+      echo "hf_token 없음: 곡 풀 없이 빌드"; \
+    fi
+
 # 텍스트 임베딩 모델 KURE-v1(ONNX fp32)을 HF 비공개 저장소에서 받는다. 가중치가 약 2.3GB라 이미지가 그만큼 커진다.
 # 모델 파일은 scripts/export_kure_onnx.py로 만들어 올려 둔 것이다.
 # 이 저장소는 모더레이션·곡 풀과 계정이 달라서 별도 읽기 토큰(빌드 시크릿 hf_token_kure)으로 받는다.

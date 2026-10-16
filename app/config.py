@@ -106,6 +106,14 @@ class Settings(BaseSettings):
     # scripts/spotify_service_account_setup.py로 1회 발급. 뮤로 팀 계정 1개 전용
     spotify_service_refresh_token: str = ""
 
+    # 기능1·3 추천 5곡 중 곡 풀에서 채울 곡 수. 0이면 예전처럼 LLM 곡만.
+    # 곡 풀을 쓰면 LLM에게는 song_pool_llm_count곡만 받는다 (Spotify 탈락 대비 여유분 포함)
+    song_pool_count: int = 3
+    song_pool_llm_count: int = 4
+    # 곡 풀 파일 — Docker 빌드 때 비공개 HF 저장소에서 받아 둔다(공개 레포에 두지 않음).
+    # 로컬에서 쓰려면 HF에서 받아 SONG_POOL_PATH로 지정
+    song_pool_path: str = "/app/models/song_pool/song_pool.json"
+
     # 기능6 모더레이션 모델 (KcELECTRA ONNX) — Docker 빌드 때 HF 비공개 저장소에서 받아 둔다
     moderation_model_dir: str = "/app/models/moderation"
     moderation_model_version: str = "kcelectra-v1-stage3"

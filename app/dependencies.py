@@ -5,6 +5,7 @@ import secrets
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 
 from fastapi import Depends, Header
 from sqlalchemy.exc import SQLAlchemyError
@@ -45,6 +46,7 @@ from app.components.question_generator import QuestionGenerator
 from app.components.question_parser import QuestionParser
 from app.components.reranker import Reranker
 from app.components.song_curator import SongCurator
+from app.components.song_pool import SongPool, load_song_pool
 from app.components.tag_vector_file import PrecomputedVectors, read_vectors_file
 from app.components.tag_version import compute_tag_version
 from app.components.vector_search import MemoryVectorSearch, RecordSearch, VectorSearch
@@ -197,6 +199,11 @@ def get_spotify_playlist_client() -> SpotifyPlaylistClient:
 
 def get_spotify_search_client() -> SpotifySearchClient:
     return get_clients().spotify_search
+
+
+@lru_cache
+def get_song_pool() -> SongPool | None:
+    return load_song_pool(Path(get_settings().song_pool_path))
 
 
 @lru_cache
