@@ -16,6 +16,10 @@ class NearbyTrack(CamelModel):
     count: int | None = None
 
 
+# 재추천 때 직전까지 보여준 곡이 또 나오지 않게 클라이언트가 누적해서 보낸다.
+MAX_EXCLUDE_TRACK_IDS = 50
+
+
 class ContextRecommendRequest(CamelModel):
     # 백엔드 추천 플레이리스트 생성 흐름은 요청 ID를 따로 만들지 않는다 — 오면 응답에 그대로 돌려줌
     request_id: str | None = None
@@ -29,6 +33,7 @@ class ContextRecommendRequest(CamelModel):
     nearby_tracks: list[NearbyTrack] = Field(default_factory=list)
     # 2026-10-02 팀 결정: 추천 곡 5개로 통일 (기능3 RESULT_COUNT와 같게)
     limit: int = Field(default=5, ge=1, le=10)
+    exclude_track_ids: list[str] = Field(default_factory=list, max_length=MAX_EXCLUDE_TRACK_IDS)
 
 
 class RankedTrack(Track):

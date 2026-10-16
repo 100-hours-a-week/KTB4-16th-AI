@@ -483,3 +483,32 @@ async def test_respects_requested_limit_with_pool():
     res = await service.recommend(_req(limit=2))
 
     assert len(res.tracks) == 2
+
+
+# ── 재추천 제외 (excludeTrackIds, 2026-10-16) ───────────────────────────
+
+
+async def test_excluded_track_is_dropped_from_results():
+    curator = StubSongCurator(_curation([BALLAD]))
+    service = _service(curator=curator, spotify=StubSpotify(DEFAULT_SEARCH))
+
+    res = await service.recommend(_req(excludeTrackIds=["t_ballad"]))
+
+    assert res.tracks == []
+    assert res.degraded is False
+
+
+async def test_excluded_track_does_not_count_against_result_limit():
+    songs = [BALLAD, _song("The Weeknd", "Blinding Lights")]
+    search = {
+        **DEFAULT_SEARCH,
+        _song("The Weeknd", "Blinding Lights").search_query: [
+            _track_json("t2", "Blinding Lights", "The Weeknd")
+        ],
+    }
+    curator = StubSongCurator(_curation(songs))
+    service = _service(curator=curator, spotify=StubSpotify(search))
+
+    res = await service.recommend(_req(excludeTrackIds=["t_ballad"], limit=2))
+
+    assert [t.external_track_id for t in res.tracks] == ["t2"]

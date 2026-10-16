@@ -16,6 +16,10 @@
 한국 곡을 잘 몰라서 실존하는 곡 풀 비중을 절반 이상으로 둔다. 곡 풀은 LLM이 준 상황
 장르·무드로 고르고, 개인 취향(과거 자물쇠 곡)은 LLM 몫에만 반영된다. LLM에게는 그만큼
 적게(기본 4곡) 받는다. 곡 풀 곡도 같은 점수 기준(MIN_RERANK_SCORE)을 넘어야 남는다.
+
+재추천: 클라이언트가 excludeTrackIds로 직전까지 보여준 곡을 누적해서 보내면 그 곡들을
+빼고 추천한다(개인 취향 참고곡 제외와 같은 방식으로 합쳐서 처리). 서버는 상태를 들고
+있지 않는다.
 """
 
 import asyncio
@@ -130,9 +134,9 @@ class ContextRecommendService:
             logger.warning("Spotify 확인 실패: %s", e)
             raise ExternalApiFailedError("Spotify 곡 확인에 실패했어요.") from e
 
-        already_heard = {r.external_track_id for r in references}
-        llm_found = [c for c in llm_found if c.external_track_id not in already_heard]
-        pool_found = [c for c in pool_found if c.external_track_id not in already_heard]
+        excluded = {r.external_track_id for r in references} | set(req.exclude_track_ids)
+        llm_found = [c for c in llm_found if c.external_track_id not in excluded]
+        pool_found = [c for c in pool_found if c.external_track_id not in excluded]
         limit = min(req.limit, MAX_TRACKS)
         kept = self._mix(curation, llm_found, pool_found, limit)
 
@@ -147,7 +151,7 @@ class ContextRecommendService:
             except UpstreamError as e:
                 logger.warning("곡 보충 실패, 있는 곡으로 응답: %s", e)
             else:
-                seen = {c.external_track_id for c in llm_found + pool_found} | already_heard
+                seen = {c.external_track_id for c in llm_found + pool_found} | excluded
                 llm_found += [c for c in more if c.external_track_id not in seen]
                 kept = self._mix(curation, llm_found, pool_found, limit)
 
