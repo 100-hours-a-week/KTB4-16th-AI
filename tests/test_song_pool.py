@@ -119,3 +119,18 @@ def test_downloaded_pool_uses_only_known_vocab():
         assert set(s["genres"]) <= set(GENRE_VOCAB), s
         assert set(s["moods"]) <= set(MOOD_VOCAB), s
         assert 0 <= s["popularity"] <= 100
+
+
+# ── by_genre (기능6 곡 대결용, 2026-10-16) ─────────────────────────────
+
+
+def test_by_genre_matches_main_or_secondary_genre():
+    pool = _pool(
+        _ps("A", "1", genres=("댄스",)),
+        _ps("B", "2", genres=("록/메탈", "인디음악")),
+        _ps("C", "3", genres=("발라드",)),
+    )
+
+    assert {s.title for s in pool.by_genre("댄스")} == {"1"}
+    assert {s.title for s in pool.by_genre("인디음악")} == {"2"}
+    assert pool.by_genre("재즈") == []

@@ -12,15 +12,25 @@ LLM이 CANDIDATES_PER_GROUP개를 내면 1개만 승인 질문으로 쓰고 나�
 쌓아 둔다(status='spare'). 그날 새 질문을 하나도 못 만들면(형식 깨짐·최근 질문과 전부
 겹침) 쌓아 둔 예비 질문을 꺼내 쓴다 — LLM을 다시 부르지 않고도 그룹마다 질문이 빈 날이
 없게 한다. 예비도 없으면 그 그룹만 실패로 보고 재시도(백오프)에 맡긴다.
+
+2026-10-16: 그룹마다 먼저 곡 대결(song_battle_generator)을 시도한다. 곡 풀에서 체급
+(popularity)이 비슷한 두 곡을 직접 뽑아 보여주는 유형이라 LLM 비용이 0이고 지어낼
+염려가 없다. 그 장르 곡 풀이 얇아서 쓸 짝이 없으면(None) 기존 LLM 취향 질문으로
+넘어간다. "체급"은 지금은 TJ 차트 개월 수(popularity)이고, 나중에 유튜브 조회수로
+바꾸려면 곡 풀의 popularity 값만 바꾸면 되고 이 워커는 그대로 쓴다.
 """
 
 import logging
+import random
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from app.components.music_genre_assigner import assign_genres
 from app.components.music_tags import MUSIC_GENRE_GROUPS
 from app.components.question_generator import PROMPT_VERSION, QuestionGenerator
+from app.components.song_battle_generator import PROMPT_VERSION as BATTLE_PROMPT_VERSION
+from app.components.song_battle_generator import generate_battle
+from app.components.song_pool import SongPool
 from app.config import get_settings
 from app.db import mysql
 from app.db.postgres import get_sessionmaker
@@ -75,7 +85,7 @@ async def enqueue_daily(target: date) -> None:
 
 async def handle(payload: dict[str, Any]) -> None:
     # 늦게 import — dependencies가 서비스·클라이언트를 모두 불러와서 워커 시작이 무거워지지 않게
-    from app.dependencies import get_clients, get_genre_stats_source
+    from app.dependencies import get_clients, get_genre_stats_source, get_song_pool
 
     s = get_settings()
     target = date.fromisoformat(payload["date"])
@@ -93,13 +103,26 @@ async def handle(payload: dict[str, Any]) -> None:
         repo = BalanceDailyRepository(None, pg)
         generator = QuestionGenerator(get_clients().llm_knowledge)
         stats_source = get_genre_stats_source()
+        pool = get_song_pool()
         used = await repo.recent_questions(target)
+        battle_used_pairs = await repo.recent_battle_pairs(target)
+        battle_rng = random.Random()
         failed: list[str] = []
         for offset in range(s.balance_question_days_ahead):
             day = target + timedelta(days=offset)
             for genre in sorted(MUSIC_GENRE_GROUPS - await repo.filled_groups(day)):
                 try:
-                    await _fill(repo, generator, stats_source, day, genre, used)
+                    await _fill(
+                        repo,
+                        generator,
+                        stats_source,
+                        day,
+                        genre,
+                        used,
+                        pool,
+                        battle_used_pairs,
+                        battle_rng,
+                    )
                 except Exception:
                     logger.exception("질문 생성 실패: %s %s", day, genre)
                     failed.append(f"{day}/{genre}")
@@ -116,7 +139,31 @@ async def _assign(repo: BalanceDailyRepository, min_group_size: int) -> None:
     logger.info("사용자 그룹 %d명 저장", len(assignments))
 
 
-async def _fill(repo, generator, stats_source, day: date, genre: str, used: set[str]) -> None:
+async def _fill(
+    repo,
+    generator,
+    stats_source,
+    day: date,
+    genre: str,
+    used: set[str],
+    pool: SongPool | None,
+    battle_used_pairs: set[frozenset[str]],
+    battle_rng: random.Random,
+) -> None:
+    if pool is not None:
+        battle = generate_battle(genre, pool, battle_used_pairs, battle_rng)
+        if battle is not None:
+            if await repo.add_question(
+                question_date=day,
+                music_genre=genre,
+                question=battle.question,
+                option_a=battle.option_a,
+                option_b=battle.option_b,
+                model_version=f"song-battle|{BATTLE_PROMPT_VERSION}",
+            ):
+                battle_used_pairs.add(battle.pair_key)
+            return
+
     stats = await stats_source.get(genre)
     candidates = await generator.generate(genre, stats, CANDIDATES_PER_GROUP)
     fresh = [c for c in candidates if c[0] not in used]

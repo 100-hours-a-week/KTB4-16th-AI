@@ -117,8 +117,10 @@ def _curation(songs=None, genre="댄스", moods=("신나는", "화려한")) -> C
     )
 
 
-def _req() -> PhotoRecommendRequest:
-    return PhotoRecommendRequest(imageUrl="https://cdn.muro.app/uploads/img_1.jpg")
+def _req(**overrides) -> PhotoRecommendRequest:
+    payload = {"imageUrl": "https://cdn.muro.app/uploads/img_1.jpg"}
+    payload.update(overrides)
+    return PhotoRecommendRequest.model_validate(payload)
 
 
 def build_service(*, tags=("카페",), curation=None, results=None):
