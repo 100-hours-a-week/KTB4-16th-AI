@@ -91,13 +91,23 @@ class SongPool:
         return [song.to_candidate() for song in picked]
 
 
+def score_tags(
+    situation_genres: tuple[str, ...],
+    situation_moods: tuple[str, ...],
+    song_genres: tuple[str, ...],
+    song_moods: tuple[str, ...],
+) -> float:
+    """상황 태그와 곡 태그가 얼마나 겹치는지. 곡 풀과 저장된 곡에 같은 기준을 쓴다."""
+    genre_score = 1.0 if set(song_genres) & set(situation_genres) else 0.0
+    mood_overlap = len(set(situation_moods) & set(song_moods))
+    mood_score = mood_overlap / len(situation_moods) if situation_moods else 0.0
+    return GENRE_WEIGHT * genre_score + MOOD_WEIGHT * mood_score
+
+
 def _score(
     situation_genres: tuple[str, ...], situation_moods: tuple[str, ...], song: PoolSong
 ) -> float:
-    genre_score = 1.0 if set(song.genres) & set(situation_genres) else 0.0
-    mood_overlap = len(set(situation_moods) & set(song.moods))
-    mood_score = mood_overlap / len(situation_moods) if situation_moods else 0.0
-    return GENRE_WEIGHT * genre_score + MOOD_WEIGHT * mood_score
+    return score_tags(situation_genres, situation_moods, song.genres, song.moods)
 
 
 def _norm(text: str) -> str:

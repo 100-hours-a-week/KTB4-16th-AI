@@ -27,17 +27,19 @@ from datetime import datetime
 from app.clients.spotify_client import SpotifySearchClient
 from app.components.embedder import Embedder
 from app.components.reranker import Reranker, TrackCandidate
+from app.components.saved_song_pool import SavedSongPool
 from app.components.song_curator import (
     CANDIDATE_COUNT,
     CurationResult,
     SongCandidate,
     SongCurator,
 )
-from app.components.song_mix import resolve_both
+from app.components.song_mix import resolve_sources
 from app.components.song_pool import SongPool
 from app.components.track_resolver import TrackResolver
 from app.components.vector_search import RecordSearch
 from app.db.repositories.track_lookup_repository import TrackLookupStore
+from app.db.repositories.track_mood_repository import SavedSong
 from app.exceptions import ExternalApiFailedError, LLMError, UpstreamError
 from app.schemas.context_recommend import (
     ContextRecommendRequest,
@@ -95,7 +97,11 @@ class ContextRecommendService:
         song_pool: SongPool | None = None,
         pool_count: int = 0,
         llm_count: int = CANDIDATE_COUNT,
+        saved_pool: SavedSongPool | None = None,
+        saved_count: int = 0,
     ):
+        self._saved_pool = saved_pool
+        self._saved_count = saved_count if saved_pool is not None else 0
         self._pool = song_pool if song_pool is not None and pool_count > 0 else None
         self._pool_count = pool_count if self._pool is not None else 0
         # 곡 풀을 안 쓰면 예전처럼 LLM에게 넉넉히 받는다
@@ -119,18 +125,21 @@ class ContextRecommendService:
             logger.warning("곡 추천 실패, 폴백: %s", e)
             return _degraded(req, basis)
 
-        pool_songs = self._pick_from_pool(curation, references)
-        if not curation.songs and not pool_songs:
+        already_heard = {r.external_track_id for r in references}
+        saved_songs = await self._pick_saved(curation, already_heard)
+        pool_songs = self._pick_from_pool(curation, references, self._pool_count - len(saved_songs))
+        if not curation.songs and not pool_songs and not saved_songs:
             logger.warning("곡 추천 결과를 파싱하지 못함, 폴백")
             return _degraded(req, basis)
 
         try:
-            llm_found, pool_found = await resolve_both(self._resolver, curation.songs, pool_songs)
+            llm_found, pool_found = await resolve_sources(
+                self._resolver, curation.songs, pool_songs, saved_songs
+            )
         except UpstreamError as e:
             logger.warning("Spotify 확인 실패: %s", e)
             raise ExternalApiFailedError("Spotify 곡 확인에 실패했어요.") from e
 
-        already_heard = {r.external_track_id for r in references}
         llm_found = [c for c in llm_found if c.external_track_id not in already_heard]
         pool_found = [c for c in pool_found if c.external_track_id not in already_heard]
         limit = min(req.limit, MAX_TRACKS)
@@ -195,8 +204,19 @@ class ContextRecommendService:
                 break
         return sorted(mixed, key=lambda pair: pair[1], reverse=True)
 
+    async def _pick_saved(self, curation: CurationResult, excluded: set[str]) -> list[SavedSong]:
+        """사용자들이 저장한 곡에서 먼저 채운다. 모자라면 그만큼 TJ 곡 풀이 채운다."""
+        if self._saved_pool is None:
+            return []
+        return await self._saved_pool.pick(
+            curation.situation_genres,
+            curation.situation_moods,
+            self._saved_count,
+            exclude_ids=excluded,
+        )
+
     def _pick_from_pool(
-        self, curation: CurationResult, references: list["ReferenceTrack"]
+        self, curation: CurationResult, references: list["ReferenceTrack"], count: int
     ) -> list[SongCandidate]:
         if self._pool is None:
             return []
@@ -205,7 +225,7 @@ class ContextRecommendService:
             return self._pool.pick(
                 curation.situation_genres,
                 curation.situation_moods,
-                self._pool_count,
+                count,
                 exclude=curation.songs + heard,
             )
         except Exception:
