@@ -90,6 +90,10 @@ class SongPool:
                 break
         return [song.to_candidate() for song in picked]
 
+    def by_genre(self, genre: str) -> list[PoolSong]:
+        """그 장르가 주 장르든 보조 장르든 걸린 곡 전부 — 기능6 곡 대결용."""
+        return [song for song in self._songs if genre in song.genres]
+
 
 def _score(
     situation_genres: tuple[str, ...], situation_moods: tuple[str, ...], song: PoolSong
