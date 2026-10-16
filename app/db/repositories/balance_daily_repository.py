@@ -114,3 +114,69 @@ class BalanceDailyRepository:
         inserted = row.first() is not None
         await self._pg.commit()
         return inserted
+
+    async def add_spare(
+        self,
+        *,
+        question_date: date,
+        music_genre: str,
+        question: str,
+        option_a: str,
+        option_b: str,
+        model_version: str,
+    ) -> None:
+        """예비 질문 저장. 그날 그룹에 새 질문을 못 만들 때 use_spare로 꺼내 쓴다.
+
+        question_date는 만들어진 날짜일 뿐 그 날짜용으로 고정된 게 아니다 — 쓰일 때
+        use_spare가 실제 쓰이는 날짜로 덮어쓴다.
+        """
+        await self._pg.execute(
+            text(
+                """
+                INSERT INTO vote_questions
+                    (question_date, music_genre, question, option_a, option_b,
+                     status, model_version)
+                VALUES (:d, :g, :q, :a, :b, 'spare', :v)
+                """
+            ),
+            {
+                "d": question_date,
+                "g": music_genre,
+                "q": question,
+                "a": option_a,
+                "b": option_b,
+                "v": model_version,
+            },
+        )
+        await self._pg.commit()
+
+    async def use_spare(self, question_date: date, music_genre: str) -> str | None:
+        """쌓아 둔 예비 질문 하나를 그 날짜·그룹의 승인 질문으로 바꾼다.
+
+        FOR UPDATE SKIP LOCKED로 골라서, 동시에 두 워커가 돌아도 같은 예비 질문을
+        두 번 쓰지 않는다. 바꾸지 못하면(예비 없음, 또는 그사이 다른 질문이 이미
+        승인됨) None.
+        """
+        row = await self._pg.execute(
+            text(
+                """
+                UPDATE vote_questions SET question_date = :d, status = 'approved'
+                WHERE id = (
+                    SELECT id FROM vote_questions
+                    WHERE music_genre = :g AND status = 'spare'
+                    ORDER BY created_at ASC
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM vote_questions
+                    WHERE question_date = :d AND music_genre = :g AND status = 'approved'
+                )
+                RETURNING question
+                """
+            ),
+            {"d": question_date, "g": music_genre},
+        )
+        found = row.first()
+        await self._pg.commit()
+        return found.question if found else None
