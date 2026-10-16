@@ -7,3 +7,7 @@ venv/
 .ruff_cache/
 .DS_Store
 docker-compose.dev.yml
+
+# 비공개 데이터 (HF dionypark/mulo-song-pool에서 받음)
+song_pool.json
+evals/mood_tagger/*.csv

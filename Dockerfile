@@ -29,6 +29,21 @@ RUN --mount=type=secret,id=hf_token \
       echo "hf_token 없음: 모더레이션 모델 없이 빌드"; \
     fi
 
+# 기능3 곡 풀(곡별 장르·무드·설명)도 비공개 HF 데이터 저장소에서 받는다 — 공개 레포에 두지 않는다.
+# 곡 풀을 고치면 HF에 새 태그(pool-v2 ...)를 올리고 아래 태그를 바꿔 커밋한다.
+# 없으면 곡 풀 없이 빌드되고, 사진 추천은 LLM 곡만으로 동작한다.
+ARG SONG_POOL_REPO=dionypark/mulo-song-pool
+ARG SONG_POOL_REVISION=pool-v2
+RUN --mount=type=secret,id=hf_token \
+    mkdir -p /models/song_pool && \
+    if [ -s /run/secrets/hf_token ]; then \
+      curl -fsSL -H "Authorization: Bearer $(cat /run/secrets/hf_token)" \
+        -o /models/song_pool/song_pool.json \
+        "https://huggingface.co/datasets/${SONG_POOL_REPO}/resolve/${SONG_POOL_REVISION}/song_pool.json"; \
+    else \
+      echo "hf_token 없음: 곡 풀 없이 빌드"; \
+    fi
+
 
 # 2. 런타임 스테이지
 FROM python:3.11-slim
