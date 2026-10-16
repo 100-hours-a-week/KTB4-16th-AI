@@ -188,12 +188,12 @@ jobs:
       - name: Wait until all instances are updated
         run: |
           gcloud compute instance-groups managed wait-until "$MIG_NAME" $MIG_FLAG \
-            --version-target-reached --timeout=900
+            --version-target-reached --timeout=1800
 
       - name: Wait until the group is stable
         run: |
           gcloud compute instance-groups managed wait-until "$MIG_NAME" $MIG_FLAG \
-            --stable --timeout=300
+            --stable --timeout=600
 
       # 교체 도중 실패하면 이전 템플릿으로 되돌린다. (교체를 시작한 경우에만)
       - name: Rollback to previous template
@@ -208,7 +208,7 @@ jobs:
             --max-surge="$MAX_SURGE" \
             --max-unavailable="$MAX_UNAVAILABLE"
           gcloud compute instance-groups managed wait-until "$MIG_NAME" $MIG_FLAG \
-            --version-target-reached --timeout=900
+            --version-target-reached --timeout=1800
 
       # 오래된 템플릿은 최근 5개만 남기고 지운다. (사용 중인 템플릿은 삭제되지 않는다)
       - name: Delete old instance templates
