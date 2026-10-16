@@ -40,14 +40,17 @@ class StubSongCurator:
         self._extra = extra or CurationResult((), (), [])
         self.excludes: list[list[SongCandidate]] = []
         self.axes_seen: list[dict[str, str] | None] = []
+        self.counts: list[int] = []
 
     async def curate_from_tags(
         self,
         tags: list[str],
         exclude: list[SongCandidate] | None = None,
         axes: dict[str, str] | None = None,
+        count: int = 10,
     ) -> CurationResult:
         self.axes_seen.append(axes)
+        self.counts.append(count)
         if exclude:
             self.excludes.append(exclude)
             return self._extra
@@ -172,7 +175,7 @@ async def test_top_up_failure_keeps_what_we_have():
     results = {_q("A", "Song 0"): [_track_json("t0", "Song 0", "A")]}
 
     class TopUpFails(StubSongCurator):
-        async def curate_from_tags(self, tags, exclude=None, axes=None):
+        async def curate_from_tags(self, tags, exclude=None, axes=None, count=10):
             if exclude:
                 raise LLMError("장애")
             return _curation(songs=first)
@@ -362,3 +365,110 @@ async def test_without_axes_the_curator_gets_none_like_before():
     await service.recommend(_req())
 
     assert curator.axes_seen[0] == {}
+
+
+# ── 곡 풀 섞기 (5곡 = 곡 풀 3 + LLM 2) ─────────────────────────────
+
+
+def _pool_of(*songs):
+    import random
+
+    from app.components.song_pool import PoolSong, SongPool
+
+    return SongPool(
+        [PoolSong(a, t, ("댄스",), ("신나는", "화려한")) for a, t in songs],
+        rng=random.Random(0),
+    )
+
+
+def _results_for(*pairs):
+    return {_q(a, t): [_track_json(f"id-{a}-{t}", t, a)] for a, t in pairs}
+
+
+def build_mixed(*, llm_songs, pool_songs, results, pool_count=3, llm_count=4):
+    curator = StubSongCurator(curation=_curation(songs=[_song(a, t) for a, t in llm_songs]))
+    service = PhotoRecommendService(
+        clip_tagger=StubClipTagger(tags=["파티"]),
+        song_curator=curator,
+        reranker=Reranker(),
+        spotify_search=StubSpotifySearch(results),
+        song_pool=_pool_of(*pool_songs),
+        pool_count=pool_count,
+        llm_count=llm_count,
+    )
+    return service, curator
+
+
+async def test_mixes_three_pool_songs_and_two_llm_songs():
+    llm = [("L1", "a"), ("L2", "b"), ("L3", "c"), ("L4", "d")]
+    pool = [("P1", "x"), ("P2", "y"), ("P3", "z"), ("P4", "w")]
+    service, curator = build_mixed(
+        llm_songs=llm, pool_songs=pool, results=_results_for(*llm, *pool)
+    )
+
+    res = await service.recommend(_req())
+
+    artists = [t.artist_name for t in res.tracks]
+    assert len(artists) == 5
+    assert sum(a.startswith("P") for a in artists) == 3
+    assert sum(a.startswith("L") for a in artists) == 2
+    # 곡 풀을 쓰면 LLM에게는 적게 받는다
+    assert curator.counts == [4]
+
+
+async def test_llm_fills_when_pool_has_no_matching_songs():
+    llm = [("L1", "a"), ("L2", "b"), ("L3", "c"), ("L4", "d"), ("L5", "e")]
+    service, _ = build_mixed(llm_songs=llm, pool_songs=[], results=_results_for(*llm))
+
+    res = await service.recommend(_req())
+
+    assert [t.artist_name for t in res.tracks] and all(
+        t.artist_name.startswith("L") for t in res.tracks
+    )
+    assert len(res.tracks) == 5
+
+
+async def test_pool_fills_when_llm_songs_are_not_on_spotify():
+    llm = [("L1", "a"), ("L2", "b"), ("L3", "c"), ("L4", "d")]
+    pool = [("P1", "x"), ("P2", "y"), ("P3", "z"), ("P4", "w"), ("P5", "v")]
+    # LLM 곡은 하나만 Spotify에 있다
+    service, _ = build_mixed(
+        llm_songs=llm, pool_songs=pool, results=_results_for(("L1", "a"), *pool), pool_count=5
+    )
+
+    res = await service.recommend(_req())
+
+    assert len(res.tracks) == 5
+
+
+async def test_pool_disabled_by_zero_count_keeps_old_behavior():
+    llm = [("L1", "a")]
+    service, curator = build_mixed(
+        llm_songs=llm,
+        pool_songs=[("P1", "x")],
+        results=_results_for(*llm, ("P1", "x")),
+        pool_count=0,
+    )
+
+    res = await service.recommend(_req())
+
+    assert [t.artist_name for t in res.tracks] == ["L1"]
+    assert curator.counts[0] == 10
+
+
+async def test_pool_spotify_failure_still_answers_with_llm_songs():
+    llm = [("L1", "a"), ("L2", "b")]
+    results = {**_results_for(*llm), _q("P1", "x"): SpotifyError("pool down")}
+    service, _ = build_mixed(llm_songs=llm, pool_songs=[("P1", "x")], results=results)
+
+    res = await service.recommend(_req())
+
+    assert {t.artist_name for t in res.tracks} == {"L1", "L2"}
+
+
+async def test_both_spotify_failures_raise_502():
+    results = {_q("L1", "a"): SpotifyError("down"), _q("P1", "x"): SpotifyError("down")}
+    service, _ = build_mixed(llm_songs=[("L1", "a")], pool_songs=[("P1", "x")], results=results)
+
+    with pytest.raises(ExternalApiFailedError):
+        await service.recommend(_req())

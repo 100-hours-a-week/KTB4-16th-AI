@@ -3,6 +3,15 @@
 워커가 매일 시작 시각(기본 23:00 KST)에 작업을 한 번 넣고, 실패하면 큐의 지수 백오프
 (30초, 1분, 2분, 4분, 8분)로 마감(23:40) 전에 다시 돌린다. 백엔드는 마감 이후에 뷰를 읽는다.
 다시 돌려도 안전하다 — 그룹은 덮어쓰고, 이미 질문이 있는 날짜·그룹은 건너뛴다.
+
+2026-10-16: 그날 사용자가 있는 그룹에만 질문을 만들면, 사람이 없는 장르는 질문이 아예
+없어서 preferred_genres로 그 장르에 들어간 사용자가 투표를 못 한다. 그래서 사용자 수와
+상관없이 13개 장르 + 공통, MUSIC_GENRE_GROUPS 전부에 매일 질문을 만든다(사용자가 없는
+장르는 question_generator가 가수 이름 없이 일반적인 질문을 만든다).
+LLM이 CANDIDATES_PER_GROUP개를 내면 1개만 승인 질문으로 쓰고 나머지는 '예비 질문'으로
+쌓아 둔다(status='spare'). 그날 새 질문을 하나도 못 만들면(형식 깨짐·최근 질문과 전부
+겹침) 쌓아 둔 예비 질문을 꺼내 쓴다 — LLM을 다시 부르지 않고도 그룹마다 질문이 빈 날이
+없게 한다. 예비도 없으면 그 그룹만 실패로 보고 재시도(백오프)에 맡긴다.
 """
 
 import logging
@@ -10,7 +19,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
 from app.components.music_genre_assigner import assign_genres
-from app.components.music_tags import COMMON_GROUP
+from app.components.music_tags import MUSIC_GENRE_GROUPS
 from app.components.question_generator import PROMPT_VERSION, QuestionGenerator
 from app.config import get_settings
 from app.db import mysql
@@ -77,10 +86,9 @@ async def handle(payload: dict[str, Any]) -> None:
     async with get_sessionmaker()() as pg:
         if s.backend_mysql_url:
             async with mysql.get_sessionmaker()() as my:
-                groups = await _assign(BalanceDailyRepository(my, pg), s.balance_min_group_size)
+                await _assign(BalanceDailyRepository(my, pg), s.balance_min_group_size)
         else:
-            logger.warning("백엔드 DB 설정 없음 — 그룹 계산 없이 공통 질문만 만든다")
-            groups = {COMMON_GROUP}
+            logger.warning("백엔드 DB 설정 없음 — 그룹 계산 없이 질문만 만든다")
 
         repo = BalanceDailyRepository(None, pg)
         generator = QuestionGenerator(get_clients().llm_knowledge)
@@ -89,7 +97,7 @@ async def handle(payload: dict[str, Any]) -> None:
         failed: list[str] = []
         for offset in range(s.balance_question_days_ahead):
             day = target + timedelta(days=offset)
-            for genre in sorted(groups - await repo.filled_groups(day)):
+            for genre in sorted(MUSIC_GENRE_GROUPS - await repo.filled_groups(day)):
                 try:
                     await _fill(repo, generator, stats_source, day, genre, used)
                 except Exception:
@@ -97,28 +105,35 @@ async def handle(payload: dict[str, Any]) -> None:
                     failed.append(f"{day}/{genre}")
     if failed:
         raise GroupFailedError(f"질문을 못 만든 그룹: {', '.join(failed)}")
-    logger.info("기능6 배치 완료: %s, 그룹 %d개", target, len(groups))
+    logger.info("기능6 배치 완료: %s, 그룹 %d개", target, len(MUSIC_GENRE_GROUPS))
 
 
-async def _assign(repo: BalanceDailyRepository, min_group_size: int) -> set[str]:
+async def _assign(repo: BalanceDailyRepository, min_group_size: int) -> None:
     saved = await repo.saved_tracks()
     genre_of = await repo.genre_of({t.external_track_id for t in saved})
     assignments = assign_genres(saved, genre_of, min_group_size)
     await repo.save_assignments(assignments)
     logger.info("사용자 그룹 %d명 저장", len(assignments))
-    return {a.music_genre for a in assignments.values()} | {COMMON_GROUP}
 
 
 async def _fill(repo, generator, stats_source, day: date, genre: str, used: set[str]) -> None:
     stats = await stats_source.get(genre)
     candidates = await generator.generate(genre, stats, CANDIDATES_PER_GROUP)
     fresh = [c for c in candidates if c[0] not in used]
-    if not fresh:
-        raise GroupFailedError(
-            f"{genre}: 새 질문 없음 (후보 {len(candidates)}개 모두 최근 질문과 겹침)"
-        )
-    question, option_a, option_b = fresh[0]
     model = f"{generator.model}|{PROMPT_VERSION}"
+
+    if not fresh:
+        # 새 질문을 하나도 못 만들었다 — 전에 쌓아 둔 예비 질문으로 채운다
+        spare_question = await repo.use_spare(day, genre)
+        if spare_question is None:
+            raise GroupFailedError(
+                f"{genre}: 새 질문도 예비 질문도 없음 "
+                f"(후보 {len(candidates)}개 모두 최근 질문과 겹침)"
+            )
+        used.add(spare_question)
+        return
+
+    question, option_a, option_b = fresh[0]
     if await repo.add_question(
         question_date=day,
         music_genre=genre,
@@ -128,3 +143,15 @@ async def _fill(repo, generator, stats_source, day: date, genre: str, used: set[
         model_version=model,
     ):
         used.add(question)
+
+    # 나머지 후보는 버리지 않고 예비로 쌓아 둔다 — 다음에 새 질문을 못 만들 때 쓴다
+    for extra_question, extra_a, extra_b in fresh[1:]:
+        await repo.add_spare(
+            question_date=day,
+            music_genre=genre,
+            question=extra_question,
+            option_a=extra_a,
+            option_b=extra_b,
+            model_version=model,
+        )
+        used.add(extra_question)

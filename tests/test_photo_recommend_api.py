@@ -73,7 +73,7 @@ def test_validation_failure_is_logged_without_values(caplog):
 
 
 class _OneSongCurator:
-    async def curate_from_tags(self, tags, exclude=None, axes=None):
+    async def curate_from_tags(self, tags, exclude=None, axes=None, count=10):
         return CurationResult(
             situation_genres=("발라드",),
             situation_moods=("잔잔한",),
