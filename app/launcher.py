@@ -2,7 +2,7 @@
 
 순서:
   1. DB 마이그레이션 (alembic upgrade head). DB가 아직 안 떴으면 잠깐 기다렸다 다시 시도
-  2. ① gateway ② moderation ③ worker 를 동시에 띄움 (RUN_WORKER=false면 ③은 빼고)
+  2. ① gateway ② moderation ③ embedding ④ worker 를 동시에 띄움 (RUN_WORKER=false면 ③은 빼고)
 
 셋 중 하나라도 죽으면 나머지도 내리고 컨테이너를 종료한다. 반쯤 살아있는 컨테이너로
 남으면 밖에서는 정상처럼 보이는데 기능 일부만 안 되는 상태가 되기 때문이다 — 종료되면
@@ -37,6 +37,18 @@ def commands() -> dict[str, list[str]]:
             str(settings.moderation_port),
         ],
     }
+    if settings.text_embedding_provider == "kure":
+        # 임베딩 서비스는 컨테이너 안에서만 쓰므로 127.0.0.1에만 연다 (gateway·worker가 부름)
+        cmds["embedding"] = [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "--host",
+            "127.0.0.1",
+            "app.embedding_main:app",
+            "--port",
+            str(settings.embedding_port),
+        ]
     if settings.run_worker:
         cmds["worker"] = [sys.executable, "-m", "app.worker_main"]
     else:

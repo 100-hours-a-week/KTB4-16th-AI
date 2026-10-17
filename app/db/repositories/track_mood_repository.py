@@ -36,6 +36,8 @@ class TrackMoodRepository:
                 ).where(
                     TrackMood.external_track_id == external_track_id,
                     TrackMood.mood_version == mood_version,
+                    # 모델 교체(0010) 뒤 재임베딩 전의 행(NULL)은 캐시로 쓰지 않는다
+                    TrackMood.mood_embedding.is_not(None),
                 )
             )
         ).first()
