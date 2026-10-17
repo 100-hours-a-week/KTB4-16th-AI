@@ -6,8 +6,10 @@
 - track_moods.mood_embedding: 곡 무드 글의 벡터 (무드 글 자체와 장르·무드 태그는 그대로 둔다)
 사진 벡터(image_embedding, CLIP)는 건드리지 않는다.
 
-재임베딩이 끝나기 전에는 비어 있는 행이 생기므로 NOT NULL을 푼다. 비어 있는 행은 기억 검색·
-기능1 검색에서 빠지고(코사인 거리가 NULL), track_moods는 캐시로 쓰지 않고 새로 만든다.
+재임베딩이 끝나기 전에는 비어 있는 행이 생기므로 NOT NULL을 푼다. 값을 비우기 **전에** 풀어야 한다
+(행이 있는 DB에서 NOT NULL 칸을 NULL로 바꾸면 위반이라 순서가 바뀌면 실패한다).
+비어 있는 행은 기억 검색·기능1 검색에서 빠지고(코사인 거리가 NULL), track_moods는 캐시로 쓰지 않고
+새로 만든다.
 
 HNSW 인덱스는 칸을 바꾸기 전에 지우고 바꾼 뒤 다시 만든다 (record_embeddings 두 칸).
 
@@ -36,6 +38,14 @@ INDEXED_COLUMNS = ("music_embedding", "comment_embedding")
 def _retype(dim: int) -> None:
     for column in INDEXED_COLUMNS:
         op.execute(f"DROP INDEX IF EXISTS ix_record_embeddings_{column}_hnsw")
+    # NOT NULL을 먼저 푼다. 칸 종류를 바꾸면서 값을 NULL로 비우는데(USING NULL), 그 뒤에 풀면
+    # 행이 하나라도 있는 DB에서는 NOT NULL 위반으로 실패한다 (2026-10-17 개발 서버에서 겪음).
+    # 행이 없는 DB에서는 순서와 상관없이 통과해서 로컬 시험에서는 드러나지 않았다.
+    for table, column in (
+        ("record_embeddings", "music_embedding"),
+        ("track_moods", "mood_embedding"),
+    ):
+        op.execute(f"ALTER TABLE {table} ALTER COLUMN {column} DROP NOT NULL")
     for table, column in (
         ("record_embeddings", "music_embedding"),
         ("record_embeddings", "comment_embedding"),
@@ -45,11 +55,6 @@ def _retype(dim: int) -> None:
             f"ALTER TABLE {table} ALTER COLUMN {column} "
             f"TYPE vector({dim}) USING NULL::vector({dim})"
         )
-    for table, column in (
-        ("record_embeddings", "music_embedding"),
-        ("track_moods", "mood_embedding"),
-    ):
-        op.execute(f"ALTER TABLE {table} ALTER COLUMN {column} DROP NOT NULL")
     for column in INDEXED_COLUMNS:
         op.execute(
             f"CREATE INDEX ix_record_embeddings_{column}_hnsw "
