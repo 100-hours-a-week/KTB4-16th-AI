@@ -17,6 +17,11 @@
 장르·무드로 고르고, 개인 취향(과거 자물쇠 곡)은 LLM 몫에만 반영된다. LLM에게는 그만큼
 적게(기본 4곡) 받는다. 곡 풀 곡도 같은 점수 기준(MIN_RERANK_SCORE)을 넘어야 남는다.
 
+2026-10-16: 곡 풀 몫 중 일부(기본 1곡)는 사용자들이 자물쇠에 저장한 곡(track_moods)에서
+가져온다 — TJ 고정 목록과 저장 곡으로 곡 풀이 흩어지지 않게 같은 점수 기준으로 묶어 한
+풀처럼 쓴다(saved_song_pool.py). 저장 곡은 이미 Spotify ID가 있어 검색이 아니라 get_track
+한 번으로 끝난다.
+
 재추천: 클라이언트가 excludeTrackIds로 직전까지 보여준 곡을 누적해서 보내면 그 곡들을
 빼고 추천한다(개인 취향 참고곡 제외와 같은 방식으로 합쳐서 처리). 서버는 상태를 들고
 있지 않는다.
@@ -129,8 +134,9 @@ class ContextRecommendService:
             logger.warning("곡 추천 실패, 폴백: %s", e)
             return _degraded(req, basis)
 
-        already_heard = {r.external_track_id for r in references}
-        saved_songs = await self._pick_saved(curation, already_heard)
+        # 과거에 들은 곡(취향 참고로 쓴 곡)과 재추천 때 클라이언트가 보낸 곡을 함께 뺀다
+        excluded = {r.external_track_id for r in references} | set(req.exclude_track_ids)
+        saved_songs = await self._pick_saved(curation, excluded)
         pool_songs = self._pick_from_pool(curation, references, self._pool_count - len(saved_songs))
         if not curation.songs and not pool_songs and not saved_songs:
             logger.warning("곡 추천 결과를 파싱하지 못함, 폴백")
@@ -144,8 +150,8 @@ class ContextRecommendService:
             logger.warning("Spotify 확인 실패: %s", e)
             raise ExternalApiFailedError("Spotify 곡 확인에 실패했어요.") from e
 
-        llm_found = [c for c in llm_found if c.external_track_id not in already_heard]
-        pool_found = [c for c in pool_found if c.external_track_id not in already_heard]
+        llm_found = [c for c in llm_found if c.external_track_id not in excluded]
+        pool_found = [c for c in pool_found if c.external_track_id not in excluded]
         limit = min(req.limit, MAX_TRACKS)
         kept = self._mix(curation, llm_found, pool_found, limit)
 
