@@ -1,9 +1,15 @@
-"""track_moods 접근 — 곡 단위 무드 묘사 캐시."""
+"""track_moods 접근 — 곡 단위 무드 묘사 캐시.
+
+이 테이블은 사용자가 자물쇠에 저장한 곡마다 쌓이므로, 시간이 지나면 "실제로 사람들이
+고른 곡 + 장르·무드 태그" 목록이 된다. 기능1·3 추천이 곡 풀(TJ 차트 기반 고정 목록)과
+같은 후보 풀로 함께 쓴다 (search_by_tags).
+"""
 
 from dataclasses import dataclass
 from typing import Protocol
 
-from sqlalchemy import func, select
+from sqlalchemy import String, cast, func, or_, select
+from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,6 +22,21 @@ class CachedMood:
     mood_embedding: list[float]
     genre: str
     moods: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SavedSong:
+    """사용자들이 저장한 곡 — 추천 후보로 쓸 때 필요한 값만."""
+
+    external_track_id: str
+    genre: str
+    moods: tuple[str, ...]
+
+
+class SavedSongSearch(Protocol):
+    async def search_by_tags(
+        self, genres: list[str], moods: list[str], limit: int
+    ) -> list[SavedSong]: ...
 
 
 class TrackMoodStore(Protocol):
@@ -70,3 +91,35 @@ class TrackMoodRepository:
         )
         await self._session.execute(stmt)
         await self._session.commit()
+
+    async def search_by_tags(
+        self, genres: list[str], moods: list[str], limit: int
+    ) -> list[SavedSong]:
+        """장르가 같거나 무드가 하나라도 겹치는 저장된 곡. 최근에 쓰인 것부터.
+
+        점수·선별은 호출하는 쪽(saved_song_pool)이 곡 풀과 같은 기준으로 한다 —
+        여기서는 후보만 넉넉히 넘긴다. 옛 어휘(13장르 이전)로 붙은 태그는 애초에
+        지금 장르·무드 목록과 안 맞아서 자연히 걸러진다.
+        """
+        if not genres and not moods:
+            return []
+        conditions = []
+        if genres:
+            conditions.append(TrackMood.genre.in_(genres))
+        if moods:
+            # moods 칸은 일반 ARRAY로 선언돼 있어 .overlap()이 없다 — 겹침 연산자를 직접 쓴다
+            conditions.append(TrackMood.moods.bool_op("&&")(cast(moods, PG_ARRAY(String(20)))))
+        rows = await self._session.execute(
+            select(TrackMood.external_track_id, TrackMood.genre, TrackMood.moods)
+            .where(or_(*conditions))
+            .order_by(TrackMood.updated_at.desc())
+            .limit(limit)
+        )
+        return [
+            SavedSong(
+                external_track_id=row.external_track_id,
+                genre=row.genre,
+                moods=tuple(row.moods),
+            )
+            for row in rows
+        ]

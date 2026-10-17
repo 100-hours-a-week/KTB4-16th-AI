@@ -43,6 +43,7 @@ from app.components.query_rewriter import QueryRewriter
 from app.components.question_generator import QuestionGenerator
 from app.components.question_parser import QuestionParser
 from app.components.reranker import Reranker
+from app.components.saved_song_pool import SavedSongPool
 from app.components.song_curator import SongCurator
 from app.components.song_pool import SongPool, load_song_pool
 from app.components.tag_vector_file import PrecomputedVectors, read_vectors_file
@@ -66,6 +67,7 @@ from app.db.repositories.memory_record_repository import (
 )
 from app.db.repositories.report_repository import MonthlyReportRepository
 from app.db.repositories.track_lookup_repository import TrackLookupRepository, TrackLookupStore
+from app.db.repositories.track_mood_repository import TrackMoodRepository
 from app.exceptions import UnauthorizedError, UpstreamError
 from app.services.balance_service import BalanceService
 from app.services.memory_search_service import MemorySearchService
@@ -177,6 +179,13 @@ async def get_track_lookup_store(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncIterator[TrackLookupStore]:
     yield TrackLookupRepository(session)
+
+
+async def get_saved_song_pool(
+    session: AsyncSession = Depends(get_session),
+) -> AsyncIterator[SavedSongPool]:
+    """사용자들이 저장한 곡(track_moods)을 추천 후보로 꺼내 주는 두 번째 곡 풀."""
+    yield SavedSongPool(TrackMoodRepository(session))
 
 
 def get_spotify_playlist_client() -> SpotifyPlaylistClient:

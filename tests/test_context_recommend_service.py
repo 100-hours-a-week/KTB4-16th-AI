@@ -512,3 +512,40 @@ async def test_excluded_track_does_not_count_against_result_limit():
     res = await service.recommend(_req(excludeTrackIds=["t_ballad"], limit=2))
 
     assert [t.external_track_id for t in res.tracks] == ["t2"]
+
+
+# ── 저장 곡 + 재추천 제외가 함께 걸릴 때 (2026-10-16) ─────────────────────
+
+
+def _saved_pool_of(*track_ids, genre="발라드", moods=("잔잔한", "그리운")):
+    import random
+
+    from app.components.saved_song_pool import SavedSongPool
+    from app.db.repositories.track_mood_repository import SavedSong
+
+    songs = [SavedSong(tid, genre, tuple(moods)) for tid in track_ids]
+
+    class _Search:
+        async def search_by_tags(self, genres, moods_, limit):
+            return songs
+
+    return SavedSongPool(_Search(), rng=random.Random(0))
+
+
+async def test_saved_song_is_dropped_when_the_client_excluded_it():
+    """재추천으로 빠져야 하는 곡이 저장 곡 쪽에서 되살아나면 안 된다."""
+    tracks = {"s1": _track_json("s1", "저장곡", "가수")}
+    service = ContextRecommendService(
+        embedder=StubEmbedder(),
+        record_search=StubRecordSearch(),
+        song_curator=StubSongCurator(_curation([BALLAD])),
+        reranker=Reranker(),
+        spotify_search=StubSpotify(DEFAULT_SEARCH, tracks=tracks),
+        saved_pool=_saved_pool_of("s1"),
+        saved_count=1,
+        pool_count=3,
+    )
+
+    res = await service.recommend(_req(excludeTrackIds=["s1"], limit=5))
+
+    assert "s1" not in [t.external_track_id for t in res.tracks]
