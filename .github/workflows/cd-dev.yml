@@ -103,6 +103,8 @@ jobs:
               export GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID_Develop }}
               sudo --preserve-env=IMAGE_TAG,GCP_PROJECT_ID docker compose pull ai
               sudo --preserve-env=IMAGE_TAG,GCP_PROJECT_ID docker compose up -d ai
+              # 쓰지 않는 옛 이미지를 지워서 개발 VM 디스크가 차는 것을 막는다. (실행 중인 컨테이너의 이미지는 남는다)
+              sudo docker image prune -af || true
             "
 
       # 5. 컨테이너가 healthy 상태가 될 때까지 대기

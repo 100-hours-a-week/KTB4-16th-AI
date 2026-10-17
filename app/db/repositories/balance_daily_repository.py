@@ -81,6 +81,15 @@ class BalanceDailyRepository:
         )
         return {r.question for r in rows}
 
+    async def recent_battle_pairs(self, today: date) -> set[frozenset[str]]:
+        """최근에 낸 곡 대결의 (곡A, 곡B) 짝 — 취향 질문의 option_a/b("발라드" 등)도 같이
+        나오지만 곡 이름과는 형태가 달라 섞여도 해롭지 않다(같은 쌍이 될 일이 없다)."""
+        rows = await self._pg.execute(
+            text("SELECT option_a, option_b FROM vote_questions WHERE question_date >= :since"),
+            {"since": today - timedelta(days=PAST_QUESTION_DAYS)},
+        )
+        return {frozenset({r.option_a, r.option_b}) for r in rows}
+
     async def add_question(
         self,
         *,
