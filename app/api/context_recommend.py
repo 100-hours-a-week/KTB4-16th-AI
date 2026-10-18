@@ -50,5 +50,6 @@ async def context_recommend(
         llm_count=s.song_pool_llm_count,
         saved_pool=saved_pool,
         saved_count=s.song_pool_saved_count,
+        personal_similarity=s.personal_similarity,
     )
     return await service.recommend(req)

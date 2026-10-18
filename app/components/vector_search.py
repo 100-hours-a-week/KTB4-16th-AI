@@ -96,7 +96,10 @@ class VectorSearch:
                 RecordEmbedding.external_track_id,
                 distance.label("distance"),
             )
-            .where(RecordEmbedding.user_id == user_id)
+            .where(
+                RecordEmbedding.user_id == user_id,
+                RecordEmbedding.music_embedding.is_not(None),
+            )
             .order_by(distance)
             .limit(limit)
         )
@@ -141,6 +144,7 @@ class VectorSearch:
             ).where(
                 RecordEmbedding.user_id == user_id,
                 RecordEmbedding.record_id.in_(record_ids),
+                RecordEmbedding.music_embedding.is_not(None),
             )
         )
         return _to_hits(comment_rows), _to_hits(music_rows)

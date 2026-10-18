@@ -119,13 +119,14 @@ def _req(**overrides) -> ContextRecommendRequest:
     return ContextRecommendRequest.model_validate(payload)
 
 
-def _service(*, curator, spotify=None, records=None, embedder=None):
+def _service(*, curator, spotify=None, records=None, embedder=None, **extra):
     return ContextRecommendService(
         embedder=embedder or StubEmbedder(),
         record_search=records or StubRecordSearch(),
         song_curator=curator,
         reranker=Reranker(),
         spotify_search=spotify or StubSpotify(),
+        **extra,
     )
 
 
@@ -225,6 +226,21 @@ async def test_past_record_below_threshold_is_generic():
 
     res = await _service(
         curator=curator, records=records, spotify=StubSpotify(DEFAULT_SEARCH)
+    ).recommend(_req())
+
+    assert res.recommendation_basis == "GENERIC"
+
+
+async def test_similarity_threshold_comes_from_the_caller():
+    """임베딩 모델마다 점수 분포가 달라서 기준값은 설정에서 받아 온다 (모델 교체 때 같이 바뀐다)."""
+    records = StubRecordSearch([SimilarRecord(1, "t_old", 0.70)])
+    curator = StubSongCurator(_curation([BALLAD]))
+
+    res = await _service(
+        curator=curator,
+        records=records,
+        spotify=StubSpotify(DEFAULT_SEARCH),
+        personal_similarity=0.80,
     ).recommend(_req())
 
     assert res.recommendation_basis == "GENERIC"

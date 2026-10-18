@@ -36,6 +36,16 @@ async def test_music_search_compares_music_embedding_for_this_user_only():
     assert 7 in params.values() and 20 in params.values()
 
 
+async def test_music_search_skips_records_whose_vector_is_not_re_embedded_yet():
+    """모델 교체(0010) 뒤 재임베딩 전의 행은 벡터가 비어 있다 — 순위에 끼지 않게 뺀다."""
+    session = CapturingSession()
+
+    await VectorSearch(session).similar_by_music(user_id=7, query_vector=[0.1], limit=5)
+
+    sql, _ = _compile(session.statements[0])
+    assert "record_embeddings.music_embedding IS NOT NULL" in sql
+
+
 async def test_music_search_converts_distance_to_similarity():
     from types import SimpleNamespace
 

@@ -10,6 +10,11 @@ from app.components.music_mood_tagger import PROMPT_VERSION, MusicMoodTagger
 from app.db.repositories.track_mood_repository import CachedMood, TrackMoodStore
 
 
+def build_mood_version(mood_model: str, embedder_model: str) -> str:
+    """캐시된 무드가 지금 설정으로 만든 것인지 가르는 값. 재임베딩 도구도 같은 식을 쓴다."""
+    return f"{mood_model}|{PROMPT_VERSION}|{embedder_model}"
+
+
 class TrackMoodResolver:
     def __init__(self, mood_tagger: MusicMoodTagger, embedder: Embedder, store: TrackMoodStore):
         self._mood = mood_tagger
@@ -19,7 +24,7 @@ class TrackMoodResolver:
     @property
     def mood_version(self) -> str:
         # 이 셋 중 하나라도 바뀌면 캐시된 무드는 다시 만든다
-        return f"{self._mood.model}|{PROMPT_VERSION}|{self._embedder.model}"
+        return build_mood_version(self._mood.model, self._embedder.model)
 
     async def resolve(self, *, title: str, artist_name: str, external_track_id: str) -> CachedMood:
         cached = await self._store.get(external_track_id, self.mood_version)

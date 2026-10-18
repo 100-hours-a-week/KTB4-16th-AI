@@ -47,6 +47,7 @@ from app.components.song_mix import resolve_sources
 from app.components.song_pool import SongPool
 from app.components.track_resolver import TrackResolver
 from app.components.vector_search import RecordSearch
+from app.config import SIMILARITY_DEFAULTS
 from app.db.repositories.track_lookup_repository import TrackLookupStore
 from app.db.repositories.track_mood_repository import SavedSong
 from app.exceptions import ExternalApiFailedError, LLMError, UpstreamError
@@ -58,11 +59,11 @@ from app.schemas.context_recommend import (
 
 logger = logging.getLogger("muro.context_recommend")
 
-# 2026-09-26 더미 자물쇠(유저 5명, 코멘트 43개)로 실측: 비슷한 코멘트는 0.40~0.74
-# ("노을 지는 저녁"↔"노을이 미쳤다" 0.74, "쌀쌀한 밤"↔"조금 쌀쌀했지만 걷기 좋았어" 0.47),
-# 상관없는 코멘트는 0.26~0.39. 더미 코멘트가 짧고 반복이 많아서 대략적인 값 —
-# 실제 사용자 코멘트가 쌓이면 다시 맞춰야 한다.
-PERSONAL_SIMILARITY_THRESHOLD = 0.40
+# "비슷한 과거 코멘트"로 인정하는 최소 유사도의 기본값. 임베딩 모델마다 점수 분포가 달라서
+# 실제 값은 설정(personal_similarity_min, 없으면 모델별 기본값)에서 받는다 (app/config.py 참고).
+# OpenAI 시절 실측(2026-09-26 더미 자물쇠): 비슷한 코멘트 0.40~0.74, 상관없는 코멘트 0.26~0.39.
+# KURE 값은 합성 시험셋으로 잡은 임시값 — 실제 사용자 코멘트가 쌓이면 다시 맞춰야 한다.
+PERSONAL_SIMILARITY_THRESHOLD = SIMILARITY_DEFAULTS["kure"]
 SIMILAR_SEARCH_LIMIT = 5
 REFERENCE_COUNT = 3
 # 백엔드가 인기순으로 보내므로 앞에서부터. 너무 많으면 LLM이 인기곡만 따라 뽑는다
@@ -108,9 +109,11 @@ class ContextRecommendService:
         llm_count: int = CANDIDATE_COUNT,
         saved_pool: SavedSongPool | None = None,
         saved_count: int = 0,
+        personal_similarity: float = PERSONAL_SIMILARITY_THRESHOLD,
     ):
         self._saved_pool = saved_pool
         self._saved_count = saved_count if saved_pool is not None else 0
+        self._personal_similarity = personal_similarity
         self._pool = song_pool if song_pool is not None and pool_count > 0 else None
         self._pool_count = pool_count if self._pool is not None else 0
         # 곡 풀을 안 쓰면 예전처럼 LLM에게 넉넉히 받는다
@@ -258,7 +261,7 @@ class ContextRecommendService:
 
         track_ids: list[str] = []
         for hit in hits:
-            if hit.similarity < PERSONAL_SIMILARITY_THRESHOLD or not hit.external_track_id:
+            if hit.similarity < self._personal_similarity or not hit.external_track_id:
                 continue
             if hit.external_track_id not in track_ids:
                 track_ids.append(hit.external_track_id)

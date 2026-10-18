@@ -2,11 +2,22 @@ from datetime import datetime
 
 import pytest
 
+from app.config import get_settings
 from app.dependencies import get_memory_record_source, get_memory_vector_search
 from tests.conftest import AUTH
 from tests.memory_fakes import FakeMemoryRecords, FakeVectorSearch, hit, make_record, make_row
 
 URL = "/api/memory-search"
+
+
+@pytest.fixture(autouse=True)
+def _fixed_min_similarity(monkeypatch):
+    """이 파일의 가짜 유사도(0.5~0.9)는 기준값 0.40을 전제로 짠 값이다.
+    기본 기준값은 임베딩 모델에 따라 바뀌므로(KURE 0.65) 여기서는 고정한다."""
+    monkeypatch.setenv("MEMORY_SEARCH_MIN_SIMILARITY", "0.40")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 def _wire(client, search: FakeVectorSearch, records: FakeMemoryRecords) -> None:
