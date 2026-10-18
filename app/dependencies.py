@@ -17,6 +17,7 @@ from app.clients.clip_client import ClipClient, FakeClipClient, ReplicateClipCli
 from app.clients.embedding_client import (
     EmbeddingClient,
     FakeEmbeddingClient,
+    LocalEmbeddingClient,
     OpenAIEmbeddingClient,
 )
 from app.clients.llm_client import FakeLLMClient, LLMClient, LocalLLMClient
@@ -34,6 +35,7 @@ from app.components.category_vectors import CategoryVectors
 from app.components.clip_tagger import ClipTagger
 from app.components.condition_scoring import ConditionWeights
 from app.components.embedder import Embedder
+from app.components.kure_model import FakeKureModel, TextEmbeddingModel, load_kure_model
 from app.components.moderation_model import (
     FakeModerationModel,
     ModerationModel,
@@ -43,12 +45,13 @@ from app.components.query_rewriter import QueryRewriter
 from app.components.question_generator import QuestionGenerator
 from app.components.question_parser import QuestionParser
 from app.components.reranker import Reranker
+from app.components.saved_song_pool import SavedSongPool
 from app.components.song_curator import SongCurator
 from app.components.song_pool import SongPool, load_song_pool
 from app.components.tag_vector_file import PrecomputedVectors, read_vectors_file
 from app.components.tag_version import compute_tag_version
 from app.components.vector_search import MemoryVectorSearch, RecordSearch, VectorSearch
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.db import mysql, postgres
 from app.db.postgres import get_session
 from app.db.repositories.balance_stats_repository import (
@@ -60,12 +63,12 @@ from app.db.repositories.embedding_repository import EmbeddingRepository, Embedd
 from app.db.repositories.job_repository import JobRepository
 from app.db.repositories.memory_record_repository import (
     ConditionRow,
-    MemoryRecord,
     MemoryRecordRepository,
     MemoryRecordSource,
 )
 from app.db.repositories.report_repository import MonthlyReportRepository
 from app.db.repositories.track_lookup_repository import TrackLookupRepository, TrackLookupStore
+from app.db.repositories.track_mood_repository import TrackMoodRepository
 from app.exceptions import UnauthorizedError, UpstreamError
 from app.services.balance_service import BalanceService
 from app.services.memory_search_service import MemorySearchService
@@ -94,6 +97,24 @@ class Clients:
     spotify_playlist: SpotifyPlaylistClient
 
 
+def _build_embedding_client(s: Settings) -> EmbeddingClient:
+    if s.text_embedding_provider == "openai":
+        return OpenAIEmbeddingClient(
+            api_key=s.openai_api_key,
+            model=s.text_embedding_model,
+            dim=s.text_embedding_dim,
+            timeout=s.external_timeout_seconds,
+            max_retries=s.external_max_retries,
+        )
+    return LocalEmbeddingClient(
+        base_url=s.embedding_service_url,
+        token=s.internal_token,
+        model=s.kure_model_name,
+        dim=s.kure_embedding_dim,
+        timeout=s.external_timeout_seconds,
+    )
+
+
 @lru_cache
 def get_clients() -> Clients:
     s = get_settings()
@@ -101,7 +122,7 @@ def get_clients() -> Clients:
         return Clients(
             llm_knowledge=FakeLLMClient(),
             llm_general=FakeLLMClient(),
-            embedding=FakeEmbeddingClient(dim=s.text_embedding_dim),
+            embedding=FakeEmbeddingClient(dim=s.text_vector_dim),
             clip=FakeClipClient(dim=s.clip_embedding_dim),
             backend=FakeBackendClient(),
             spotify_search=FakeSpotifySearchClient(),
@@ -110,13 +131,7 @@ def get_clients() -> Clients:
     return Clients(
         llm_knowledge=_build_llm(s.llm_knowledge_provider),
         llm_general=_build_llm(s.llm_general_provider),
-        embedding=OpenAIEmbeddingClient(
-            api_key=s.openai_api_key,
-            model=s.text_embedding_model,
-            dim=s.text_embedding_dim,
-            timeout=s.external_timeout_seconds,
-            max_retries=s.external_max_retries,
-        ),
+        embedding=_build_embedding_client(s),
         clip=ReplicateClipClient(
             api_token=s.replicate_api_token,
             model=s.clip_model,
@@ -177,6 +192,13 @@ async def get_track_lookup_store(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncIterator[TrackLookupStore]:
     yield TrackLookupRepository(session)
+
+
+async def get_saved_song_pool(
+    session: AsyncSession = Depends(get_session),
+) -> AsyncIterator[SavedSongPool]:
+    """사용자들이 저장한 곡(track_moods)을 추천 후보로 꺼내 주는 두 번째 곡 풀."""
+    yield SavedSongPool(TrackMoodRepository(session))
 
 
 def get_spotify_playlist_client() -> SpotifyPlaylistClient:
@@ -272,16 +294,16 @@ async def get_memory_vector_search(
 
 
 class _DbMemoryRecords:
-    """기억 검색 결과의 상세 — 백엔드 MySQL(읽기 전용)에서 읽는다."""
+    """기억 검색의 자물쇠 확인·조건 정보 — 백엔드 MySQL(읽기 전용)에서 읽는다."""
 
-    async def get_many(self, *, user_id: int, record_ids: list[int]) -> dict[int, MemoryRecord]:
+    async def existing_ids(self, *, user_id: int, record_ids: list[int]) -> set[int]:
         try:
             async with mysql.get_sessionmaker()() as mysql_session:
-                return await MemoryRecordRepository(mysql_session).get_many(
+                return await MemoryRecordRepository(mysql_session).existing_ids(
                     user_id=user_id, record_ids=record_ids
                 )
         except SQLAlchemyError as e:
-            raise UpstreamError("백엔드 DB에서 자물쇠 상세를 읽지 못했어요.") from e
+            raise UpstreamError("백엔드 DB에서 자물쇠 정보를 읽지 못했어요.") from e
 
     async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
         try:
@@ -294,10 +316,10 @@ class _DbMemoryRecords:
 
 
 class _NoMemoryRecords:
-    """백엔드 DB가 없는 로컬·테스트 환경 — 상세를 못 읽어서 결과가 비어 있다."""
+    """백엔드 DB가 없는 로컬·테스트 환경 — 자물쇠를 확인할 수 없어서 결과가 비어 있다."""
 
-    async def get_many(self, *, user_id: int, record_ids: list[int]) -> dict[int, MemoryRecord]:
-        return {}
+    async def existing_ids(self, *, user_id: int, record_ids: list[int]) -> set[int]:
+        return set()
 
     async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
         return []
@@ -325,7 +347,7 @@ async def get_memory_search_service(
         get_embedder(),
         search,
         records,
-        min_similarity=s.memory_search_min_similarity,
+        min_similarity=s.memory_min_similarity,
         comment_weight=s.memory_search_comment_weight,
         music_weight=s.memory_search_music_weight,
         candidates=s.memory_search_candidates,
@@ -339,7 +361,7 @@ async def get_memory_search_service(
         condition_candidates=s.memory_search_condition_candidates,
         display_count=s.memory_search_display_count,
         suggestion_count=s.memory_search_suggestion_count,
-        # 답변 앞머리 문장 — 꺼 두면(기본) 템플릿 문장. LLM에는 조건 이름과 건수만 보낸다
+        # 답변 앞머리 문장 — 꺼 두면(기본) 템플릿 문장. LLM에는 조건 이름과 결과 유무만 보낸다
         headline_writer=(
             HeadlineWriter(get_clients().llm_general) if s.memory_answer_llm_enabled else None
         ),
@@ -348,6 +370,20 @@ async def get_memory_search_service(
 
 
 @lru_cache
+@lru_cache
+def get_kure_model() -> TextEmbeddingModel | None:
+    """임베딩 서비스(embedding_main)가 쓰는 KURE-v1 모델. 프로세스당 하나만 올린다.
+
+    모델 파일이 없으면 None이라 서버는 뜨고 임베딩 요청만 503이 난다.
+    """
+    s = get_settings()
+    if s.ai_client_mode == "fake":
+        return FakeKureModel(dim=s.kure_embedding_dim, model=s.kure_model_name)
+    return load_kure_model(
+        s.kure_model_dir, s.kure_model_name, s.kure_embedding_dim, s.kure_threads, s.kure_max_tokens
+    )
+
+
 def get_moderation_model() -> ModerationModel | None:
     # 프로세스당 한 번만 로드한다 (ONNX 세션 생성에 1~2초)
     s = get_settings()

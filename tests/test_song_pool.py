@@ -119,3 +119,99 @@ def test_downloaded_pool_uses_only_known_vocab():
         assert set(s["genres"]) <= set(GENRE_VOCAB), s
         assert set(s["moods"]) <= set(MOOD_VOCAB), s
         assert 0 <= s["popularity"] <= 100
+
+
+# ── by_genre (기능6 곡 대결용, 2026-10-16) ─────────────────────────────
+
+
+def test_by_genre_matches_main_or_secondary_genre():
+    pool = _pool(
+        _ps("A", "1", genres=("댄스",)),
+        _ps("B", "2", genres=("록/메탈", "인디음악")),
+        _ps("C", "3", genres=("발라드",)),
+    )
+
+    assert {s.title for s in pool.by_genre("댄스")} == {"1"}
+    assert {s.title for s in pool.by_genre("인디음악")} == {"2"}
+    assert pool.by_genre("재즈") == []
+
+
+def _vec(*values: float) -> tuple[float, ...]:
+    return tuple(values)
+
+
+def _embedded(artist, title, embedding, **kw) -> PoolSong:
+    return PoolSong(
+        artist, title, kw.get("genres", ("발라드",)), kw.get("moods", ("잔잔한",)), 0, embedding
+    )
+
+
+def test_songs_outside_the_tag_filter_stay_out_even_if_their_vector_is_close():
+    pool = _pool(
+        _embedded("A", "멂", _vec(0.0, 1.0)),
+        _embedded("B", "가까움", _vec(1.0, 0.0)),
+        _embedded("C", "태그 불일치", _vec(1.0, 0.0), genres=("댄스",), moods=("신나는",)),
+    )
+
+    picked = pool.pick(("발라드",), ("잔잔한",), count=5, situation_vector=[1.0, 0.0])
+
+    assert {s.title for s in picked} == {"가까움", "멂"}
+
+
+def test_vector_ordering_decides_which_songs_make_the_cut(monkeypatch):
+    import app.components.song_pool as sp
+
+    monkeypatch.setattr(sp, "TOP_K", 1)
+    pool = _pool(
+        _embedded("A", "멂", _vec(0.0, 1.0)),
+        _embedded("B", "가까움", _vec(1.0, 0.0)),
+    )
+
+    picked = pool.pick(("발라드",), ("잔잔한",), count=1, situation_vector=[1.0, 0.0])
+
+    assert [s.title for s in picked] == ["가까움"]
+
+
+def test_pool_without_embeddings_keeps_the_old_order(monkeypatch):
+    import app.components.song_pool as sp
+
+    monkeypatch.setattr(sp, "TOP_K", 1)
+    pool = _pool(_ps("A", "인기 낮음", popularity=10), _ps("B", "인기 높음", popularity=90))
+
+    picked = pool.pick(("발라드",), ("잔잔한",), count=1, situation_vector=[1.0, 0.0])
+
+    assert [s.title for s in picked] == ["인기 높음"]  # 벡터를 못 쓰면 예전 순서
+
+
+def test_vector_with_another_dimension_is_ignored_not_an_error():
+    pool = _pool(_embedded("A", "x", _vec(1.0, 0.0, 0.0)), _embedded("B", "y", _vec(0.0, 1.0, 0.0)))
+
+    picked = pool.pick(("발라드",), ("잔잔한",), count=2, situation_vector=[1.0, 0.0])
+
+    assert len(picked) == 2
+
+
+def test_load_reads_description_embedding_when_present(tmp_path):
+    path = tmp_path / "pool.json"
+    path.write_text(
+        json.dumps(
+            {
+                "songs": [
+                    {
+                        "artist": "A",
+                        "title": "1",
+                        "genres": ["발라드"],
+                        "moods": ["잔잔한"],
+                        "description_embedding": [0.5, 0.5],
+                    },
+                    {"artist": "B", "title": "2", "genres": ["발라드"], "moods": ["잔잔한"]},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    pool = load_song_pool(path)
+
+    assert pool is not None
+    assert [s.embedding for s in pool._songs] == [(0.5, 0.5), None]

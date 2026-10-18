@@ -44,10 +44,28 @@ def run_worker_env(monkeypatch):
 
 def test_worker_runs_by_default(run_worker_env):
     run_worker_env(None)
-    assert set(commands()) == {"gateway", "moderation", "worker"}
+    assert set(commands()) == {"gateway", "moderation", "embedding", "worker"}
 
 
 def test_run_worker_false_starts_only_api_servers(run_worker_env):
     """블루그린 대기 VM — 워커가 공유 DB 큐에서 운영 작업을 가져가지 않게 뺀다."""
     run_worker_env("false")
-    assert set(commands()) == {"gateway", "moderation"}
+    assert set(commands()) == {"gateway", "moderation", "embedding"}
+
+
+def test_embedding_service_listens_only_inside_the_container(run_worker_env):
+    """임베딩 서비스는 gateway·worker만 부르므로 바깥에 열지 않는다."""
+    run_worker_env(None)
+    cmd = commands()["embedding"]
+
+    assert cmd[cmd.index("--host") + 1] == "127.0.0.1"
+    assert cmd[cmd.index("--port") + 1] == "8002"
+
+
+def test_no_embedding_process_when_provider_is_openai(monkeypatch):
+    monkeypatch.setenv("TEXT_EMBEDDING_PROVIDER", "openai")
+    get_settings.cache_clear()
+    try:
+        assert "embedding" not in commands()
+    finally:
+        get_settings.cache_clear()

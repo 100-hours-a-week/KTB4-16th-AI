@@ -5,8 +5,9 @@
 "이런 자물쇠를 찾으시는 건 아닌가요?" 토글 안에 카드로 보여주기 때문이다.
 문장에는 아래 둘만 들어간다.
 
-1. 앞머리 — 질문한 조건과 찾은 건수. LLM이 쓰고(answer_headline), 실패하면 이 모듈의 템플릿
-   (template_headline)으로 대신한다.
+1. 앞머리 — 질문한 조건과 결과 유무(있음·없음·많아서 일부만). **건수 숫자는 쓰지 않는다** (건수는
+   프론트가 records.length로 보여준다). LLM이 쓰고(answer_headline), 실패하거나 숫자가 섞이면 이
+   모듈의 템플릿(template_headline)으로 대신한다.
 2. 안내 — 사전에 없는 장소 때문에 적용하지 못한 조건 등. 코드가 정한 문장을 그대로 붙인다.
 
 문장에 자물쇠 하나하나의 날짜·장소·곡이 들어가지 않으므로, 대화를 저장해 두고 나중에 자물쇠를
@@ -25,25 +26,22 @@ def template_headline(
     """LLM 없이 만드는 앞머리 문장.
 
     labels: 질문에서 읽어 낸 조건 이름들 (없으면 조건 없는 질문).
-    found: 결과(records)로 보내는 자물쇠 수.
+    found: 결과(records)로 보내는 자물쇠 수. 문장에는 숫자로 쓰지 않고 있는지 없는지만 쓴다.
     total: 조건에 모두 맞는 자물쇠 전체 수. found보다 크면 일부만 보내는 것이다.
     suggestions: 제안(suggestedRecords)으로 보내는 일부만 맞는 자물쇠 수.
     """
     if found == 0 and suggestions == 0:
         return NO_RESULT_TEXT
     if not labels:
-        return f"비슷한 자물쇠 {found}건을 찾았어요."
+        return "비슷한 자물쇠를 찾았어요."
 
     conditions = ", ".join(labels)
     if found == 0:
         return f"{conditions} 조건에 모두 맞는 자물쇠는 없어요."
     total = max(total or found, found)
     if total > found:
-        return (
-            f"{conditions} 조건에 맞는 자물쇠는 총 {total}건이에요. "
-            f"그중 상위 {found}건을 보여드려요."
-        )
-    return f"{conditions} 조건에 맞는 자물쇠 {found}건을 찾았어요."
+        return f"{conditions} 조건에 맞는 자물쇠가 많아서 일부만 보여드려요."
+    return f"{conditions} 조건에 맞는 자물쇠를 찾았어요."
 
 
 def compose_answer(headline: str, *, notices: Sequence[str] = ()) -> str:

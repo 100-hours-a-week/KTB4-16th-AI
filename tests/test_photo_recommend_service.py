@@ -64,16 +64,28 @@ class StubSpotifySearch:
         self,
         results_by_query: dict[str, list[dict] | Exception],
         error: Exception | None = None,
+        tracks_by_id: dict[str, dict | Exception] | None = None,
     ):
         self._results = results_by_query
         self._error = error
+        self._tracks = tracks_by_id or {}
         self.queries: list[str] = []
+        self.track_ids: list[str] = []
 
     async def search_tracks(self, query: str, limit: int = 10) -> list[dict]:
         self.queries.append(query)
         if self._error:
             raise self._error
         result = self._results.get(query, [])
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    async def get_track(self, track_id: str) -> dict:
+        self.track_ids.append(track_id)
+        result = self._tracks.get(track_id)
+        if result is None:
+            raise KeyError(track_id)
         if isinstance(result, Exception):
             raise result
         return result
@@ -105,8 +117,10 @@ def _curation(songs=None, genre="댄스", moods=("신나는", "화려한")) -> C
     )
 
 
-def _req() -> PhotoRecommendRequest:
-    return PhotoRecommendRequest(imageUrl="https://cdn.muro.app/uploads/img_1.jpg")
+def _req(**overrides) -> PhotoRecommendRequest:
+    payload = {"imageUrl": "https://cdn.muro.app/uploads/img_1.jpg"}
+    payload.update(overrides)
+    return PhotoRecommendRequest.model_validate(payload)
 
 
 def build_service(*, tags=("카페",), curation=None, results=None):
@@ -472,3 +486,92 @@ async def test_both_spotify_failures_raise_502():
 
     with pytest.raises(ExternalApiFailedError):
         await service.recommend(_req())
+
+
+# ── 사용자 저장 곡을 곡 풀과 한 풀로 (2026-10-16) ───────────────────────
+
+
+def _saved_pool_of(*track_ids, genre="댄스", moods=("신나는", "화려한")):
+    import random
+
+    from app.components.saved_song_pool import SavedSongPool
+    from app.db.repositories.track_mood_repository import SavedSong
+
+    songs = [SavedSong(tid, genre, tuple(moods)) for tid in track_ids]
+
+    class _Search:
+        async def search_by_tags(self, genres, moods_, limit):
+            return songs
+
+    return SavedSongPool(_Search(), rng=random.Random(0))
+
+
+def build_with_saved(*, llm_songs, pool_songs, saved_ids, saved_count=1, pool_count=3):
+    results = _results_for(*llm_songs, *pool_songs)
+    tracks = {tid: _track_json(tid, f"제목-{tid}", f"가수-{tid}") for tid in saved_ids}
+    curator = StubSongCurator(curation=_curation(songs=[_song(a, t) for a, t in llm_songs]))
+    spotify = StubSpotifySearch(results, tracks_by_id=tracks)
+    service = PhotoRecommendService(
+        clip_tagger=StubClipTagger(tags=["파티"]),
+        song_curator=curator,
+        reranker=Reranker(),
+        spotify_search=spotify,
+        song_pool=_pool_of(*pool_songs),
+        pool_count=pool_count,
+        llm_count=4,
+        saved_pool=_saved_pool_of(*saved_ids),
+        saved_count=saved_count,
+    )
+    return service, spotify
+
+
+async def test_saved_song_takes_one_of_the_pool_slots():
+    llm = [("L1", "a"), ("L2", "b"), ("L3", "c"), ("L4", "d")]
+    pool = [("P1", "x"), ("P2", "y"), ("P3", "z")]
+    service, spotify = build_with_saved(llm_songs=llm, pool_songs=pool, saved_ids=["s1"])
+
+    res = await service.recommend(_req())
+
+    ids = [t.external_track_id for t in res.tracks]
+    assert len(ids) == 5
+    assert "s1" in ids  # 저장 곡 1곡
+    assert sum(i.startswith("id-P") for i in ids) == 2  # 곡 풀이 남은 2자리
+    # 저장 곡은 검색이 아니라 get_track 한 번으로 끝난다
+    assert spotify.track_ids == ["s1"]
+
+
+async def test_song_pool_fills_the_slot_when_no_saved_song_matches():
+    llm = [("L1", "a"), ("L2", "b")]
+    pool = [("P1", "x"), ("P2", "y"), ("P3", "z")]
+    service, spotify = build_with_saved(llm_songs=llm, pool_songs=pool, saved_ids=[])
+
+    res = await service.recommend(_req())
+
+    ids = [t.external_track_id for t in res.tracks]
+    assert sum(i.startswith("id-P") for i in ids) == 3  # 저장 곡 자리까지 곡 풀이 메움
+    assert spotify.track_ids == []
+
+
+async def test_saved_song_lookup_failure_still_answers_with_the_rest():
+    llm = [("L1", "a"), ("L2", "b")]
+    pool = [("P1", "x"), ("P2", "y")]
+    results = _results_for(*llm, *pool)
+    curator = StubSongCurator(curation=_curation(songs=[_song(a, t) for a, t in llm]))
+    spotify = StubSpotifySearch(results, tracks_by_id={"s1": SpotifyError("down")})
+    service = PhotoRecommendService(
+        clip_tagger=StubClipTagger(tags=["파티"]),
+        song_curator=curator,
+        reranker=Reranker(),
+        spotify_search=spotify,
+        song_pool=_pool_of(*pool),
+        pool_count=3,
+        llm_count=4,
+        saved_pool=_saved_pool_of("s1"),
+        saved_count=1,
+    )
+
+    res = await service.recommend(_req())
+
+    ids = [t.external_track_id for t in res.tracks]
+    assert "s1" not in ids
+    assert ids  # 나머지로 응답

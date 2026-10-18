@@ -5,6 +5,12 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# 유사도 기준값의 제공자별 기본값. 모델마다 점수 분포가 달라서 같은 값을 쓸 수 없다.
+# - openai: 2026-09-26 더미 자물쇠(서로 다른 코멘트 18개)로 잰 값
+# - kure: 2026-10-15 합성 시험셋(코멘트 100개, 질문 30개)에서 OpenAI 0.40과 비슷하거나 나은 지점
+#   (응답 76% / 오답 38%). 합성 데이터라 임시값이다 — 실제 코멘트가 쌓이면 다시 맞출 것.
+SIMILARITY_DEFAULTS = {"openai": 0.40, "kure": 0.65}
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -44,14 +50,34 @@ class Settings(BaseSettings):
     local_llm_url: str = ""
     local_llm_model: str = ""
 
-    # 텍스트 임베딩 (코멘트·음악 무드 텍스트) — V2에 로컬 모델로 교체 예정
+    # 텍스트 임베딩 (코멘트·음악 무드 텍스트·검색 질문). V2부터 KURE-v1(자체 서빙)이 기본이다.
+    # "openai"는 예전 방식(1536차원)이라, 벡터 칸이 1024차원인 지금은 되돌리기용으로만 남겨 둔다
+    # (마이그레이션 0010을 되돌리고 다시 임베딩해야 쓸 수 있음).
+    text_embedding_provider: Literal["kure", "openai"] = "kure"
     openai_api_key: str = ""
-    text_embedding_model: str = "text-embedding-3-small"
-    text_embedding_dim: int = 1536
+    text_embedding_model: str = "text-embedding-3-small"  # provider=openai일 때만 쓴다
+    text_embedding_dim: int = 1536  # provider=openai일 때만 쓴다
+
+    # KURE-v1 (nlpai-lab/KURE-v1, ONNX fp32). 컨테이너 안의 별도 프로세스(embedding_main)가 모델을
+    # 한 번만 올리고, gateway·worker는 HTTP로 부른다. 모델 파일은 Docker 빌드 때 HF 비공개
+    # 저장소에서 받아 둔다. 배포 환경변수 TEXT_EMBEDDING_MODEL/DIM과 이름을 분리해서, 예전
+    # OpenAI 값이 남아 있어도 덮어쓰이지 않게 했다.
+    kure_model_name: str = "nlpai-lab/KURE-v1"
+    kure_embedding_dim: int = 1024
+    kure_model_dir: str = "/app/models/kure"
+    kure_threads: int = 2
+    kure_max_tokens: int = 512  # 입력 길이 상한. 긴 글 하나가 처리 시간을 크게 늘리지 않게 자른다
+    embedding_service_url: str = "http://127.0.0.1:8002"
 
     # 기능5 기억 검색 (1단계 기준선) — 아래 값은 모두 시험지로 정할 초기값이다.
     # 임베딩 모델을 바꾸면 유사도 값의 분포가 달라지므로 그때 다시 정한다.
-    memory_search_min_similarity: float = 0.40  # 기능1의 개인 기록 기준(0.40)을 따라 시작
+    # None이면 임베딩 제공자별 기본값(SIMILARITY_DEFAULTS)을 쓴다. 값을 주면 그 값을 쓴다.
+    memory_search_min_similarity: float | None = None
+    # 기능1이 "비슷한 과거 코멘트"로 인정하는 최소 유사도. None이면 제공자별 기본값
+    personal_similarity_min: float | None = None
+    # 곡을 고를 때 질문 벡터에 내 취향 벡터를 섞는 비율 (0=끔, 0.3=상황 70% + 취향 30%).
+    # 정답을 알 데이터가 아직 없어서 감으로 둔 초기값 — 같은 상황 세트로 비교해 정한다.
+    personal_taste_weight: float = 0.3
     memory_search_comment_weight: float = 0.5
     memory_search_music_weight: float = 0.5
     memory_search_candidates: int = 20  # 검색기마다 가져오는 후보 수
@@ -66,8 +92,8 @@ class Settings(BaseSettings):
     memory_search_display_count: int = 5
     # 제안(일부만 맞는 자물쇠) 토글을 열면 보이는 최대 건수
     memory_search_suggestion_count: int = 3
-    # 답변 앞머리 문장(질문한 조건 + 건수)을 LLM이 쓴다. 꺼 두면 템플릿 문장.
-    # LLM에는 조건 이름과 건수만 보낸다 (질문 원문·곡·장소·코멘트는 보내지 않음)
+    # 답변 앞머리 문장(질문한 조건 + 결과 유무, 건수 없음)을 LLM이 쓴다. 꺼 두면 템플릿 문장.
+    # LLM에는 조건 이름과 결과 유무만 보낸다 (질문 원문·곡·장소·코멘트·건수는 보내지 않음)
     memory_answer_llm_enabled: bool = False
     memory_answer_llm_timeout_seconds: float = 8.0  # 넘기면 템플릿 문장으로 대신한다
 
@@ -87,6 +113,10 @@ class Settings(BaseSettings):
     # 곡 풀을 쓰면 LLM에게는 song_pool_llm_count곡만 받는다 (Spotify 탈락 대비 여유분 포함)
     song_pool_count: int = 3
     song_pool_llm_count: int = 4
+    # 곡 풀 몫 중 몇 곡을 "사용자들이 저장한 곡"(track_moods)에서 가져올지. 나머지는 TJ 곡 풀.
+    # 1로 둔 이유: 오픈 직후엔 저장된 곡이 적어서 다 거기서 뽑으면 같은 곡만 돌 수 있다.
+    # 저장 곡이 쌓이면 올려 가며 실측한다. 0이면 TJ 곡 풀만 사용.
+    song_pool_saved_count: int = 1
     # 곡 풀 파일 — Docker 빌드 때 비공개 HF 저장소에서 받아 둔다(공개 레포에 두지 않음).
     # 로컬에서 쓰려면 HF에서 받아 SONG_POOL_PATH로 지정
     song_pool_path: str = "/app/models/song_pool/song_pool.json"
@@ -117,6 +147,7 @@ class Settings(BaseSettings):
     # python -m app.main (전체 실행)이 띄우는 두 API 서버 포트
     gateway_port: int = 8000
     moderation_port: int = 8001
+    embedding_port: int = 8002  # 컨테이너 안(127.0.0.1)에서만 열림
 
     # Prometheus 지표 (GET /metrics). 인증 없이 열리므로 외부에 노출되지 않는 내부망에서만
     # 가져가야 한다. 인프라 사정으로 꺼야 할 때 METRICS_ENABLED=false
@@ -129,6 +160,25 @@ class Settings(BaseSettings):
     worker_poll_interval_seconds: float = 1.0
     job_max_attempts: int = 3
     job_stale_after_seconds: int = 600
+
+    @property
+    def text_vector_dim(self) -> int:
+        """텍스트 임베딩 벡터의 차원 — DB 벡터 칸 크기와 같아야 한다 (제공자에 따라 다름)."""
+        if self.text_embedding_provider == "kure":
+            return self.kure_embedding_dim
+        return self.text_embedding_dim
+
+    @property
+    def memory_min_similarity(self) -> float:
+        if self.memory_search_min_similarity is not None:
+            return self.memory_search_min_similarity
+        return SIMILARITY_DEFAULTS[self.text_embedding_provider]
+
+    @property
+    def personal_similarity(self) -> float:
+        if self.personal_similarity_min is not None:
+            return self.personal_similarity_min
+        return SIMILARITY_DEFAULTS[self.text_embedding_provider]
 
 
 @lru_cache

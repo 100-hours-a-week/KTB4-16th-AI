@@ -17,6 +17,13 @@ song_curator.py, reranker.py). 그래서 지금은 song_curator가 곡 추천과
 곡 풀은 LLM이 준 "상황 장르·무드"로 고르므로 LLM 호출은 늘지 않고, LLM 출력과 Spotify
 검색은 오히려 줄어든다. 곡 풀이 없거나 맞는 곡이 모자라면 LLM 곡으로 채운다.
 
+2026-10-16: 곡 풀 몫 중 일부(기본 1곡)는 사용자들이 자물쇠에 저장한 곡(track_moods)에서
+가져온다 — 곡 풀이 TJ 고정 목록과 저장 곡 두 개로 흩어지지 않게 같은 점수 기준으로 묶어
+한 풀처럼 쓴다(saved_song_pool.py).
+
+(참고) 재추천 제외(excludeTrackIds)는 기능1(상황 기반)에만 있다 — 기능3은 사진 한
+장당 한 번 추천하는 구조라 재추천 동작 자체가 없다.
+
 ※ "지역 인기곡 폴백"은 백엔드에 해당 조회 API(FR-008 집계)가 아직 없어
   place만 받아두고 실제 조회는 미구현 — 지금은 빈 tracks로 대체한다.
 """
@@ -26,11 +33,13 @@ import logging
 from app.clients.spotify_client import SpotifySearchClient
 from app.components.clip_tagger import ClipTagger
 from app.components.reranker import Reranker, TrackCandidate
+from app.components.saved_song_pool import SavedSongPool
 from app.components.song_curator import CANDIDATE_COUNT, CurationResult, SongCandidate, SongCurator
-from app.components.song_mix import resolve_both
+from app.components.song_mix import resolve_sources
 from app.components.song_pool import SongPool
 from app.components.track_resolver import TrackResolver
 from app.db.repositories.track_lookup_repository import TrackLookupStore
+from app.db.repositories.track_mood_repository import SavedSong
 from app.exceptions import ClipError, ExternalApiFailedError, LLMError, UpstreamError
 from app.schemas.common import Track
 from app.schemas.photo_recommend import PhotoRecommendRequest, PhotoRecommendResponse
@@ -51,7 +60,11 @@ class PhotoRecommendService:
         song_pool: SongPool | None = None,
         pool_count: int = 0,
         llm_count: int = CANDIDATE_COUNT,
+        saved_pool: SavedSongPool | None = None,
+        saved_count: int = 0,
     ):
+        self._saved_pool = saved_pool
+        self._saved_count = saved_count if saved_pool is not None else 0
         self._clip_tagger = clip_tagger
         self._song_curator = song_curator
         self._reranker = reranker
@@ -82,14 +95,17 @@ class PhotoRecommendService:
             logger.warning("곡 추천 실패, 폴백: %s", e)
             return self._fallback(tags=tags)
 
-        pool_songs = self._pick_from_pool(curation)
-        if not curation.songs and not pool_songs:
+        saved_songs = await self._pick_saved(curation)
+        pool_songs = self._pick_from_pool(curation, self._pool_count - len(saved_songs))
+        if not curation.songs and not pool_songs and not saved_songs:
             # 형식이 깨져 한 줄도 못 건졌다 — 추천 자체가 실패한 것으로 본다
             logger.warning("곡 추천 결과를 파싱하지 못함, 폴백")
             return self._fallback(tags=tags)
 
         try:
-            llm_found, pool_found = await resolve_both(self._resolver, curation.songs, pool_songs)
+            llm_found, pool_found = await resolve_sources(
+                self._resolver, curation.songs, pool_songs, saved_songs
+            )
         except UpstreamError as e:
             logger.warning("Spotify 확인 실패: %s", e)
             raise ExternalApiFailedError("Spotify 곡 확인에 실패했어요.") from e
@@ -132,19 +148,27 @@ class PhotoRecommendService:
         seen = {c.external_track_id for c in candidates}
         return candidates + [c for c in more if c.external_track_id not in seen]
 
-    def _pick_from_pool(self, curation: CurationResult) -> list[SongCandidate]:
+    def _pick_from_pool(self, curation: CurationResult, count: int) -> list[SongCandidate]:
         if self._pool is None:
             return []
         try:
             return self._pool.pick(
                 curation.situation_genres,
                 curation.situation_moods,
-                self._pool_count,
+                count,
                 exclude=curation.songs,
             )
         except Exception:
             logger.exception("곡 풀에서 고르기 실패 — LLM 곡만 사용")
             return []
+
+    async def _pick_saved(self, curation: CurationResult) -> list[SavedSong]:
+        """사용자들이 저장한 곡에서 먼저 채운다. 모자라면 그만큼 곡 풀이 채운다."""
+        if self._saved_pool is None:
+            return []
+        return await self._saved_pool.pick(
+            curation.situation_genres, curation.situation_moods, self._saved_count
+        )
 
     def _mix(
         self,

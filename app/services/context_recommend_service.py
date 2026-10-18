@@ -16,6 +16,15 @@
 한국 곡을 잘 몰라서 실존하는 곡 풀 비중을 절반 이상으로 둔다. 곡 풀은 LLM이 준 상황
 장르·무드로 고르고, 개인 취향(과거 자물쇠 곡)은 LLM 몫에만 반영된다. LLM에게는 그만큼
 적게(기본 4곡) 받는다. 곡 풀 곡도 같은 점수 기준(MIN_RERANK_SCORE)을 넘어야 남는다.
+
+2026-10-16: 곡 풀 몫 중 일부(기본 1곡)는 사용자들이 자물쇠에 저장한 곡(track_moods)에서
+가져온다 — TJ 고정 목록과 저장 곡으로 곡 풀이 흩어지지 않게 같은 점수 기준으로 묶어 한
+풀처럼 쓴다(saved_song_pool.py). 저장 곡은 이미 Spotify ID가 있어 검색이 아니라 get_track
+한 번으로 끝난다.
+
+재추천: 클라이언트가 excludeTrackIds로 직전까지 보여준 곡을 누적해서 보내면 그 곡들을
+빼고 추천한다(개인 취향 참고곡 제외와 같은 방식으로 합쳐서 처리). 서버는 상태를 들고
+있지 않는다.
 """
 
 import asyncio
@@ -27,17 +36,21 @@ from datetime import datetime
 from app.clients.spotify_client import SpotifySearchClient
 from app.components.embedder import Embedder
 from app.components.reranker import Reranker, TrackCandidate
+from app.components.saved_song_pool import SavedSongPool
 from app.components.song_curator import (
     CANDIDATE_COUNT,
     CurationResult,
     SongCandidate,
     SongCurator,
 )
-from app.components.song_mix import resolve_both
+from app.components.song_mix import resolve_sources
 from app.components.song_pool import SongPool
+from app.components.taste_vector import blend_taste, mean_vector
 from app.components.track_resolver import TrackResolver
 from app.components.vector_search import RecordSearch
+from app.config import SIMILARITY_DEFAULTS
 from app.db.repositories.track_lookup_repository import TrackLookupStore
+from app.db.repositories.track_mood_repository import SavedSong
 from app.exceptions import ExternalApiFailedError, LLMError, UpstreamError
 from app.schemas.context_recommend import (
     ContextRecommendRequest,
@@ -47,12 +60,14 @@ from app.schemas.context_recommend import (
 
 logger = logging.getLogger("muro.context_recommend")
 
-# 2026-09-26 더미 자물쇠(유저 5명, 코멘트 43개)로 실측: 비슷한 코멘트는 0.40~0.74
-# ("노을 지는 저녁"↔"노을이 미쳤다" 0.74, "쌀쌀한 밤"↔"조금 쌀쌀했지만 걷기 좋았어" 0.47),
-# 상관없는 코멘트는 0.26~0.39. 더미 코멘트가 짧고 반복이 많아서 대략적인 값 —
-# 실제 사용자 코멘트가 쌓이면 다시 맞춰야 한다.
-PERSONAL_SIMILARITY_THRESHOLD = 0.40
+# "비슷한 과거 코멘트"로 인정하는 최소 유사도의 기본값. 임베딩 모델마다 점수 분포가 달라서
+# 실제 값은 설정(personal_similarity_min, 없으면 모델별 기본값)에서 받는다 (app/config.py 참고).
+# OpenAI 시절 실측(2026-09-26 더미 자물쇠): 비슷한 코멘트 0.40~0.74, 상관없는 코멘트 0.26~0.39.
+# KURE 값은 합성 시험셋으로 잡은 임시값 — 실제 사용자 코멘트가 쌓이면 다시 맞춰야 한다.
+PERSONAL_SIMILARITY_THRESHOLD = SIMILARITY_DEFAULTS["kure"]
 SIMILAR_SEARCH_LIMIT = 5
+# 취향 벡터를 만들 때 쓰는 최근 저장 곡 수
+TASTE_RECORD_LIMIT = 50
 REFERENCE_COUNT = 3
 # 백엔드가 인기순으로 보내므로 앞에서부터. 너무 많으면 LLM이 인기곡만 따라 뽑는다
 NEARBY_REFERENCE_COUNT = 5
@@ -95,7 +110,15 @@ class ContextRecommendService:
         song_pool: SongPool | None = None,
         pool_count: int = 0,
         llm_count: int = CANDIDATE_COUNT,
+        saved_pool: SavedSongPool | None = None,
+        saved_count: int = 0,
+        personal_similarity: float = PERSONAL_SIMILARITY_THRESHOLD,
+        taste_weight: float = 0.0,
     ):
+        self._taste_weight = taste_weight
+        self._saved_pool = saved_pool
+        self._saved_count = saved_count if saved_pool is not None else 0
+        self._personal_similarity = personal_similarity
         self._pool = song_pool if song_pool is not None and pool_count > 0 else None
         self._pool_count = pool_count if self._pool is not None else 0
         # 곡 풀을 안 쓰면 예전처럼 LLM에게 넉넉히 받는다
@@ -119,20 +142,28 @@ class ContextRecommendService:
             logger.warning("곡 추천 실패, 폴백: %s", e)
             return _degraded(req, basis)
 
-        pool_songs = self._pick_from_pool(curation, references)
-        if not curation.songs and not pool_songs:
+        # 과거에 들은 곡(취향 참고로 쓴 곡)과 재추천 때 클라이언트가 보낸 곡을 함께 뺀다
+        excluded = {r.external_track_id for r in references} | set(req.exclude_track_ids)
+        situation_vector = await self._mood_vector(curation.mood_sentence)
+        situation_vector = await self._with_taste(req.user_id, situation_vector)
+        saved_songs = await self._pick_saved(curation, excluded, situation_vector)
+        pool_songs = self._pick_from_pool(
+            curation, references, self._pool_count - len(saved_songs), situation_vector
+        )
+        if not curation.songs and not pool_songs and not saved_songs:
             logger.warning("곡 추천 결과를 파싱하지 못함, 폴백")
             return _degraded(req, basis)
 
         try:
-            llm_found, pool_found = await resolve_both(self._resolver, curation.songs, pool_songs)
+            llm_found, pool_found = await resolve_sources(
+                self._resolver, curation.songs, pool_songs, saved_songs
+            )
         except UpstreamError as e:
             logger.warning("Spotify 확인 실패: %s", e)
             raise ExternalApiFailedError("Spotify 곡 확인에 실패했어요.") from e
 
-        already_heard = {r.external_track_id for r in references}
-        llm_found = [c for c in llm_found if c.external_track_id not in already_heard]
-        pool_found = [c for c in pool_found if c.external_track_id not in already_heard]
+        llm_found = [c for c in llm_found if c.external_track_id not in excluded]
+        pool_found = [c for c in pool_found if c.external_track_id not in excluded]
         limit = min(req.limit, MAX_TRACKS)
         kept = self._mix(curation, llm_found, pool_found, limit)
 
@@ -147,7 +178,7 @@ class ContextRecommendService:
             except UpstreamError as e:
                 logger.warning("곡 보충 실패, 있는 곡으로 응답: %s", e)
             else:
-                seen = {c.external_track_id for c in llm_found + pool_found} | already_heard
+                seen = {c.external_track_id for c in llm_found + pool_found} | excluded
                 llm_found += [c for c in more if c.external_track_id not in seen]
                 kept = self._mix(curation, llm_found, pool_found, limit)
 
@@ -195,8 +226,52 @@ class ContextRecommendService:
                 break
         return sorted(mixed, key=lambda pair: pair[1], reverse=True)
 
+    async def _pick_saved(
+        self,
+        curation: CurationResult,
+        excluded: set[str],
+        situation_vector: list[float] | None = None,
+    ) -> list[SavedSong]:
+        """사용자들이 저장한 곡에서 먼저 채운다. 모자라면 그만큼 TJ 곡 풀이 채운다."""
+        if self._saved_pool is None:
+            return []
+        return await self._saved_pool.pick(
+            curation.situation_genres,
+            curation.situation_moods,
+            self._saved_count,
+            exclude_ids=excluded,
+            situation_vector=situation_vector,
+        )
+
+    async def _mood_vector(self, sentence: str) -> list[float] | None:
+        """Claude가 쓴 분위기 문장을 벡터로. 실패해도 태그 점수로 고르면 되니 추천은 계속한다."""
+        if not sentence or (self._pool is None and self._saved_pool is None):
+            return None
+        try:
+            return await self._embedder.embed(sentence)
+        except Exception:
+            logger.warning("분위기 문장 임베딩 실패 — 태그 점수로만 고름", exc_info=True)
+            return None
+
+    async def _with_taste(
+        self, user_id: int, situation_vector: list[float] | None
+    ) -> list[float] | None:
+        """상황 벡터에 이 사용자의 취향 벡터를 taste_weight 비율로 섞는다. 실패하면 상황 벡터만."""
+        if situation_vector is None or self._taste_weight <= 0:
+            return situation_vector
+        try:
+            taste = mean_vector(await self._records.music_vectors(user_id, TASTE_RECORD_LIMIT))
+        except Exception:
+            logger.warning("취향 벡터 조회 실패 — 상황 벡터만 사용", exc_info=True)
+            return situation_vector
+        return blend_taste(situation_vector, taste, self._taste_weight)
+
     def _pick_from_pool(
-        self, curation: CurationResult, references: list["ReferenceTrack"]
+        self,
+        curation: CurationResult,
+        references: list["ReferenceTrack"],
+        count: int,
+        situation_vector: list[float] | None = None,
     ) -> list[SongCandidate]:
         if self._pool is None:
             return []
@@ -205,8 +280,9 @@ class ContextRecommendService:
             return self._pool.pick(
                 curation.situation_genres,
                 curation.situation_moods,
-                self._pool_count,
+                count,
                 exclude=curation.songs + heard,
+                situation_vector=situation_vector,
             )
         except Exception:
             logger.exception("곡 풀에서 고르기 실패 — LLM 곡만 사용")
@@ -228,7 +304,7 @@ class ContextRecommendService:
 
         track_ids: list[str] = []
         for hit in hits:
-            if hit.similarity < PERSONAL_SIMILARITY_THRESHOLD or not hit.external_track_id:
+            if hit.similarity < self._personal_similarity or not hit.external_track_id:
                 continue
             if hit.external_track_id not in track_ids:
                 track_ids.append(hit.external_track_id)

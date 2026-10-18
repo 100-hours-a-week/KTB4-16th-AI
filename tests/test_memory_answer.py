@@ -13,26 +13,38 @@ def test_headline_without_any_result_is_the_no_result_text():
     assert template_headline([], found=0) == NO_RESULT_TEXT
 
 
-def test_headline_lists_the_conditions_and_the_count():
+def test_headline_lists_the_conditions_without_a_count():
     assert template_headline(["홍대 근처", "비 오는 날"], found=2) == (
-        "홍대 근처, 비 오는 날 조건에 맞는 자물쇠 2건을 찾았어요."
+        "홍대 근처, 비 오는 날 조건에 맞는 자물쇠를 찾았어요."
     )
 
 
-def test_headline_without_conditions_says_similar():
-    assert template_headline([], found=4) == "비슷한 자물쇠 4건을 찾았어요."
+def test_headline_without_conditions_says_similar_without_a_count():
+    assert template_headline([], found=4) == "비슷한 자물쇠를 찾았어요."
 
 
-def test_headline_when_only_part_of_the_matches_is_sent_says_the_total():
+def test_headline_when_only_part_of_the_matches_is_sent_says_there_are_many():
     assert template_headline(["가을"], found=50, total=120) == (
-        "가을 조건에 맞는 자물쇠는 총 120건이에요. 그중 상위 50건을 보여드려요."
+        "가을 조건에 맞는 자물쇠가 많아서 일부만 보여드려요."
     )
 
 
-def test_headline_total_equal_to_found_is_just_the_count():
-    assert (
-        template_headline(["가을"], found=3, total=3) == "가을 조건에 맞는 자물쇠 3건을 찾았어요."
-    )
+def test_headline_total_equal_to_found_is_not_the_partial_sentence():
+    assert template_headline(["가을"], found=3, total=3) == "가을 조건에 맞는 자물쇠를 찾았어요."
+
+
+def test_headline_never_contains_a_count_number():
+    """건수는 프론트가 records.length로 보여준다 — 문장에는 건수 숫자가 없어야 한다 (명세 3.2)."""
+    cases = [
+        template_headline(["가을"], found=3),
+        template_headline(["가을"], found=50, total=120),
+        template_headline(["가을"], found=3, total=3),
+        template_headline([], found=4),
+        template_headline(["가을"], found=0, suggestions=2),
+        template_headline(["가을"], found=0),
+    ]
+
+    assert not [h for h in cases if any(ch.isdigit() for ch in h)]
 
 
 def test_headline_with_only_suggestions_says_nothing_matches_all_conditions():
@@ -52,8 +64,8 @@ def test_headline_never_lists_records():
 
 
 def test_answer_with_only_a_headline_is_the_headline():
-    assert compose_answer("가을 조건에 맞는 자물쇠 3건을 찾았어요.") == (
-        "가을 조건에 맞는 자물쇠 3건을 찾았어요."
+    assert compose_answer("가을 조건에 맞는 자물쇠를 찾았어요.") == (
+        "가을 조건에 맞는 자물쇠를 찾았어요."
     )
 
 

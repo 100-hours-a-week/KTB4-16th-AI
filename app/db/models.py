@@ -37,9 +37,13 @@ class RecordEmbedding(Base):
     user_id: Mapped[int] = mapped_column(BigInteger, index=True)
     external_track_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     image_embedding: Mapped[list[float]] = mapped_column(Vector(_settings.clip_embedding_dim))
-    music_embedding: Mapped[list[float]] = mapped_column(Vector(_settings.text_embedding_dim))
+    # 텍스트 임베딩 칸은 모델을 바꾸면(0010: OpenAI → KURE) 차원이 달라져 기존 값을 비운다.
+    # 재임베딩(app/tools/reembed_text.py)이 끝나기 전에는 NULL이라 NOT NULL을 풀었다.
+    music_embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(_settings.text_vector_dim), nullable=True
+    )
     comment_embedding: Mapped[list[float] | None] = mapped_column(
-        Vector(_settings.text_embedding_dim), nullable=True
+        Vector(_settings.text_vector_dim), nullable=True
     )
     music_mood_text: Mapped[str] = mapped_column(Text)
     model_versions: Mapped[dict[str, Any]] = mapped_column(JSONB)
@@ -63,7 +67,10 @@ class TrackMood(Base):
 
     external_track_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     mood_text: Mapped[str] = mapped_column(Text)
-    mood_embedding: Mapped[list[float]] = mapped_column(Vector(_settings.text_embedding_dim))
+    # 0010에서 NOT NULL을 풀었다 (재임베딩 전에는 NULL). NULL인 행은 캐시로 쓰지 않는다
+    mood_embedding: Mapped[list[float] | None] = mapped_column(
+        Vector(_settings.text_vector_dim), nullable=True
+    )
     # 2026-09-26: 기능3 재랭킹이 임베딩 유사도 대신 이 태그 겹침으로 바뀌면서 추가.
     genre: Mapped[str] = mapped_column(String(20), server_default="")
     moods: Mapped[list[str]] = mapped_column(ARRAY(String(20)), server_default="{}")

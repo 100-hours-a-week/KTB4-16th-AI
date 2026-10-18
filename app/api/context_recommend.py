@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from app.clients.spotify_client import SpotifySearchClient
 from app.components.embedder import Embedder
 from app.components.reranker import Reranker
+from app.components.saved_song_pool import SavedSongPool
 from app.components.song_curator import SongCurator
 from app.components.song_pool import SongPool
 from app.components.vector_search import RecordSearch
@@ -12,6 +13,7 @@ from app.dependencies import (
     get_embedder,
     get_record_search,
     get_reranker,
+    get_saved_song_pool,
     get_song_curator,
     get_song_pool,
     get_spotify_search_client,
@@ -33,6 +35,7 @@ async def context_recommend(
     spotify_search: SpotifySearchClient = Depends(get_spotify_search_client),
     track_lookups: TrackLookupStore = Depends(get_track_lookup_store),
     song_pool: SongPool | None = Depends(get_song_pool),
+    saved_pool: SavedSongPool = Depends(get_saved_song_pool),
 ) -> ContextRecommendResponse:
     s = get_settings()
     service = ContextRecommendService(
@@ -45,5 +48,9 @@ async def context_recommend(
         song_pool=song_pool,
         pool_count=s.song_pool_count,
         llm_count=s.song_pool_llm_count,
+        saved_pool=saved_pool,
+        saved_count=s.song_pool_saved_count,
+        personal_similarity=s.personal_similarity,
+        taste_weight=s.personal_taste_weight,
     )
     return await service.recommend(req)

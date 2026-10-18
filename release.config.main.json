@@ -16,7 +16,7 @@
       [
         "@semantic-release/exec",
         {
-          "publishCmd": "docker buildx build --platform linux/amd64 --file Dockerfile --secret id=hf_token,env=HF_TOKEN --secret id=hf_token_kure,env=HF_TOKEN_KURE --tag \"$IMAGE_BASE:${nextRelease.version}\" --push ."
+          "publishCmd": "docker buildx build --platform linux/amd64 --cache-from type=registry,ref=$IMAGE_BASE-cache:build --cache-to type=registry,ref=$IMAGE_BASE-cache:build,mode=max --file Dockerfile --secret id=hf_token,env=HF_TOKEN --secret id=hf_token_kure,env=HF_TOKEN_KURE --tag \"$IMAGE_BASE:${nextRelease.version}\" --push ."
         }
       ],
       [

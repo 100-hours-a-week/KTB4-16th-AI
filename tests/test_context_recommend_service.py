@@ -32,9 +32,17 @@ class StubEmbedder:
 
 
 class StubRecordSearch:
-    def __init__(self, hits: list[SimilarRecord] | None = None, error: Exception | None = None):
+    def __init__(
+        self,
+        hits: list[SimilarRecord] | None = None,
+        error: Exception | None = None,
+        taste: list[list[float]] | None = None,
+        taste_error: Exception | None = None,
+    ):
         self._hits = hits or []
         self._error = error
+        self._taste = taste or []
+        self._taste_error = taste_error
         self.calls: list[int] = []
 
     async def similar_by_comment(self, user_id, query_vector, limit):
@@ -42,6 +50,11 @@ class StubRecordSearch:
         if self._error:
             raise self._error
         return self._hits
+
+    async def music_vectors(self, user_id, limit):
+        if self._taste_error:
+            raise self._taste_error
+        return self._taste
 
 
 class StubSongCurator:
@@ -119,13 +132,14 @@ def _req(**overrides) -> ContextRecommendRequest:
     return ContextRecommendRequest.model_validate(payload)
 
 
-def _service(*, curator, spotify=None, records=None, embedder=None):
+def _service(*, curator, spotify=None, records=None, embedder=None, **extra):
     return ContextRecommendService(
         embedder=embedder or StubEmbedder(),
         record_search=records or StubRecordSearch(),
         song_curator=curator,
         reranker=Reranker(),
         spotify_search=spotify or StubSpotify(),
+        **extra,
     )
 
 
@@ -225,6 +239,21 @@ async def test_past_record_below_threshold_is_generic():
 
     res = await _service(
         curator=curator, records=records, spotify=StubSpotify(DEFAULT_SEARCH)
+    ).recommend(_req())
+
+    assert res.recommendation_basis == "GENERIC"
+
+
+async def test_similarity_threshold_comes_from_the_caller():
+    """임베딩 모델마다 점수 분포가 달라서 기준값은 설정에서 받아 온다 (모델 교체 때 같이 바뀐다)."""
+    records = StubRecordSearch([SimilarRecord(1, "t_old", 0.70)])
+    curator = StubSongCurator(_curation([BALLAD]))
+
+    res = await _service(
+        curator=curator,
+        records=records,
+        spotify=StubSpotify(DEFAULT_SEARCH),
+        personal_similarity=0.80,
     ).recommend(_req())
 
     assert res.recommendation_basis == "GENERIC"
@@ -483,3 +512,118 @@ async def test_respects_requested_limit_with_pool():
     res = await service.recommend(_req(limit=2))
 
     assert len(res.tracks) == 2
+
+
+# ── 재추천 제외 (excludeTrackIds, 2026-10-16) ───────────────────────────
+
+
+async def test_excluded_track_is_dropped_from_results():
+    curator = StubSongCurator(_curation([BALLAD]))
+    service = _service(curator=curator, spotify=StubSpotify(DEFAULT_SEARCH))
+
+    res = await service.recommend(_req(excludeTrackIds=["t_ballad"]))
+
+    assert res.tracks == []
+    assert res.degraded is False
+
+
+async def test_excluded_track_does_not_count_against_result_limit():
+    songs = [BALLAD, _song("The Weeknd", "Blinding Lights")]
+    search = {
+        **DEFAULT_SEARCH,
+        _song("The Weeknd", "Blinding Lights").search_query: [
+            _track_json("t2", "Blinding Lights", "The Weeknd")
+        ],
+    }
+    curator = StubSongCurator(_curation(songs))
+    service = _service(curator=curator, spotify=StubSpotify(search))
+
+    res = await service.recommend(_req(excludeTrackIds=["t_ballad"], limit=2))
+
+    assert [t.external_track_id for t in res.tracks] == ["t2"]
+
+
+# ── 저장 곡 + 재추천 제외가 함께 걸릴 때 (2026-10-16) ─────────────────────
+
+
+def _saved_pool_of(*track_ids, genre="발라드", moods=("잔잔한", "그리운")):
+    import random
+
+    from app.components.saved_song_pool import SavedSongPool
+    from app.db.repositories.track_mood_repository import SavedSong
+
+    songs = [SavedSong(tid, genre, tuple(moods)) for tid in track_ids]
+
+    class _Search:
+        async def search_by_tags(self, genres, moods_, limit):
+            return songs
+
+    return SavedSongPool(_Search(), rng=random.Random(0))
+
+
+async def test_saved_song_is_dropped_when_the_client_excluded_it():
+    """재추천으로 빠져야 하는 곡이 저장 곡 쪽에서 되살아나면 안 된다."""
+    tracks = {"s1": _track_json("s1", "저장곡", "가수")}
+    service = ContextRecommendService(
+        embedder=StubEmbedder(),
+        record_search=StubRecordSearch(),
+        song_curator=StubSongCurator(_curation([BALLAD])),
+        reranker=Reranker(),
+        spotify_search=StubSpotify(DEFAULT_SEARCH, tracks=tracks),
+        saved_pool=_saved_pool_of("s1"),
+        saved_count=1,
+        pool_count=3,
+    )
+
+    res = await service.recommend(_req(excludeTrackIds=["s1"], limit=5))
+
+    assert "s1" not in [t.external_track_id for t in res.tracks]
+
+
+class _VectorRecordingPool:
+    """곡 풀 대역 — 곡을 고를 때 받은 질문 벡터를 기록한다."""
+
+    def __len__(self):
+        return 1
+
+    def pick(self, genres, moods, count, exclude=None, situation_vector=None):
+        self.vector = situation_vector
+        return []
+
+
+def _tagged(sentence="비 오는 날 조용한 노래"):
+    return CurationResult(("발라드",), ("잔잔한",), [BALLAD], mood_sentence=sentence)
+
+
+async def _picked_vector(*, records, taste_weight):
+    pool = _VectorRecordingPool()
+    service = ContextRecommendService(
+        embedder=StubEmbedder(),  # 상황 문장 → [1, 0, 0]
+        record_search=records,
+        song_curator=StubSongCurator(_tagged()),
+        reranker=Reranker(),
+        spotify_search=StubSpotify(DEFAULT_SEARCH),
+        song_pool=pool,
+        pool_count=3,
+        taste_weight=taste_weight,
+    )
+    await service.recommend(_req())
+    return pool.vector
+
+
+async def test_taste_vector_is_blended_into_the_pool_query_by_weight():
+    records = StubRecordSearch(taste=[[0.0, 1.0, 0.0]])
+
+    off = await _picked_vector(records=records, taste_weight=0.0)
+    on = await _picked_vector(records=records, taste_weight=0.5)
+
+    assert off == [1.0, 0.0, 0.0]
+    assert on[0] > 0 and on[1] > 0  # 상황과 취향이 섞였다
+
+
+async def test_taste_failure_or_no_history_falls_back_to_the_situation_vector():
+    broken = StubRecordSearch(taste_error=RuntimeError("DB 장애"))
+    empty = StubRecordSearch(taste=[])
+
+    assert await _picked_vector(records=broken, taste_weight=0.3) == [1.0, 0.0, 0.0]
+    assert await _picked_vector(records=empty, taste_weight=0.3) == [1.0, 0.0, 0.0]
