@@ -83,9 +83,11 @@ class SongPool:
             and (score := _score(situation_genres, situation_moods, song)) >= MIN_SCORE
         ]
         if situation_vector is not None and any(
-            _comparable(situation_vector, song) for _, song in scored
+            cosine_rank_usable(situation_vector, song.embedding) for _, song in scored
         ):
-            scored = [(_similarity(situation_vector, song), song) for _, song in scored]
+            scored = [
+                (cosine_similarity(situation_vector, song.embedding), song) for _, song in scored
+            ]
         scored.sort(key=lambda pair: (pair[0], pair[1].popularity), reverse=True)
         top = [song for _, song in scored[:TOP_K]]
         self._rng.shuffle(top)
@@ -126,15 +128,15 @@ def _score(
     return score_tags(situation_genres, situation_moods, song.genres, song.moods)
 
 
-def _comparable(vector: list[float], song: PoolSong) -> bool:
-    return song.embedding is not None and len(song.embedding) == len(vector)
+def cosine_rank_usable(vector: list[float], embedding: tuple[float, ...] | None) -> bool:
+    return embedding is not None and len(embedding) == len(vector)
 
 
-def _similarity(vector: list[float], song: PoolSong) -> float:
-    """코사인 유사도(두 벡터 모두 길이 1이라 내적과 같다). 비교할 수 없는 곡은 맨 뒤(-1)."""
-    if song.embedding is None or not _comparable(vector, song):
+def cosine_similarity(vector: list[float], embedding: tuple[float, ...] | None) -> float:
+    """코사인 유사도(두 벡터 모두 길이 1이라 내적과 같다). 비교할 수 없으면 맨 뒤(-1)."""
+    if embedding is None or not cosine_rank_usable(vector, embedding):
         return -1.0
-    return sum(a * b for a, b in zip(vector, song.embedding, strict=True))
+    return sum(a * b for a, b in zip(vector, embedding, strict=True))
 
 
 def _norm(text: str) -> str:

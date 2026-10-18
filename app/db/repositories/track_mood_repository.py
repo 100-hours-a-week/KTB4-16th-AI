@@ -31,6 +31,8 @@ class SavedSong:
     external_track_id: str
     genre: str
     moods: tuple[str, ...]
+    # 분위기 문장의 벡터 — 상황 문장과 가까운 순으로 줄 세울 때 쓴다 (재임베딩 전엔 None)
+    embedding: tuple[float, ...] | None = None
 
 
 class SavedSongSearch(Protocol):
@@ -112,7 +114,12 @@ class TrackMoodRepository:
             # moods 칸은 일반 ARRAY로 선언돼 있어 .overlap()이 없다 — 겹침 연산자를 직접 쓴다
             conditions.append(TrackMood.moods.bool_op("&&")(cast(moods, PG_ARRAY(String(20)))))
         rows = await self._session.execute(
-            select(TrackMood.external_track_id, TrackMood.genre, TrackMood.moods)
+            select(
+                TrackMood.external_track_id,
+                TrackMood.genre,
+                TrackMood.moods,
+                TrackMood.mood_embedding,
+            )
             .where(or_(*conditions))
             .order_by(TrackMood.updated_at.desc())
             .limit(limit)
@@ -122,6 +129,7 @@ class TrackMoodRepository:
                 external_track_id=row.external_track_id,
                 genre=row.genre,
                 moods=tuple(row.moods),
+                embedding=tuple(row.mood_embedding) if row.mood_embedding is not None else None,
             )
             for row in rows
         ]

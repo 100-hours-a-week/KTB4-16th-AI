@@ -139,8 +139,8 @@ class ContextRecommendService:
 
         # 과거에 들은 곡(취향 참고로 쓴 곡)과 재추천 때 클라이언트가 보낸 곡을 함께 뺀다
         excluded = {r.external_track_id for r in references} | set(req.exclude_track_ids)
-        saved_songs = await self._pick_saved(curation, excluded)
         situation_vector = await self._mood_vector(curation.mood_sentence)
+        saved_songs = await self._pick_saved(curation, excluded, situation_vector)
         pool_songs = self._pick_from_pool(
             curation, references, self._pool_count - len(saved_songs), situation_vector
         )
@@ -220,7 +220,12 @@ class ContextRecommendService:
                 break
         return sorted(mixed, key=lambda pair: pair[1], reverse=True)
 
-    async def _pick_saved(self, curation: CurationResult, excluded: set[str]) -> list[SavedSong]:
+    async def _pick_saved(
+        self,
+        curation: CurationResult,
+        excluded: set[str],
+        situation_vector: list[float] | None = None,
+    ) -> list[SavedSong]:
         """사용자들이 저장한 곡에서 먼저 채운다. 모자라면 그만큼 TJ 곡 풀이 채운다."""
         if self._saved_pool is None:
             return []
@@ -229,11 +234,12 @@ class ContextRecommendService:
             curation.situation_moods,
             self._saved_count,
             exclude_ids=excluded,
+            situation_vector=situation_vector,
         )
 
     async def _mood_vector(self, sentence: str) -> list[float] | None:
         """Claude가 쓴 분위기 문장을 벡터로. 실패해도 태그 점수로 고르면 되니 추천은 계속한다."""
-        if not sentence or self._pool is None:
+        if not sentence or (self._pool is None and self._saved_pool is None):
             return None
         try:
             return await self._embedder.embed(sentence)
