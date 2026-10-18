@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     memory_search_min_similarity: float | None = None
     # 기능1이 "비슷한 과거 코멘트"로 인정하는 최소 유사도. None이면 제공자별 기본값
     personal_similarity_min: float | None = None
+    # 곡을 고를 때 질문 벡터에 내 취향 벡터를 섞는 비율 (0=끔, 0.3=상황 70% + 취향 30%).
+    # 정답을 알 데이터가 아직 없어서 감으로 둔 초기값 — 같은 상황 세트로 비교해 정한다.
+    personal_taste_weight: float = 0.3
     memory_search_comment_weight: float = 0.5
     memory_search_music_weight: float = 0.5
     memory_search_candidates: int = 20  # 검색기마다 가져오는 후보 수

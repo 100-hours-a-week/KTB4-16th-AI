@@ -51,5 +51,6 @@ async def context_recommend(
         saved_pool=saved_pool,
         saved_count=s.song_pool_saved_count,
         personal_similarity=s.personal_similarity,
+        taste_weight=s.personal_taste_weight,
     )
     return await service.recommend(req)

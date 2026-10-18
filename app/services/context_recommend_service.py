@@ -45,6 +45,7 @@ from app.components.song_curator import (
 )
 from app.components.song_mix import resolve_sources
 from app.components.song_pool import SongPool
+from app.components.taste_vector import blend_taste, mean_vector
 from app.components.track_resolver import TrackResolver
 from app.components.vector_search import RecordSearch
 from app.config import SIMILARITY_DEFAULTS
@@ -65,6 +66,8 @@ logger = logging.getLogger("muro.context_recommend")
 # KURE 값은 합성 시험셋으로 잡은 임시값 — 실제 사용자 코멘트가 쌓이면 다시 맞춰야 한다.
 PERSONAL_SIMILARITY_THRESHOLD = SIMILARITY_DEFAULTS["kure"]
 SIMILAR_SEARCH_LIMIT = 5
+# 취향 벡터를 만들 때 쓰는 최근 저장 곡 수
+TASTE_RECORD_LIMIT = 50
 REFERENCE_COUNT = 3
 # 백엔드가 인기순으로 보내므로 앞에서부터. 너무 많으면 LLM이 인기곡만 따라 뽑는다
 NEARBY_REFERENCE_COUNT = 5
@@ -110,7 +113,9 @@ class ContextRecommendService:
         saved_pool: SavedSongPool | None = None,
         saved_count: int = 0,
         personal_similarity: float = PERSONAL_SIMILARITY_THRESHOLD,
+        taste_weight: float = 0.0,
     ):
+        self._taste_weight = taste_weight
         self._saved_pool = saved_pool
         self._saved_count = saved_count if saved_pool is not None else 0
         self._personal_similarity = personal_similarity
@@ -140,6 +145,7 @@ class ContextRecommendService:
         # 과거에 들은 곡(취향 참고로 쓴 곡)과 재추천 때 클라이언트가 보낸 곡을 함께 뺀다
         excluded = {r.external_track_id for r in references} | set(req.exclude_track_ids)
         situation_vector = await self._mood_vector(curation.mood_sentence)
+        situation_vector = await self._with_taste(req.user_id, situation_vector)
         saved_songs = await self._pick_saved(curation, excluded, situation_vector)
         pool_songs = self._pick_from_pool(
             curation, references, self._pool_count - len(saved_songs), situation_vector
@@ -246,6 +252,19 @@ class ContextRecommendService:
         except Exception:
             logger.warning("분위기 문장 임베딩 실패 — 태그 점수로만 고름", exc_info=True)
             return None
+
+    async def _with_taste(
+        self, user_id: int, situation_vector: list[float] | None
+    ) -> list[float] | None:
+        """상황 벡터에 이 사용자의 취향 벡터를 taste_weight 비율로 섞는다. 실패하면 상황 벡터만."""
+        if situation_vector is None or self._taste_weight <= 0:
+            return situation_vector
+        try:
+            taste = mean_vector(await self._records.music_vectors(user_id, TASTE_RECORD_LIMIT))
+        except Exception:
+            logger.warning("취향 벡터 조회 실패 — 상황 벡터만 사용", exc_info=True)
+            return situation_vector
+        return blend_taste(situation_vector, taste, self._taste_weight)
 
     def _pick_from_pool(
         self,

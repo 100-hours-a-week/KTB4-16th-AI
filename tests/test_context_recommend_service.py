@@ -32,9 +32,17 @@ class StubEmbedder:
 
 
 class StubRecordSearch:
-    def __init__(self, hits: list[SimilarRecord] | None = None, error: Exception | None = None):
+    def __init__(
+        self,
+        hits: list[SimilarRecord] | None = None,
+        error: Exception | None = None,
+        taste: list[list[float]] | None = None,
+        taste_error: Exception | None = None,
+    ):
         self._hits = hits or []
         self._error = error
+        self._taste = taste or []
+        self._taste_error = taste_error
         self.calls: list[int] = []
 
     async def similar_by_comment(self, user_id, query_vector, limit):
@@ -42,6 +50,11 @@ class StubRecordSearch:
         if self._error:
             raise self._error
         return self._hits
+
+    async def music_vectors(self, user_id, limit):
+        if self._taste_error:
+            raise self._taste_error
+        return self._taste
 
 
 class StubSongCurator:
@@ -565,3 +578,52 @@ async def test_saved_song_is_dropped_when_the_client_excluded_it():
     res = await service.recommend(_req(excludeTrackIds=["s1"], limit=5))
 
     assert "s1" not in [t.external_track_id for t in res.tracks]
+
+
+class _VectorRecordingPool:
+    """곡 풀 대역 — 곡을 고를 때 받은 질문 벡터를 기록한다."""
+
+    def __len__(self):
+        return 1
+
+    def pick(self, genres, moods, count, exclude=None, situation_vector=None):
+        self.vector = situation_vector
+        return []
+
+
+def _tagged(sentence="비 오는 날 조용한 노래"):
+    return CurationResult(("발라드",), ("잔잔한",), [BALLAD], mood_sentence=sentence)
+
+
+async def _picked_vector(*, records, taste_weight):
+    pool = _VectorRecordingPool()
+    service = ContextRecommendService(
+        embedder=StubEmbedder(),  # 상황 문장 → [1, 0, 0]
+        record_search=records,
+        song_curator=StubSongCurator(_tagged()),
+        reranker=Reranker(),
+        spotify_search=StubSpotify(DEFAULT_SEARCH),
+        song_pool=pool,
+        pool_count=3,
+        taste_weight=taste_weight,
+    )
+    await service.recommend(_req())
+    return pool.vector
+
+
+async def test_taste_vector_is_blended_into_the_pool_query_by_weight():
+    records = StubRecordSearch(taste=[[0.0, 1.0, 0.0]])
+
+    off = await _picked_vector(records=records, taste_weight=0.0)
+    on = await _picked_vector(records=records, taste_weight=0.5)
+
+    assert off == [1.0, 0.0, 0.0]
+    assert on[0] > 0 and on[1] > 0  # 상황과 취향이 섞였다
+
+
+async def test_taste_failure_or_no_history_falls_back_to_the_situation_vector():
+    broken = StubRecordSearch(taste_error=RuntimeError("DB 장애"))
+    empty = StubRecordSearch(taste=[])
+
+    assert await _picked_vector(records=broken, taste_weight=0.3) == [1.0, 0.0, 0.0]
+    assert await _picked_vector(records=empty, taste_weight=0.3) == [1.0, 0.0, 0.0]
