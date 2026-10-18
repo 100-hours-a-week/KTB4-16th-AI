@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     # 곡 풀을 쓰면 LLM에게는 song_pool_llm_count곡만 받는다 (Spotify 탈락 대비 여유분 포함)
     song_pool_count: int = 3
     song_pool_llm_count: int = 4
+    # 곡 풀 몫 중 몇 곡을 "사용자들이 저장한 곡"(track_moods)에서 가져올지. 나머지는 TJ 곡 풀.
+    # 1로 둔 이유: 오픈 직후엔 저장된 곡이 적어서 다 거기서 뽑으면 같은 곡만 돌 수 있다.
+    # 저장 곡이 쌓이면 올려 가며 실측한다. 0이면 TJ 곡 풀만 사용.
+    song_pool_saved_count: int = 1
     # 곡 풀 파일 — Docker 빌드 때 비공개 HF 저장소에서 받아 둔다(공개 레포에 두지 않음).
     # 로컬에서 쓰려면 HF에서 받아 SONG_POOL_PATH로 지정
     song_pool_path: str = "/app/models/song_pool/song_pool.json"
