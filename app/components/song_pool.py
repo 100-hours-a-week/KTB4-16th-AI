@@ -42,6 +42,8 @@ class PoolSong:
     genres: tuple[str, ...]  # 첫 번째가 주 장르
     moods: tuple[str, ...]
     popularity: int = 0  # 0~100, 차트에 오른 개월 수 기준
+    # 설명 문장의 KURE 벡터(길이 1) — 없으면 태그 점수로만 고른다 (pool-v2 이하 파일)
+    embedding: tuple[float, ...] | None = None
 
     def to_candidate(self) -> SongCandidate:
         return SongCandidate(
@@ -63,8 +65,14 @@ class SongPool:
         situation_moods: tuple[str, ...],
         count: int,
         exclude: list[SongCandidate] | None = None,
+        situation_vector: list[float] | None = None,
     ) -> list[SongCandidate]:
-        """상황에 맞는 곡 count개. 맞는 곡이 모자라면 있는 만큼만 (빈 목록일 수 있다)."""
+        """상황에 맞는 곡 count개. 맞는 곡이 모자라면 있는 만큼만 (빈 목록일 수 있다).
+
+        1단계는 태그(장르·무드)로 후보를 거르고, situation_vector가 있으면 2단계로 그 후보들을
+        분위기 문장 벡터와 가까운 순서로 다시 줄 세운다. 벡터가 없거나 곡에 벡터가 없으면
+        (모델이 다르면 차원이 달라 비교가 안 된다) 예전처럼 태그 점수 순이다.
+        """
         if count <= 0:
             return []
         excluded = {_song_key(s.artist, s.title) for s in exclude or []}
@@ -74,6 +82,12 @@ class SongPool:
             if _song_key(song.artist, song.title) not in excluded
             and (score := _score(situation_genres, situation_moods, song)) >= MIN_SCORE
         ]
+        if situation_vector is not None and any(
+            cosine_rank_usable(situation_vector, song.embedding) for _, song in scored
+        ):
+            scored = [
+                (cosine_similarity(situation_vector, song.embedding), song) for _, song in scored
+            ]
         scored.sort(key=lambda pair: (pair[0], pair[1].popularity), reverse=True)
         top = [song for _, song in scored[:TOP_K]]
         self._rng.shuffle(top)
@@ -114,6 +128,17 @@ def _score(
     return score_tags(situation_genres, situation_moods, song.genres, song.moods)
 
 
+def cosine_rank_usable(vector: list[float], embedding: tuple[float, ...] | None) -> bool:
+    return embedding is not None and len(embedding) == len(vector)
+
+
+def cosine_similarity(vector: list[float], embedding: tuple[float, ...] | None) -> float:
+    """코사인 유사도(두 벡터 모두 길이 1이라 내적과 같다). 비교할 수 없으면 맨 뒤(-1)."""
+    if embedding is None or not cosine_rank_usable(vector, embedding):
+        return -1.0
+    return sum(a * b for a, b in zip(vector, embedding, strict=True))
+
+
 def _norm(text: str) -> str:
     # "RESCENE(리센느)"와 "리센느", 띄어쓰기 차이를 같은 이름으로 본다
     return re.sub(r"\(.*?\)|\s", "", text).lower()
@@ -134,6 +159,9 @@ def load_song_pool(path: Path) -> SongPool | None:
                 genres=tuple(s["genres"]),
                 moods=tuple(s["moods"]),
                 popularity=int(s.get("popularity", 0)),
+                embedding=tuple(s["description_embedding"])
+                if s.get("description_embedding")
+                else None,
             )
             for s in data["songs"]
             if s["genres"] and s["moods"]

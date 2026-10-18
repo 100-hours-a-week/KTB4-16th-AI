@@ -33,7 +33,7 @@ RUN --mount=type=secret,id=hf_token \
 # 곡 풀을 고치면 HF에 새 태그(pool-v2 ...)를 올리고 아래 태그를 바꿔 커밋한다.
 # 없으면 곡 풀 없이 빌드되고, 사진 추천은 LLM 곡만으로 동작한다.
 ARG SONG_POOL_REPO=dionypark/mulo-song-pool
-ARG SONG_POOL_REVISION=pool-v2
+ARG SONG_POOL_REVISION=pool-v3
 RUN --mount=type=secret,id=hf_token \
     mkdir -p /models/song_pool && \
     if [ -s /run/secrets/hf_token ]; then \

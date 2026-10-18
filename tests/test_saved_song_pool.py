@@ -79,3 +79,28 @@ async def test_same_situation_does_not_always_give_the_same_songs():
         seen.add(tuple(s.external_track_id for s in picked))
 
     assert len(seen) > 1
+
+
+def _embedded(track_id, embedding, genre="발라드"):
+    return SavedSong(
+        external_track_id=track_id, genre=genre, moods=("잔잔한",), embedding=tuple(embedding)
+    )
+
+
+async def test_vector_puts_the_closest_saved_song_first(monkeypatch):
+    import app.components.saved_song_pool as sp
+
+    monkeypatch.setattr(sp, "TOP_K", 1)
+    pool = _pool(_embedded("far", (0.0, 1.0)), _embedded("near", (1.0, 0.0)))
+
+    picked = await pool.pick(("발라드",), ("잔잔한",), count=1, situation_vector=[1.0, 0.0])
+
+    assert [s.external_track_id for s in picked] == ["near"]
+
+
+async def test_saved_songs_without_vectors_or_with_other_dimension_still_work():
+    pool = _pool(_saved("t1", genre="발라드"), _embedded("t2", (1.0, 0.0, 0.0)))
+
+    picked = await pool.pick(("발라드",), ("잔잔한",), count=5, situation_vector=[1.0, 0.0])
+
+    assert {s.external_track_id for s in picked} == {"t1", "t2"}

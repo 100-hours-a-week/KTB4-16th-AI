@@ -14,7 +14,13 @@ track_moods는 사용자가 자물쇠에 곡을 저장할 때마다 기능4가 �
 import logging
 import random
 
-from app.components.song_pool import MIN_SCORE, TOP_K, score_tags
+from app.components.song_pool import (
+    MIN_SCORE,
+    TOP_K,
+    cosine_rank_usable,
+    cosine_similarity,
+    score_tags,
+)
 from app.db.repositories.track_mood_repository import SavedSong, SavedSongSearch
 
 logger = logging.getLogger("muro.saved_song_pool")
@@ -34,8 +40,12 @@ class SavedSongPool:
         situation_moods: tuple[str, ...],
         count: int,
         exclude_ids: set[str] | None = None,
+        situation_vector: list[float] | None = None,
     ) -> list[SavedSong]:
         """상황에 맞는 저장된 곡 count개. 없으면 빈 목록 — 그만큼 곡 풀이 채운다.
+
+        곡 풀과 같은 순서로 고른다: 태그로 후보를 거르고, 곡에 벡터가 있으면 상황 벡터와
+        가까운 순으로 줄 세운다 (벡터가 없거나 차원이 다르면 태그 점수 순).
 
         부가 출처라서, DB 조회가 실패해도 추천 전체를 실패시키지 않고 빈 목록을 준다.
         """
@@ -57,6 +67,12 @@ class SavedSongPool:
             and (score := score_tags(situation_genres, situation_moods, (song.genre,), song.moods))
             >= MIN_SCORE
         ]
+        if situation_vector is not None and any(
+            cosine_rank_usable(situation_vector, song.embedding) for _, song in scored
+        ):
+            scored = [
+                (cosine_similarity(situation_vector, song.embedding), song) for _, song in scored
+            ]
         scored.sort(key=lambda pair: pair[0], reverse=True)
         top = [song for _, song in scored[:TOP_K]]
         # 같은 상황에 매번 같은 곡이 나오지 않게 상위 후보 중에서 무작위로
