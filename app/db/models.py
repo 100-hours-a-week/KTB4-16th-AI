@@ -59,7 +59,8 @@ class RecordEmbedding(Base):
 class TrackMood(Base):
     """곡 단위 무드 묘사 캐시. 같은 곡은 LLM을 한 번만 부른다.
 
-    곡명·가수 원문은 저장하지 않고 스포티파이 곡 ID로만 식별한다.
+    곡은 스포티파이 곡 ID로 식별하고, 제목·가수(title·artist_name)는 곡 풀과 같은 곡인지
+    비교할 때 쓴다. 칸이 생기기 전에 저장된 곡은 NULL이고 같은 곡이 다시 저장될 때 채워진다.
     mood_version이 현재 설정(LLM·프롬프트·임베딩 모델)과 다르면 다시 만든다.
     """
 
@@ -75,6 +76,8 @@ class TrackMood(Base):
     genre: Mapped[str] = mapped_column(String(20), server_default="")
     moods: Mapped[list[str]] = mapped_column(ARRAY(String(20)), server_default="{}")
     mood_version: Mapped[str] = mapped_column(String(200))
+    title: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    artist_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

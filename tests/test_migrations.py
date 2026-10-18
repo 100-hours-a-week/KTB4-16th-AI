@@ -101,3 +101,9 @@ def test_text_vector_indexes_are_rebuilt_after_the_type_changes():
 
     assert drops and all(i < min(retypes) for i in drops)
     assert creates and all(i > max(retypes) for i in creates)
+
+
+def test_track_mood_names_migration_follows_the_text_embedding_migration():
+    revision = _script().get_revision("0011")
+
+    assert revision.down_revision == "0010"

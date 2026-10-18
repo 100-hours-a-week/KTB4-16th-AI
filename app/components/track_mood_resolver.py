@@ -5,6 +5,8 @@
 안 맞게 된다.
 """
 
+from dataclasses import replace
+
 from app.components.embedder import Embedder
 from app.components.music_mood_tagger import PROMPT_VERSION, MusicMoodTagger
 from app.db.repositories.track_mood_repository import CachedMood, TrackMoodStore
@@ -29,6 +31,10 @@ class TrackMoodResolver:
     async def resolve(self, *, title: str, artist_name: str, external_track_id: str) -> CachedMood:
         cached = await self._store.get(external_track_id, self.mood_version)
         if cached is not None:
+            if cached.title is None:
+                # 제목·가수 칸이 생기기 전에 저장된 곡 — 같은 곡이 다시 저장될 때 채운다
+                cached = replace(cached, title=title, artist_name=artist_name)
+                await self._store.save(external_track_id, self.mood_version, cached)
             return cached
 
         description = await self._mood.describe(title, artist_name)
@@ -38,6 +44,8 @@ class TrackMoodResolver:
             mood_embedding=mood_vec,
             genre=description.genre,
             moods=description.moods,
+            title=title,
+            artist_name=artist_name,
         )
         await self._store.save(external_track_id, self.mood_version, mood)
         return mood

@@ -22,6 +22,8 @@ class CachedMood:
     mood_embedding: list[float]
     genre: str
     moods: tuple[str, ...]
+    title: str | None = None  # 이 칸이 생기기 전에 저장된 곡은 None
+    artist_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -31,6 +33,8 @@ class SavedSong:
     external_track_id: str
     genre: str
     moods: tuple[str, ...]
+    title: str | None = None
+    artist_name: str | None = None
     # 분위기 문장의 벡터 — 상황 문장과 가까운 순으로 줄 세울 때 쓴다 (재임베딩 전엔 None)
     embedding: tuple[float, ...] | None = None
 
@@ -55,7 +59,12 @@ class TrackMoodRepository:
         row = (
             await self._session.execute(
                 select(
-                    TrackMood.mood_text, TrackMood.mood_embedding, TrackMood.genre, TrackMood.moods
+                    TrackMood.mood_text,
+                    TrackMood.mood_embedding,
+                    TrackMood.genre,
+                    TrackMood.moods,
+                    TrackMood.title,
+                    TrackMood.artist_name,
                 ).where(
                     TrackMood.external_track_id == external_track_id,
                     TrackMood.mood_version == mood_version,
@@ -71,6 +80,8 @@ class TrackMoodRepository:
             mood_embedding=list(row.mood_embedding),
             genre=row.genre,
             moods=tuple(row.moods),
+            title=row.title,
+            artist_name=row.artist_name,
         )
 
     async def save(self, external_track_id: str, mood_version: str, mood: CachedMood) -> None:
@@ -81,6 +92,8 @@ class TrackMoodRepository:
             genre=mood.genre,
             moods=list(mood.moods),
             mood_version=mood_version,
+            title=mood.title,
+            artist_name=mood.artist_name,
         )
         stmt = stmt.on_conflict_do_update(
             index_elements=[TrackMood.external_track_id],
@@ -90,6 +103,8 @@ class TrackMoodRepository:
                 "genre": stmt.excluded.genre,
                 "moods": stmt.excluded.moods,
                 "mood_version": stmt.excluded.mood_version,
+                "title": stmt.excluded.title,
+                "artist_name": stmt.excluded.artist_name,
                 "updated_at": func.now(),
             },
         )
@@ -118,6 +133,8 @@ class TrackMoodRepository:
                 TrackMood.external_track_id,
                 TrackMood.genre,
                 TrackMood.moods,
+                TrackMood.title,
+                TrackMood.artist_name,
                 TrackMood.mood_embedding,
             )
             .where(or_(*conditions))
@@ -129,6 +146,8 @@ class TrackMoodRepository:
                 external_track_id=row.external_track_id,
                 genre=row.genre,
                 moods=tuple(row.moods),
+                title=row.title,
+                artist_name=row.artist_name,
                 embedding=tuple(row.mood_embedding) if row.mood_embedding is not None else None,
             )
             for row in rows

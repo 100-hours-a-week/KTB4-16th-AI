@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 from app.clients.clip_client import FakeClipClient
@@ -268,3 +269,27 @@ async def test_service_without_tag_version_leaves_model_versions_as_before(recor
     await build_service(store).generate(EmbeddingGenerateRequest.model_validate(record_payload))
 
     assert "tagVersion" not in store.rows[1029].model_versions
+
+
+async def test_new_track_mood_stores_title_and_artist(record_payload):
+    moods = InMemoryTrackMoods()
+    await build_service(InMemoryStore(), moods, CountingLLM()).generate(
+        EmbeddingGenerateRequest.model_validate(record_payload)
+    )
+    saved = moods.rows["6rqhFgbbKwnb9MLmUQDhG6"][1]
+    assert saved.title == record_payload["track"]["title"]
+    assert saved.artist_name == record_payload["track"]["artistName"]
+
+
+async def test_cached_track_without_names_gets_them_filled_without_calling_llm(record_payload):
+    moods, llm = InMemoryTrackMoods(), CountingLLM()
+    service = build_service(InMemoryStore(), moods, llm)
+    await service.generate(EmbeddingGenerateRequest.model_validate(record_payload))
+    key = "6rqhFgbbKwnb9MLmUQDhG6"
+    version, mood = moods.rows[key]
+    moods.rows[key] = (version, replace(mood, title=None, artist_name=None))  # 칸이 생기기 전 행
+
+    await service.generate(EmbeddingGenerateRequest.model_validate(record_payload))
+
+    assert llm.calls == 1
+    assert moods.rows[key][1].title == record_payload["track"]["title"]
