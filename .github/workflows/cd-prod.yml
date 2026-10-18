@@ -90,6 +90,21 @@ jobs:
             echo "deploy=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Checkout notify action
+        if: ${{ failure() }}
+        uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+      - name: Notify result
+        if: ${{ failure() }}
+        uses: ./.github/actions/notify-discord
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          title: "AI 배포 준비"
+          status: ${{ job.status }}
+          description: "이미지 태그: ${{ steps.image.outputs.tag }}"
+
   # ============================================================
   # 2단계: 새 인스턴스 템플릿을 만들고 MIG를 교체한다.
   # environment: production 에 지정한 승인자가 승인해야 시작한다.
@@ -254,43 +269,17 @@ jobs:
                 gcloud compute instance-templates delete "$T" --quiet || true
               done
 
-  # 배포 결과 알림
-  notify:
-    name: Discord notification
-    runs-on: ubuntu-latest
-    needs: [prepare, rolling-update]
-    if: ${{ always() && needs.prepare.result != 'skipped' && needs.prepare.outputs.deploy != 'false' }}
-    permissions: {}
-
-    env:
-      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-
-    steps:
-      - name: Send CD result to Discord
-        if: ${{ env.DISCORD_WEBHOOK != '' }}
-        uses: Ilshidur/action-discord@0.3.2
+      - name: Checkout notify action
+        if: ${{ always() }}
+        uses: actions/checkout@v7
         with:
-          args: "AI 배포 결과 알림"
-        env:
-          DISCORD_USERNAME: MURO_BOT
-          DISCORD_EMBEDS: |
-            [
-              {
-                "title": "AI 배포: ${{ needs.rolling-update.result }}",
-                "description": "이미지 태그: ${{ needs.prepare.outputs.image_tag }}",
-                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                "color": ${{ needs.rolling-update.result == 'success' && 3066993 || 15158332 }},
-                "fields": [
-                  {
-                    "name": "실행한 사람",
-                    "value": ${{ toJSON(github.actor) }},
-                    "inline": true
-                  },
-                  {
-                    "name": "배포 방식",
-                    "value": "Rolling Update",
-                    "inline": true
-                  }
-                ]
-              }
-            ]
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+      - name: Notify result
+        if: ${{ always() }}
+        uses: ./.github/actions/notify-discord
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          title: "AI 배포"
+          status: ${{ job.status }}
+          description: "이미지 태그: ${{ needs.prepare.outputs.image_tag }}"

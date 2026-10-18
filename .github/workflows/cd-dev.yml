@@ -125,54 +125,26 @@ jobs:
           "
 
       # nginx는 컨테이너 DNS를 시작/리로드 시점에만 캐싱하므로, 방금 재생성된
-      # ai의 새 IP를 반영하도록 reload한다.
+      # ai의 새 IP를 반영하도록 reload한다. 개발서버는 VM이 하나뿐이라
+      # 트래픽 전환 과정이 없어 이 단계가 빠져있었고, 그래서 이미지는 최신인데
+      # 실제로는 화면에 반영이 안 되는 문제가 있었다(2026-10-01 frontend에서 실제 발생).
       - name: "Reload nginx to pick up new container IP"
         run: |
           gcloud compute ssh "${{ steps.develop.outputs.vm }}" --zone="${{ env.ZONE }}" --tunnel-through-iap --command="
             sudo docker exec nginx nginx -s reload
           "
 
-  notify:
-    name: Discord notification
-    runs-on: ubuntu-latest
-    needs: deploy
-    if: ${{ always() && needs.deploy.result != 'skipped' }}
-    permissions: {}
-
-    env:
-      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-
-    steps:
-      - name: Send CD result to Discord
-        if: ${{ env.DISCORD_WEBHOOK != '' }}
-        uses: Ilshidur/action-discord@0.3.2
+      - name: Checkout notify action
+        if: ${{ always() }}
+        uses: actions/checkout@v7
         with:
-          args: "AI Develop 배포 결과 알림"
-        env:
-          DISCORD_USERNAME: MURO_BOT
-          DISCORD_EMBEDS: |
-            [
-              {
-                "title": "AI Develop 배포: ${{ needs.deploy.result }}",
-                "description": ${{ toJSON(github.event.workflow_run.head_commit.message || '수동 실행') }},
-                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                "color": ${{ needs.deploy.result == 'success' && 3066993 || 15158332 }},
-                "fields": [
-                  {
-                    "name": "커밋",
-                    "value": "[커밋 확인](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha || github.sha }})",
-                    "inline": true
-                  },
-                  {
-                    "name": "푸시한 사람",
-                    "value": ${{ toJSON(github.event.workflow_run.actor.login || github.actor) }},
-                    "inline": true
-                  },
-                  {
-                    "name": "브랜치",
-                    "value": "develop",
-                    "inline": true
-                  }
-                ]
-              }
-            ]
+          sparse-checkout: .github/actions
+          sparse-checkout-cone-mode: false
+      - name: Notify result
+        if: ${{ always() }}
+        uses: ./.github/actions/notify-discord
+        with:
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          title: "AI Develop 배포"
+          status: ${{ job.status }}
+          description: "이미지 태그: ${{ steps.image.outputs.tag }}"

@@ -14,7 +14,7 @@
     [
       "@semantic-release/exec",
       {
-        "prepareCmd": "docker buildx build --platform linux/amd64 -f Dockerfile --secret id=hf_token,env=HF_TOKEN --secret id=hf_token_kure,env=HF_TOKEN_KURE -t \"$IMAGE_BASE:dev-${nextRelease.version}\" --push ."
+        "prepareCmd": "docker buildx build --platform linux/amd64 --cache-from type=registry,ref=$IMAGE_BASE-cache:build --cache-to type=registry,ref=$IMAGE_BASE-cache:build,mode=max -f Dockerfile --secret id=hf_token,env=HF_TOKEN --secret id=hf_token_kure,env=HF_TOKEN_KURE -t \"$IMAGE_BASE:dev-${nextRelease.version}\" --push ."
       }
     ]
   ]
