@@ -1,8 +1,7 @@
-"""기능5 기억 검색 — 위키 모델 API 설계 7-1.
+"""기능5 기억 검색 — 요청·응답 스키마 (AI 기억 검색 API 명세 3장).
 
-응답의 필드 이름과 형식은 백엔드 명세(POST /api/memories/search)와 겹치는 것은 백엔드 쪽에 맞췄다
-(answer, records, recordId, musicTrackId, title, artistName, placeId, placeName, date).
-백엔드는 AI 응답을 거의 그대로 records로 옮기면 된다.
+응답은 ID 중심이다: records는 recordId만, suggestedRecords는 recordId와 matchedConditions만 담는다.
+카드 정보(제목·가수·날짜·장소·날씨·이미지)는 백엔드가 recordId로 자기 DB에서 만든다.
 """
 
 from pydantic import AliasChoices, Field, field_validator
@@ -30,38 +29,30 @@ class MemorySearchRequest(CamelModel):
 
 
 class MemoryRecordItem(CamelModel):
-    """찾은 자물쇠 하나. 백엔드 records[]와 이름이 겹치는 필드는 백엔드 이름을 쓴다."""
+    """찾은 자물쇠 하나 — ID만 준다.
+
+    제목·가수·날짜·장소·날씨·이미지 같은 카드 정보는 보내지 않는다. 백엔드가 recordId로 자기 DB에서
+    카드를 만든다 (백엔드 제안, AI 동의). recordId는 요청 userId 소유이고 삭제되지 않은
+    자물쇠만 담긴다.
+    """
 
     record_id: int  # 공통 규칙: recordId는 숫자(Long)
-    music_track_id: int
-    title: str
-    artist_name: str
-    # 자물쇠가 한 번도 없던 곳이면 백엔드 places에 행이 없어 비어 온다
-    place_id: int | None = None
-    # 백엔드 places.legal_dong_name (예: 성수동1가). 값이 없으면 null
-    place_name: str | None = None
-    date: str  # 기록한 날짜, "2026.03.14" 형식 (한국시간)
-    # 기록 당시 날씨 — 카드의 날씨 아이콘용. CLEAR·CLOUDY·OVERCAST·RAIN·SNOW·RAIN_SNOW·SHOWER 중
-    # 하나이고, 백엔드가 날씨를 못 구한 기록은 null (백엔드 명세 records에 추가가 필요하다)
-    weather_condition: str | None = None
-    # 카드 썸네일(앨범 이미지)용. 백엔드 명세 records에 추가하면 그대로 쓸 수 있다
-    album_image_url: str  # DB에 없으면 빈 문자열
-    # 아래는 AI 전용 값이다 — 백엔드가 안 써도 된다
-    external_track_id: str  # Spotify 곡 ID
-    external_url: str  # DB에 없으면 빈 문자열
-    similarity_score: float  # 0~1, 순서를 정하는 점수
 
 
 class SuggestedRecordItem(MemoryRecordItem):
-    """모든 조건에는 안 맞고 일부만 맞는 자물쇠. 카드 필드는 records와 같다."""
+    """모든 조건에는 안 맞고 일부만 맞는 자물쇠. recordId와, 맞은 조건의 이름만 준다."""
 
-    # 이 자물쇠가 맞은 조건의 이름 (예: ["서울숲 근처"]). 프론트가 "OO만 맞아요"로 보여준다
+    # 이 자물쇠가 맞은 조건의 이름 (예: ["서울숲 근처"]). 프론트가 "OO만 맞아요"로 보여준다.
+    # 다시 계산할 수 없으니 백엔드가 대화를 저장할 때 같이 저장해야 한다
     matched_conditions: list[str]
 
 
 class MemorySearchResponse(CamelModel):
+    # 건수 숫자는 쓰지 않는다 (건수는 프론트가 records.length로 표시한다)
     answer: str
+    # 조건에 모두 맞는 자물쇠 (점수 높은 순, 같으면 최근 순, 최대 50건).
+    # 조건이 없는 질문은 비슷한 자물쇠
     records: list[MemoryRecordItem]
-    # 일부만 맞는 자물쇠 (최대 3건, 조건에 모두 맞는 자물쇠가 5건보다 적을 때만). 없으면 빈 목록.
+    # 일부만 맞는 자물쇠 (최대 3건, records가 5건보다 적을 때만). 없으면 빈 목록.
     # 프론트가 "이런 자물쇠를 찾으시는 건 아닌가요?" 토글을 누르면 카드로 보여준다.
     suggested_records: list[SuggestedRecordItem] = []

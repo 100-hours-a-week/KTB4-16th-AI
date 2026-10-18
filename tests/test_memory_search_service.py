@@ -1,7 +1,3 @@
-from datetime import datetime
-
-import pytest
-
 from app.components.memory_answer import NO_RESULT_TEXT
 from app.schemas.memory_search import MemorySearchRequest
 from app.services.memory_search_service import MemorySearchService
@@ -43,8 +39,9 @@ async def test_returns_all_matches_in_fused_order_when_fewer_than_default_limit(
     res = await service.search(_request())
 
     assert [m.record_id for m in res.records] == [4, 1, 2, 3]
-    assert [m.similarity_score for m in res.records] == [0.75, 0.7, 0.4, 0.35]
-    assert res.answer == "비슷한 자물쇠 4건을 찾았어요."  # 목록은 카드가 보여주므로 문장에 없다
+    assert (
+        res.answer == "비슷한 자물쇠를 찾았어요."
+    )  # 목록·건수는 문장에 없다 (건수는 records.length)
 
 
 def test_default_limit_is_fifty():
@@ -96,7 +93,7 @@ async def test_record_that_cannot_be_read_is_skipped_and_next_one_fills_in():
 
 
 async def test_other_users_records_never_come_back():
-    """벡터 검색과 상세 조회 모두 요청한 사용자 ID로 부른다 — 다른 사용자의 자물쇠는 안 읽힌다."""
+    """벡터 검색과 자물쇠 확인 모두 요청한 사용자 ID로 부른다 — 다른 사용자의 자물쇠는 안 나간다."""
     search = FakeVectorSearch(**SEARCH_HITS)
     records = FakeMemoryRecords({999: {i: make_record(i) for i in (1, 2, 3, 4)}})
     service = _service(search, records)
@@ -109,7 +106,7 @@ async def test_other_users_records_never_come_back():
     assert [user for user, _ in records.calls] == [USER]
 
 
-async def test_nothing_above_min_similarity_returns_no_record_message_without_reading_details():
+async def test_nothing_above_min_similarity_returns_no_record_message_without_checking_ids():
     search = FakeVectorSearch(comment=[hit(1, 0.2)], music=[hit(2, 0.3)])
     records = _records(1, 2)
     service = _service(search, records)
@@ -118,10 +115,10 @@ async def test_nothing_above_min_similarity_returns_no_record_message_without_re
 
     assert res.records == []
     assert res.answer == NO_RESULT_TEXT
-    assert records.calls == []  # 읽을 후보가 없으면 백엔드 DB를 부르지 않는다
+    assert records.calls == []  # 확인할 후보가 없으면 백엔드 DB를 부르지 않는다
 
 
-async def test_only_a_few_extra_details_are_read_beyond_limit():
+async def test_only_a_few_extra_ids_are_checked_beyond_limit():
     search = FakeVectorSearch(comment=[hit(i, 0.9 - i * 0.01) for i in range(1, 16)])
     records = _records(*range(1, 16))
     service = _service(search, records)
@@ -142,88 +139,15 @@ async def test_query_is_embedded_once_and_each_search_uses_the_candidate_count()
     assert sorted(search.calls) == [("comment", USER, 20), ("music", USER, 20)]
 
 
-@pytest.mark.parametrize(
-    "stored_id", ["2uwDoSLzTVVmWjsmbo8jhX", "spotify:track:2uwDoSLzTVVmWjsmbo8jhX"]
-)
-async def test_track_id_is_normalized_and_spotify_uri_is_built(stored_id):
-    search = FakeVectorSearch(comment=[hit(1, 0.9)])
-    records = FakeMemoryRecords({USER: {1: make_record(1, external_track_id=stored_id)}})
-    service = _service(search, records)
-
-    res = await service.search(_request())
-
-    assert res.records[0].external_track_id == "2uwDoSLzTVVmWjsmbo8jhX"
-
-
-async def test_place_has_only_the_legal_dong_name_and_no_coordinates():
+async def test_record_item_is_only_the_record_id():
+    """응답은 ID만 준다 — 곡·장소·날짜·날씨·이미지·점수는 백엔드가 직접 만든다 (명세 3.2)."""
     search = FakeVectorSearch(comment=[hit(1, 0.9)])
     service = _service(search, _records(1))
 
     res = await service.search(_request())
 
-    item = res.records[0]
-    assert (item.place_id, item.place_name) == (10, "오산동")
-    assert not hasattr(item, "lat") and not hasattr(item, "lng")  # 위경도는 내보내지 않는다
-
-
-async def test_date_is_year_month_day_with_dots_and_zero_padding_in_korean_time():
-    search = FakeVectorSearch(comment=[hit(1, 0.9)])
-    records = FakeMemoryRecords(
-        {USER: {1: make_record(1, created_at=datetime(2026, 3, 4, 23, 50))}}
-    )
-    service = _service(search, records)
-
-    res = await service.search(_request())
-
-    assert res.records[0].date == "2026.03.04"  # DB 시각이 한국시간이라 변환 없이 날짜만
-
-
-async def test_music_track_id_and_place_values_are_passed_through_including_missing_ones():
-    search = FakeVectorSearch(comment=[hit(1, 0.9)])
-    records = FakeMemoryRecords(
-        {USER: {1: make_record(1, music_track_id=72, place_id=None, place_name=None)}}
-    )
-    service = _service(search, records)
-
-    item = (await service.search(_request())).records[0]
-
-    assert item.music_track_id == 72
-    assert (item.place_id, item.place_name) == (None, None)  # 백엔드 places에 값이 없을 때
+    assert res.records[0].model_dump(by_alias=True) == {"recordId": 1}
 
 
 def test_request_accepts_the_backend_field_name_query():
     assert MemorySearchRequest(userId=7, query="  비 오던 날 ").query_text == "비 오던 날"
-
-
-async def test_weather_condition_is_passed_through_including_a_missing_one():
-    search = FakeVectorSearch(comment=[hit(1, 0.9), hit(2, 0.8)])
-    records = FakeMemoryRecords(
-        {
-            USER: {
-                1: make_record(1, weather_condition="SNOW"),
-                2: make_record(2, weather_condition=None),
-            }
-        }
-    )
-    service = _service(search, records)
-
-    items = (await service.search(_request())).records
-
-    assert [i.weather_condition for i in items] == ["SNOW", None]
-
-
-async def test_album_image_is_passed_for_the_card_thumbnail_and_empty_when_missing():
-    search = FakeVectorSearch(comment=[hit(1, 0.9), hit(2, 0.8)])
-    records = FakeMemoryRecords(
-        {
-            USER: {
-                1: make_record(1, album_image_url="https://img/1.jpg"),
-                2: make_record(2, album_image_url=""),
-            }
-        }
-    )
-    service = _service(search, records)
-
-    items = (await service.search(_request())).records
-
-    assert [i.album_image_url for i in items] == ["https://img/1.jpg", ""]

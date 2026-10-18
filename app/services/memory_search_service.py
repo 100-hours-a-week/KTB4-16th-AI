@@ -2,7 +2,7 @@
 
 조건이 없는 질문(곡 분위기만 묻는 질문 등)은 1단계 기준선 그대로다:
   질문 → 임베딩 1번 → 내 기록에서 코멘트·곡 분위기 벡터 검색 → 합치기·최소 유사도 →
-  상위 N개의 상세를 백엔드 MySQL에서 읽기 → 템플릿 답변
+  상위 N개가 이 사용자의 삭제되지 않은 자물쇠인지 백엔드 MySQL에서 확인 → 템플릿 답변
 
 질문에 조건(장소·지역·기간·계절·날씨·기온·기분·곡 무드)이 있으면 위에 이어서:
   질문 해석(규칙) → 내 자물쇠의 가벼운 정보 읽기(코멘트 포함) → 조건 점수 → 조건으로만 후보가 된
@@ -10,8 +10,10 @@
   limit개)를 결과로, "일부만 맞는 기록"은 화면에 먼저 보이는 5건이 안 찰 때만 답변 문장의 제안
   ("이런 자물쇠를 찾으시는 건 아닌가요?")으로
 
-답변 문장에는 자물쇠 목록을 넣지 않는다 — 프론트가 matchedRecords로 카드를 보여준다(앞 5건, 나머지는
-더보기). 문장은 앞머리(질문한 조건 + 건수, LLM 또는 템플릿) + 제안 + 안내로 이뤄진다.
+응답은 ID만 준다: records는 recordId만, suggestedRecords는 recordId와 matchedConditions만.
+카드 정보는 백엔드가 recordId로 자기 DB에서 만든다. 답변 문장에는 자물쇠 목록도, 건수 숫자도
+넣지 않는다 — 건수는 프론트가 records.length로 보여준다. 문장은 앞머리(질문한 조건 + 결과 유무,
+LLM 또는 템플릿) + 안내로 이뤄진다.
 
 장소는 좌표로 비교하되, 좌표로 비교할 수 없으면 코멘트에서 그 이름을 찾는다:
   사전에 없는 장소("광교산") → 코멘트에 그 글자가 있는 기록 / 사전에 있어도 반경 안에 내 기록이
@@ -46,11 +48,7 @@ from app.components.query_conditions import Condition
 from app.components.question_parser import QuestionParser
 from app.components.rank_fusion import combine_with_conditions, fuse
 from app.components.vector_search import MemoryVectorSearch, SimilarRecord
-from app.db.repositories.memory_record_repository import (
-    ConditionRow,
-    MemoryRecord,
-    MemoryRecordSource,
-)
+from app.db.repositories.memory_record_repository import ConditionRow, MemoryRecordSource
 from app.schemas.memory_search import (
     MemoryRecordItem,
     MemorySearchRequest,
@@ -60,7 +58,7 @@ from app.schemas.memory_search import (
 
 logger = logging.getLogger("muro.memory_search")
 
-# 삭제됐거나 상세를 못 읽는 자물쇠가 섞여 있을 수 있어서, 돌려줄 개수보다 조금 더 상세를 읽는다
+# 삭제됐거나 다른 사용자의 자물쇠가 섞여 있을 수 있어서, 돌려줄 개수보다 조금 더 확인한다
 # (조건 검색은 SQL에서 삭제·타인 기록을 이미 거르므로 많이 읽을 필요가 없다)
 FETCH_SLACK = 10
 
@@ -157,14 +155,14 @@ class MemorySearchService:
             min_similarity=self._min_similarity,
         )
         wanted = ranked[: req.limit + FETCH_SLACK]
-        details = (
-            await self._records.get_many(
+        existing = (
+            await self._records.existing_ids(
                 user_id=req.user_id, record_ids=[f.record_id for f in wanted]
             )
             if wanted
-            else {}
+            else set()
         )
-        matched = _readable(wanted, details, req.limit)
+        matched = _owned(wanted, existing, req.limit)
 
         # 질문 원문은 개인정보일 수 있어 남기지 않는다 — 개수만
         logger.info(
@@ -179,7 +177,7 @@ class MemorySearchService:
         headline = template_headline([], found=len(matched))
         return MemorySearchResponse(
             answer=compose_answer(headline, notices=notices),
-            records=[_to_item(record, item.score) for record, item in matched],
+            records=[MemoryRecordItem(record_id=item.record_id) for item in matched],
         )
 
     async def _search_with_conditions(
@@ -240,14 +238,14 @@ class MemorySearchService:
         exact = ranking.exact[: req.limit + FETCH_SLACK]
         suggested = ranking.suggestions[: self._suggestion_count + FETCH_SLACK]
         wanted_ids = [r.record_id for r in (*exact, *suggested)]
-        details = (
-            await self._records.get_many(user_id=req.user_id, record_ids=wanted_ids)
+        existing = (
+            await self._records.existing_ids(user_id=req.user_id, record_ids=wanted_ids)
             if wanted_ids
-            else {}
+            else set()
         )
-        matched = _readable(exact, details, req.limit)
+        matched = _owned(exact, existing, req.limit)
         suggestions = (
-            _readable(suggested, details, self._suggestion_count) if len(matched) < shown else []
+            _owned(suggested, existing, self._suggestion_count) if len(matched) < shown else []
         )
 
         logger.info(
@@ -268,10 +266,12 @@ class MemorySearchService:
         )
         return MemorySearchResponse(
             answer=compose_answer(headline, notices=notices),
-            records=[_to_item(record, item.score) for record, item in matched],
+            records=[MemoryRecordItem(record_id=item.record_id) for item in matched],
             suggested_records=[
-                _to_suggested_item(record, item.score, item.condition.matched)
-                for record, item in suggestions
+                SuggestedRecordItem(
+                    record_id=item.record_id, matched_conditions=list(item.condition.matched)
+                )
+                for item in suggestions
             ],
         )
 
@@ -298,46 +298,16 @@ class MemorySearchService:
         return text
 
 
-def _readable(ranked: Sequence, details: dict[int, MemoryRecord], limit: int) -> list[tuple]:
-    """순위대로 상세를 읽을 수 있는 기록만 limit개까지 남긴다.
+def _owned(ranked: Sequence, existing: set[int], limit: int) -> list:
+    """순위대로 이 사용자의 삭제되지 않은 자물쇠만 limit개까지 남긴다.
 
-    다른 사용자의 기록이나 삭제된 기록은 SQL 조건 때문에 안 읽혀서 건너뛴다.
+    다른 사용자의 기록이나 삭제된 기록은 SQL 조건 때문에 existing에 없어서 건너뛴다.
     """
     kept = []
     for item in ranked:
-        record = details.get(item.record_id)
-        if record is None:
+        if item.record_id not in existing:
             continue
-        kept.append((record, item))
+        kept.append(item)
         if len(kept) == limit:
             break
     return kept
-
-
-def _to_item(record: MemoryRecord, score: float) -> MemoryRecordItem:
-    # 백엔드가 곡을 "spotify:track:ID"나 ID로 저장할 수 있다(기능4도 같은 정규화를 함) — ID만 남긴다
-    track_id = record.external_track_id.rsplit(":", 1)[-1]
-    d = record.created_at  # 백엔드 DB는 한국시간으로 저장한다
-    return MemoryRecordItem(
-        record_id=record.record_id,
-        music_track_id=record.music_track_id,
-        title=record.title,
-        artist_name=record.artist_name,
-        place_id=record.place_id,
-        # 위경도는 읽지 않는다 — 법정동 이름만
-        place_name=record.place_name,
-        date=f"{d.year}.{d.month:02d}.{d.day:02d}",
-        weather_condition=record.weather_condition,
-        external_track_id=track_id,
-        album_image_url=record.album_image_url,
-        external_url=record.external_url,
-        similarity_score=round(score, 4),
-    )
-
-
-def _to_suggested_item(
-    record: MemoryRecord, score: float, matched_conditions: Sequence[str]
-) -> SuggestedRecordItem:
-    return SuggestedRecordItem(
-        **_to_item(record, score).model_dump(), matched_conditions=list(matched_conditions)
-    )
