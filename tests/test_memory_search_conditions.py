@@ -90,8 +90,8 @@ async def test_exact_matches_are_records_and_partial_matches_are_suggested_recor
     res = await service.search(_request("가을에 서울숲에서 들었던 노래 뭐지?"))
 
     assert [m.record_id for m in res.records] == [1]  # 가을 AND 서울숲
-    # 문장에는 앞머리만 있다. 자물쇠 목록도, 제안 문구도 없다 (카드와 토글은 프론트가 그린다)
-    assert res.answer == "서울숲 근처, 가을 조건에 맞는 자물쇠 1건을 찾았어요."
+    # 문장에는 앞머리만 있다. 목록도, 제안 문구도, 건수도 없다 (카드와 토글은 프론트가 그린다)
+    assert res.answer == "서울숲 근처, 가을 조건에 맞는 자물쇠를 찾았어요."  # 건수 숫자 없음
     # 일부만 맞는 자물쇠는 suggestedRecords로 나가고, 어떤 조건만 맞았는지 같이 온다
     suggested = {s.record_id: s.matched_conditions for s in res.suggested_records}
     assert suggested == {2: ["서울숲 근처"], 3: ["가을"]}  # 4번(둘 다 안 맞음)은 나오지 않는다
@@ -105,8 +105,8 @@ async def test_records_found_only_by_conditions_get_their_similarity_looked_up(p
     res = await service.search(_request("가을에 서울숲에서 들었던 노래 뭐지?"))
 
     assert search.similarity_calls == [(USER, [1, 2])]  # 이미 후보인 3·4번은 다시 구하지 않는다
-    # 1번: 벡터 (0.7+0.8)/2=0.75, 조건 (장소 약 0.77×2 + 계절 1)/3 ≈ 0.85 → 최종 약 0.80
-    assert 0.78 < res.records[0].similarity_score < 0.82
+    # 조건으로만 찾은 1번도 records에 들어간다 (점수는 응답에 담지 않는다 — 명세 3.2)
+    assert [m.record_id for m in res.records] == [1]
 
 
 async def test_suggestions_are_left_out_when_exact_matches_fill_the_limit(parser):
@@ -244,7 +244,7 @@ async def test_only_this_users_rows_are_read_and_other_users_get_nothing(parser)
     assert res.answer == NO_RESULT_TEXT
 
 
-async def test_exact_record_whose_details_cannot_be_read_is_skipped(parser):
+async def test_exact_record_that_no_longer_exists_is_skipped(parser):
     rows, details = _world()
     del details[1]  # AI DB에는 남아 있지만 백엔드에서 삭제된 자물쇠
     service = _service(parser, _search(), FakeMemoryRecords({USER: details}, {USER: rows}))
@@ -308,7 +308,7 @@ async def test_unknown_place_nobody_wrote_about_is_ignored_with_a_notice(parser)
 
     # 위치 조건은 빠지고 가을 조건만으로 찾는다
     assert sorted(m.record_id for m in res.records) == [1, 3, 4]
-    assert res.answer.startswith("가을 조건에 맞는 자물쇠 3건을 찾았어요.")
+    assert res.answer.startswith("가을 조건에 맞는 자물쇠를 찾았어요.")
     assert res.answer.endswith(
         "'북한산'은 아직 모르는 장소라서 위치 조건은 적용하지 못했어요. "
         "동이나 구 이름(예: 성수동, 성동구)으로 물어보시면 더 정확하게 찾을 수 있어요."
@@ -326,7 +326,7 @@ async def test_only_an_unknown_place_nobody_wrote_about_falls_back_to_plain_sear
     res = await service.search(_request("북한산에서 들은 노래"))
 
     assert [m.record_id for m in res.records] == [3]  # 벡터 검색 결과 그대로
-    assert res.answer.startswith("비슷한 자물쇠 1건을 찾았어요.")
+    assert res.answer.startswith("비슷한 자물쇠를 찾았어요.")
     assert "'북한산'은 아직 모르는 장소라서" in res.answer
 
 
@@ -415,7 +415,7 @@ async def test_all_exact_matches_are_returned_even_beyond_the_five_shown_first(p
 
     assert sorted(m.record_id for m in res.records) == [1, 2, 3, 4, 5, 6]
     # 화면에 먼저 보이는 5건이 찼으므로 일부만 맞는 기록(7·8번)은 제안하지 않는다
-    assert res.answer == "서울숲 근처, 가을 조건에 맞는 자물쇠 6건을 찾았어요."
+    assert res.answer == "서울숲 근처, 가을 조건에 맞는 자물쇠를 찾았어요."
 
 
 async def test_suggestions_are_added_while_fewer_than_five_exact_matches(parser):
@@ -425,20 +425,19 @@ async def test_suggestions_are_added_while_fewer_than_five_exact_matches(parser)
     res = await service.search(_request("가을에 서울숲에서 들은 노래"))
 
     assert len(res.records) == 4
-    assert res.answer.startswith("서울숲 근처, 가을 조건에 맞는 자물쇠 4건을 찾았어요.")
+    assert res.answer.startswith("서울숲 근처, 가을 조건에 맞는 자물쇠를 찾았어요.")
     assert [s.matched_conditions for s in res.suggested_records] == [["서울숲 근처"]] * 2  # 5·6번
 
 
-async def test_headline_gives_the_total_when_fewer_are_returned_than_found(parser):
+async def test_headline_says_only_some_are_shown_when_fewer_are_returned_than_found(parser):
     rows, details = _forest_world(autumn=5)
     service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
 
     res = await service.search(_request("가을에 서울숲에서 들은 노래", limit=3))
 
     assert len(res.records) == 3
-    assert res.answer == (
-        "서울숲 근처, 가을 조건에 맞는 자물쇠는 총 5건이에요. 그중 상위 3건을 보여드려요."
-    )
+    # 건수 숫자는 쓰지 않는다. 몇 건인지는 프론트가 records.length로 센다
+    assert res.answer == "서울숲 근처, 가을 조건에 맞는 자물쇠가 많아서 일부만 보여드려요."
 
 
 async def test_exact_matches_are_returned_in_score_order_and_the_list_is_not_in_the_text(parser):
@@ -453,7 +452,7 @@ async def test_exact_matches_are_returned_in_score_order_and_the_list_is_not_in_
 
 # ---- 앞머리 문장을 LLM이 쓸 때 -------------------------------------------------
 
-LLM_SENTENCE = "서울숲 근처에서 가을에 저장하신 자물쇠 1건을 찾았습니다."
+LLM_SENTENCE = "서울숲 근처에서 가을에 저장하신 자물쇠를 찾았습니다."
 
 
 def _llm_service(parser, llm, records, search=None, **overrides):
@@ -480,7 +479,7 @@ async def test_headline_comes_from_the_llm_when_it_is_turned_on(parser):
     assert "이런 자물쇠" not in res.answer
 
 
-async def test_llm_receives_only_condition_names_and_counts(parser):
+async def test_llm_receives_only_condition_names_and_whether_there_are_results(parser):
     rows, details = _world()
     llm = StubLLM(LLM_SENTENCE)
     service = _llm_service(parser, llm, FakeMemoryRecords({USER: details}, {USER: rows}))
@@ -489,6 +488,7 @@ async def test_llm_receives_only_condition_names_and_counts(parser):
 
     (call,) = llm.calls
     assert call["prompt"] == build_prompt(["서울숲 근처", "가을"], found=1, total=1, suggestions=2)
+    assert not any(ch.isdigit() for ch in call["prompt"])  # 건수도 보내지 않는다
     for private in ("들었던 노래", "밤편지", "아이유", "성수동", "반포동"):
         assert private not in call["prompt"]  # 질문 원문·곡·장소는 보내지 않는다
 
@@ -500,18 +500,18 @@ async def test_llm_failure_falls_back_to_the_template_headline(parser):
 
     res = await service.search(_request("가을에 서울숲에서 들었던 노래 뭐지?"))
 
-    assert res.answer.splitlines()[0] == "서울숲 근처, 가을 조건에 맞는 자물쇠 1건을 찾았어요."
+    assert res.answer.splitlines()[0] == "서울숲 근처, 가을 조건에 맞는 자물쇠를 찾았어요."
     assert [m.record_id for m in res.records] == [1]  # 검색 결과는 그대로
 
 
-async def test_llm_sentence_with_a_wrong_count_is_not_used(parser):
+async def test_llm_sentence_that_states_a_count_is_not_used(parser):
     rows, details = _world()
-    llm = StubLLM("서울숲 근처에서 가을에 저장하신 자물쇠 9건을 찾았습니다.")
+    llm = StubLLM("서울숲 근처에서 가을에 저장하신 자물쇠 1건을 찾았습니다.")
     service = _llm_service(parser, llm, FakeMemoryRecords({USER: details}, {USER: rows}))
 
     res = await service.search(_request("가을에 서울숲에서 들었던 노래 뭐지?"))
 
-    assert res.answer.splitlines()[0] == "서울숲 근처, 가을 조건에 맞는 자물쇠 1건을 찾았어요."
+    assert res.answer.splitlines()[0] == "서울숲 근처, 가을 조건에 맞는 자물쇠를 찾았어요."
 
 
 async def test_slow_llm_is_given_up_after_the_timeout(parser):
@@ -526,7 +526,7 @@ async def test_slow_llm_is_given_up_after_the_timeout(parser):
 
     res = await service.search(_request("가을에 서울숲에서 들었던 노래 뭐지?"))
 
-    assert res.answer.splitlines()[0] == "서울숲 근처, 가을 조건에 맞는 자물쇠 1건을 찾았어요."
+    assert res.answer.splitlines()[0] == "서울숲 근처, 가을 조건에 맞는 자물쇠를 찾았어요."
 
 
 async def test_llm_is_not_called_when_there_is_nothing_to_report(parser):
@@ -554,7 +554,7 @@ async def test_llm_is_not_called_for_questions_without_conditions(parser):
 
 async def test_llm_headline_is_followed_by_the_notice_written_by_code(parser):
     rows, details = _comment_world()
-    llm = StubLLM("가을에 저장하신 자물쇠 3건을 찾았어요.")
+    llm = StubLLM("가을에 저장하신 자물쇠를 찾았어요.")
     service = _llm_service(
         parser,
         llm,
@@ -567,7 +567,7 @@ async def test_llm_headline_is_followed_by_the_notice_written_by_code(parser):
     # 어느 코멘트에도 없는 북한산은 조건에서 빠져서 LLM에는 "가을"만 전달된다
     assert llm.calls[0]["prompt"] == build_prompt(["가을"], found=3, total=3, suggestions=0)
     lines = res.answer.splitlines()
-    assert lines[0] == "가을에 저장하신 자물쇠 3건을 찾았어요."
+    assert lines[0] == "가을에 저장하신 자물쇠를 찾았어요."
     assert lines[-1].startswith("'북한산'은 아직 모르는 장소라서 위치 조건은 적용하지 못했어요.")
 
 
@@ -594,22 +594,23 @@ async def test_suggested_records_are_empty_when_exact_matches_fill_the_screen(pa
     assert res.suggested_records == []  # 채팅에 보이는 5건이 찼으면 제안하지 않는다
 
 
-async def test_suggested_record_is_a_full_card_with_the_conditions_it_matched(parser):
+async def test_suggested_record_is_the_id_with_the_conditions_it_matched(parser):
     rows, details = _forest_world(autumn=1, spring=1)
     service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
 
     res = await service.search(_request("가을에 서울숲에서 들은 노래"))
 
-    (card,) = res.suggested_records
-    assert card.record_id == 2
-    assert (card.title, card.artist_name, card.place_name) == ("밤편지", "아이유", "성수동1가")
-    assert card.date == "2026.05.02" and card.weather_condition == "RAIN"
-    assert card.matched_conditions == ["서울숲 근처"]  # 봄이라 가을은 안 맞음
+    (suggested,) = res.suggested_records
+    # 카드 정보는 백엔드가 recordId로 만든다 — 여기서는 ID와 맞은 조건 이름뿐이다
+    assert suggested.model_dump(by_alias=True) == {
+        "recordId": 2,
+        "matchedConditions": ["서울숲 근처"],  # 봄이라 가을은 안 맞음
+    }
 
 
-async def test_suggested_record_that_cannot_be_read_is_skipped(parser):
+async def test_suggested_record_that_no_longer_exists_is_skipped(parser):
     rows, details = _forest_world(autumn=1, spring=2)
-    del details[2]  # 백엔드에서 삭제된 자물쇠
+    del details[2]  # 백엔드에서 삭제된 자물쇠 (records 테이블에 없음)
     service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
 
     res = await service.search(_request("가을에 서울숲에서 들은 노래"))

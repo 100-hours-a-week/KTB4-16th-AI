@@ -1,19 +1,17 @@
-"""기능5 기억 검색 — 찾은 자물쇠의 상세를 백엔드 MySQL(읽기 전용)에서 읽는다.
+"""기능5 기억 검색 — 백엔드 MySQL(읽기 전용)에서 자물쇠 정보를 읽는다.
 
-AI DB에는 벡터와 곡 ID만 있고 날짜·장소·곡명은 백엔드 DB에 있다. 리포트(RECAP)가 이미 쓰는
-읽기 전용 연결로 읽으므로 백엔드 코드는 안 바뀐다.
+AI DB에는 벡터와 곡 ID만 있고 날짜·장소·날씨는 백엔드 DB에 있다. 리포트(RECAP)가 이미 쓰는 읽기 전용
+연결로 읽으므로 백엔드 코드는 안 바뀐다. 읽는 일은 둘이다.
+- existing_ids: 검색 결과 ID 중 이 사용자의 삭제되지 않은 자물쇠만 남긴다 (응답은 ID만 준다).
+- list_condition_rows: 조건 검색용으로 이 사용자의 자물쇠를 가볍게 읽는다.
+카드 정보(곡 제목·가수·앨범 이미지 등)는 읽지 않는다. music_tracks 테이블도 읽지 않는다.
 
 사용자 격리: SQL에 user_id 조건을 넣어서 다른 사람의 자물쇠는 id를 알아도 읽히지 않는다.
 삭제된 자물쇠(deleted_at)는 뺀다 — AI DB 벡터는 백엔드가 삭제 호출을 보낼 때까지 남을 수 있다.
 
-테이블·컬럼명은 백엔드 Flyway 마이그레이션 기준이다. records·places의 컬럼은 리포트 코드로 확인했고,
-music_tracks의 title·album_image_url·external_url은 응답 스키마 주석(백엔드 컬럼과 같게 맞춤)을
-근거로 한 것이라 실제 DB로 한 번 확인이 필요하다.
-
-조건 검색(list_condition_rows)이 읽는 places.latitude·longitude·legal_dong_code도 실제 DB로 확인이
-필요하다(API 응답 필드 이름을 따라 추정한 것). records.weather_condition·temperature·mood_score는
-리포트 코드가 이미 읽는 이름이다. 추정이 틀려도 get_many는 이 컬럼을 읽지 않아서, 조건 검색이
-아닌 질문의 검색은 영향을 받지 않는다.
+테이블·컬럼명은 백엔드 Flyway 마이그레이션 기준이다. records·places의 컬럼은 리포트 코드로 확인했다.
+조건 검색(list_condition_rows)이 읽는 places.latitude·longitude·legal_dong_code는 백엔드가 이름을
+확인해 줬다. records.weather_condition·temperature·mood_score는 리포트 코드가 이미 읽는 이름이다.
 """
 
 from dataclasses import dataclass
@@ -22,22 +20,6 @@ from typing import Protocol
 
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncSession
-
-
-@dataclass(frozen=True)
-class MemoryRecord:
-    record_id: int
-    created_at: datetime
-    music_track_id: int  # 백엔드 music_tracks의 기본키 — 백엔드 응답 records[].musicTrackId
-    title: str
-    artist_name: str
-    external_track_id: str
-    album_image_url: str
-    external_url: str
-    place_id: int | None
-    place_name: str | None  # 백엔드 places.legal_dong_name — 비어 있을 수 있다
-    # 기록 당시 날씨(CLEAR·CLOUDY·OVERCAST·RAIN·SNOW·RAIN_SNOW·SHOWER). 못 구했으면 None
-    weather_condition: str | None = None
 
 
 @dataclass(frozen=True)
@@ -58,7 +40,7 @@ class ConditionRow:
 
 
 class MemoryRecordSource(Protocol):
-    async def get_many(self, *, user_id: int, record_ids: list[int]) -> dict[int, MemoryRecord]: ...
+    async def existing_ids(self, *, user_id: int, record_ids: list[int]) -> set[int]: ...
 
     async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]: ...
 
@@ -67,41 +49,22 @@ class MemoryRecordRepository:
     def __init__(self, mysql_session: AsyncSession):
         self._mysql = mysql_session
 
-    async def get_many(self, *, user_id: int, record_ids: list[int]) -> dict[int, MemoryRecord]:
+    async def existing_ids(self, *, user_id: int, record_ids: list[int]) -> set[int]:
+        """record_ids 중 이 사용자의 삭제되지 않은 자물쇠 ID만 돌려준다. 카드 정보는 읽지 않는다."""
         if not record_ids:
-            return {}
+            return set()
         rows = await self._mysql.execute(
             text(
                 """
-                SELECT r.record_id, r.created_at, r.music_track_id, r.weather_condition,
-                       m.title, m.artist_name, m.external_track_id,
-                       m.album_image_url, m.external_url,
-                       p.place_id, p.legal_dong_name AS place_name
+                SELECT r.record_id
                 FROM records r
-                JOIN music_tracks m ON r.music_track_id = m.music_track_id
-                JOIN places p ON r.place_id = p.place_id
                 WHERE r.user_id = :user_id AND r.deleted_at IS NULL
                   AND r.record_id IN :record_ids
                 """
             ).bindparams(bindparam("record_ids", expanding=True)),
             {"user_id": user_id, "record_ids": record_ids},
         )
-        return {
-            row.record_id: MemoryRecord(
-                record_id=row.record_id,
-                created_at=row.created_at,
-                music_track_id=row.music_track_id,
-                title=row.title,
-                artist_name=row.artist_name,
-                external_track_id=row.external_track_id,
-                album_image_url=row.album_image_url or "",
-                external_url=row.external_url or "",
-                place_id=row.place_id,
-                place_name=row.place_name,
-                weather_condition=row.weather_condition,
-            )
-            for row in rows
-        }
+        return {row.record_id for row in rows}
 
     async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
         """이 사용자의 자물쇠를 최근순으로 limit개까지, 조건·코멘트 검색에 필요한 값만 읽는다.

@@ -63,7 +63,6 @@ from app.db.repositories.embedding_repository import EmbeddingRepository, Embedd
 from app.db.repositories.job_repository import JobRepository
 from app.db.repositories.memory_record_repository import (
     ConditionRow,
-    MemoryRecord,
     MemoryRecordRepository,
     MemoryRecordSource,
 )
@@ -295,16 +294,16 @@ async def get_memory_vector_search(
 
 
 class _DbMemoryRecords:
-    """기억 검색 결과의 상세 — 백엔드 MySQL(읽기 전용)에서 읽는다."""
+    """기억 검색의 자물쇠 확인·조건 정보 — 백엔드 MySQL(읽기 전용)에서 읽는다."""
 
-    async def get_many(self, *, user_id: int, record_ids: list[int]) -> dict[int, MemoryRecord]:
+    async def existing_ids(self, *, user_id: int, record_ids: list[int]) -> set[int]:
         try:
             async with mysql.get_sessionmaker()() as mysql_session:
-                return await MemoryRecordRepository(mysql_session).get_many(
+                return await MemoryRecordRepository(mysql_session).existing_ids(
                     user_id=user_id, record_ids=record_ids
                 )
         except SQLAlchemyError as e:
-            raise UpstreamError("백엔드 DB에서 자물쇠 상세를 읽지 못했어요.") from e
+            raise UpstreamError("백엔드 DB에서 자물쇠 정보를 읽지 못했어요.") from e
 
     async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
         try:
@@ -317,10 +316,10 @@ class _DbMemoryRecords:
 
 
 class _NoMemoryRecords:
-    """백엔드 DB가 없는 로컬·테스트 환경 — 상세를 못 읽어서 결과가 비어 있다."""
+    """백엔드 DB가 없는 로컬·테스트 환경 — 자물쇠를 확인할 수 없어서 결과가 비어 있다."""
 
-    async def get_many(self, *, user_id: int, record_ids: list[int]) -> dict[int, MemoryRecord]:
-        return {}
+    async def existing_ids(self, *, user_id: int, record_ids: list[int]) -> set[int]:
+        return set()
 
     async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
         return []
@@ -362,7 +361,7 @@ async def get_memory_search_service(
         condition_candidates=s.memory_search_condition_candidates,
         display_count=s.memory_search_display_count,
         suggestion_count=s.memory_search_suggestion_count,
-        # 답변 앞머리 문장 — 꺼 두면(기본) 템플릿 문장. LLM에는 조건 이름과 건수만 보낸다
+        # 답변 앞머리 문장 — 꺼 두면(기본) 템플릿 문장. LLM에는 조건 이름과 결과 유무만 보낸다
         headline_writer=(
             HeadlineWriter(get_clients().llm_general) if s.memory_answer_llm_enabled else None
         ),

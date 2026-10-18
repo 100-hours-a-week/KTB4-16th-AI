@@ -1,32 +1,22 @@
-"""기능5 기억 검색 테스트용 가짜 구현 — 벡터 검색, 백엔드 상세 조회, 임베더, LLM."""
+"""기능5 기억 검색 테스트용 가짜 구현 — 벡터 검색, 백엔드 자물쇠 확인, 임베더, LLM."""
 
 import asyncio
 from datetime import datetime
 
 from app.components.vector_search import SimilarRecord
-from app.db.repositories.memory_record_repository import ConditionRow, MemoryRecord
+from app.db.repositories.memory_record_repository import ConditionRow
 
 
 def hit(record_id: int, similarity: float) -> SimilarRecord:
     return SimilarRecord(record_id=record_id, external_track_id=None, similarity=similarity)
 
 
-def make_record(record_id: int, **overrides) -> MemoryRecord:
-    values = {
-        "record_id": record_id,
-        "created_at": datetime(2026, 8, 24, 18, 30),
-        "music_track_id": 3,
-        "title": "밤편지",
-        "artist_name": "아이유",
-        "external_track_id": "2uwDoSLzTVVmWjsmbo8jhX",
-        "album_image_url": "https://img.example/cover.jpg",
-        "external_url": "https://open.spotify.com/track/2uwDoSLzTVVmWjsmbo8jhX",
-        "place_id": 10,
-        "place_name": "오산동",
-        "weather_condition": "RAIN",
-    }
-    values.update(overrides)
-    return MemoryRecord(**values)
+def make_record(record_id: int, **_ignored) -> int:
+    """백엔드에 이 ID의 자물쇠가 있다는 표시. 응답은 ID만 주므로 카드 값은 더 이상 필요 없다.
+
+    예전 테스트가 카드 값(title 등)을 넘겨도 오류가 나지 않게 나머지 인자는 무시한다.
+    """
+    return record_id
 
 
 def make_row(record_id: int, **overrides) -> ConditionRow:
@@ -97,11 +87,11 @@ class FakeVectorSearch:
 
 
 class FakeMemoryRecords:
-    """백엔드 MySQL 대역 — 사용자별로 가진 자물쇠만 돌려준다 (SQL의 user_id 조건과 같은 효과)."""
+    """백엔드 MySQL 대역 — 사용자별로 가진 자물쇠 ID만 확인해 준다 (user_id 조건과 같은 효과)."""
 
     def __init__(
         self,
-        by_user: dict[int, dict[int, MemoryRecord]],
+        by_user: dict[int, dict[int, int]],
         rows_by_user: dict[int, list[ConditionRow]] | None = None,
     ):
         self.by_user = by_user
@@ -109,10 +99,10 @@ class FakeMemoryRecords:
         self.calls: list[tuple[int, list[int]]] = []
         self.row_calls: list[tuple[int, int]] = []
 
-    async def get_many(self, *, user_id, record_ids):
+    async def existing_ids(self, *, user_id, record_ids):
         self.calls.append((user_id, list(record_ids)))
         owned = self.by_user.get(user_id, {})
-        return {rid: owned[rid] for rid in record_ids if rid in owned}
+        return {rid for rid in record_ids if rid in owned}
 
     async def list_condition_rows(self, *, user_id, limit):
         self.row_calls.append((user_id, limit))
