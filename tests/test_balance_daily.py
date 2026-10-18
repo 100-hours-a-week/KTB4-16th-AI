@@ -34,20 +34,22 @@ def test_tie_goes_to_more_recent_genre():
     assert assign_genres(saved, GENRES, min_group_size=1)[1].music_genre == "인디음악"
 
 
-def test_small_group_and_unknown_genre_go_to_common():
+def test_small_group_and_unknown_genre_merge_into_the_biggest_genre():
     saved = [_s(1, "b1"), _s(2, "b1"), _s(3, "i1"), _s(4, "old"), _s(5, "old2")]
     result = assign_genres(saved, GENRES, min_group_size=2)
     assert result[1].music_genre == "발라드" and result[2].music_genre == "발라드"
-    assert result[3].music_genre == "공통"  # 인디 1명뿐 → 공통
-    assert result[4].music_genre == "공통" and result[4].source == "common"  # 13개 밖 장르
+    assert result[1].source == "records"
+    # 인디 1명뿐, 13개 밖 장르 → 공통으로 분류됐다가 가장 큰 그룹(발라드)에 합쳐진다
+    assert {result[u].music_genre for u in (3, 4, 5)} == {"발라드"}
+    assert {result[u].source for u in (3, 4, 5)} == {"merged"}
 
 
-def test_small_common_group_merges_into_biggest_genre():
-    # 발라드 3명, 인디 1명(→공통), 장르 모름 1명(→공통) / 기준 3명 → 공통 2명 < 3 → 발라드로 합침
-    saved = [_s(1, "b1"), _s(2, "b1"), _s(3, "b2"), _s(4, "i1"), _s(5, "old")]
-    result = assign_genres(saved, GENRES, min_group_size=3)
-    assert {result[u].music_genre for u in (1, 2, 3, 4, 5)} == {"발라드"}
-    assert result[4].source == "merged" and result[1].source == "records"
+def test_common_users_merge_even_when_the_common_group_is_big_enough():
+    # 발라드 3명, 장르 모름 3명 / 기준 2명 → 공통이 기준 이상이어도 발라드로 합침
+    saved = [_s(1, "b1"), _s(2, "b1"), _s(3, "b2"), _s(4, "old"), _s(5, "old"), _s(6, "old")]
+    result = assign_genres(saved, GENRES, min_group_size=2)
+    assert {result[u].music_genre for u in range(1, 7)} == {"발라드"}
+    assert result[4].source == "merged"
 
 
 def test_common_stays_when_no_genre_group_is_big_enough():

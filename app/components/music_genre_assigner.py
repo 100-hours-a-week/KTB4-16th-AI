@@ -2,10 +2,11 @@
 
 1. 저장한 자물쇠 곡들의 장르를 세서 가장 많은 장르 (동률이면 더 최근에 저장한 장르)
 2. 장르 정보가 없으면 공통 (온보딩 선호 장르는 백엔드 칸이 생기면 여기에 추가)
-3. 그룹 인원이 최소 인원보다 적으면 공통 — 같은 질문에 다른 답을 고른 사람이 모여야
+3. 그룹 인원이 최소 인원보다 적으면 일단 공통 — 같은 질문에 다른 답을 고른 사람이 모여야
    매칭이 되므로, 사람이 적은 장르로 쪼개면 매칭이 안 된다
-4. 공통 그룹마저 최소 인원보다 적으면 가장 큰 장르 그룹에 합친다 — 공통이 너무 작아
-   매칭이 안 되는 것보다, 장르가 조금 달라도 사람이 많은 그룹이 낫다
+4. 공통으로 분류된 사람은 항상 가장 큰 장르 그룹에 합친다 (2026-10-18 변경) — 장르를 모르거나
+   작은 장르인 사람도 사람이 가장 많은 그룹에 들어가야 매칭이 잘 된다. 합칠 장르 그룹이
+   하나도 없을 때(오픈 초반, 모든 장르가 최소 인원 미만)만 공통으로 남는다
    (자물쇠가 없는 사용자는 여기 안 나오고, 백엔드가 공통으로 처리한다)
 
 결과는 13개 장르 + 공통 중 하나.
@@ -69,7 +70,7 @@ def assign_genres(
 
     common = [uid for uid, a in result.items() if a.music_genre == COMMON_GROUP]
     kept = Counter(a.music_genre for a in result.values() if a.music_genre != COMMON_GROUP)
-    if common and len(common) < min_group_size and kept:
+    if common and kept:
         biggest = max(kept, key=lambda g: (kept[g], g))
         for uid in common:
             result[uid] = Assignment(biggest, SOURCE_MERGED)
