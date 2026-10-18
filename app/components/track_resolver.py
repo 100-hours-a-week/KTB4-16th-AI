@@ -28,6 +28,7 @@ from app.clients.spotify_client import SpotifySearchClient
 from app.components.reranker import TrackCandidate
 from app.components.song_curator import SongCandidate
 from app.db.repositories.track_lookup_repository import LookupEntry, SpotifyTrack, TrackLookupStore
+from app.db.repositories.track_mood_repository import SavedSong
 from app.exceptions import UpstreamError
 
 logger = logging.getLogger("muro.track_resolver")
@@ -51,6 +52,42 @@ class TrackResolver:
         self._spotify = spotify_search
         self._store = store
         self._now = now
+
+    async def resolve_saved(self, songs: list[SavedSong]) -> list[TrackCandidate]:
+        """저장된 곡(이미 Spotify ID가 있음)의 표시 정보만 채운다.
+
+        실존 확인이 끝난 곡이라 검색이 아니라 get_track 한 번으로 끝난다. 부가 출처라서
+        조회가 실패한 곡은 조용히 빼고 나머지로 계속한다 (추천 전체를 실패시키지 않는다).
+        """
+        if not songs:
+            return []
+        results = await asyncio.gather(
+            *(self._spotify.get_track(song.external_track_id) for song in songs),
+            return_exceptions=True,
+        )
+        resolved: list[TrackCandidate] = []
+        for song, result in zip(songs, results, strict=True):
+            if isinstance(result, BaseException):
+                logger.warning(
+                    "저장된 곡 조회 실패, 건너뜀: %s (%s)", song.external_track_id, result
+                )
+                continue
+            if not (result.get("album") or {}).get("images"):
+                continue  # 앨범 이미지가 없으면 화면에 못 쓴다 (검색 경로와 같은 기준)
+            track = _to_spotify_track(result)
+            resolved.append(
+                TrackCandidate(
+                    external_track_id=track.external_track_id,
+                    title=track.title,
+                    artist_name=track.artist_name,
+                    spotify_uri=track.spotify_uri,
+                    genre=song.genre,
+                    moods=song.moods,
+                    album_image_url=track.album_image_url,
+                    external_url=track.external_url,
+                )
+            )
+        return resolved
 
     async def resolve(self, songs: list[SongCandidate]) -> list[TrackCandidate]:
         """추천받은 곡을 실제 Spotify 트랙으로 확정한다.
