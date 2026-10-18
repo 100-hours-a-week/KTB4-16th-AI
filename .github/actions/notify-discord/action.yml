@@ -1,0 +1,74 @@
+name: Notify Discord
+description: Discord 웹훅으로 CI/CD 결과를 알린다 (도커 액션 대신 curl 사용)
+
+inputs:
+  webhook:
+    description: Discord 웹훅 URL (비어 있으면 알림을 건너뛴다)
+    required: false
+    default: ""
+  title:
+    description: 알림 제목 (뒤에 상태가 붙는다)
+    required: true
+  status:
+    description: success, failure, cancelled 중 하나 (job.status를 넘긴다)
+    required: true
+  description:
+    description: 본문. 비우면 PR 제목 또는 커밋 메시지를 쓴다
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        WEBHOOK: ${{ inputs.webhook }}
+        TITLE: ${{ inputs.title }}
+        STATUS: ${{ inputs.status }}
+        DESCRIPTION: ${{ inputs.description }}
+        PR_TITLE: ${{ github.event.pull_request.title }}
+        PR_URL: ${{ github.event.pull_request.html_url }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+        ACTOR: ${{ github.actor }}
+        BRANCH: ${{ github.head_ref || github.ref_name }}
+        BASE_BRANCH: ${{ github.base_ref }}
+        SHA: ${{ github.sha }}
+        COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      run: |
+        if [ -z "$WEBHOOK" ]; then
+          echo "웹훅이 없어 알림을 건너뜁니다."
+          exit 0
+        fi
+
+        case "$STATUS" in
+          success)   COLOR=3066993 ;;
+          cancelled) COLOR=9807270 ;;
+          *)         COLOR=15158332 ;;
+        esac
+
+        if [ -n "$PR_URL" ]; then
+          DESC="${DESCRIPTION:-$PR_TITLE}"
+          FIELDS=$(jq -n \
+            --arg pr "[#$PR_NUMBER]($PR_URL)" --arg actor "$ACTOR" \
+            --arg head "$BRANCH" --arg base "$BASE_BRANCH" \
+            '[{name:"PR",value:$pr,inline:true},{name:"작성자",value:$actor,inline:true},
+              {name:"작업 브랜치",value:$head,inline:true},{name:"대상 브랜치",value:$base,inline:true}]')
+        else
+          DESC="${DESCRIPTION:-${HEAD_MESSAGE:-메시지 없음}}"
+          FIELDS=$(jq -n \
+            --arg commit "[${SHA:0:7}]($COMMIT_URL)" --arg actor "$ACTOR" --arg branch "$BRANCH" \
+            '[{name:"커밋",value:$commit,inline:true},{name:"실행한 사람",value:$actor,inline:true},
+              {name:"브랜치",value:$branch,inline:true}]')
+        fi
+
+        # 디스코드 본문 길이 제한을 넘지 않게 자른다
+        DESC="${DESC:0:900}"
+
+        jq -n \
+          --arg title "$TITLE: $STATUS" --arg desc "$DESC" --arg url "$RUN_URL" \
+          --argjson color "$COLOR" --argjson fields "$FIELDS" \
+          '{username:"MURO_BOT", embeds:[{title:$title, description:$desc, url:$url, color:$color, fields:$fields}]}' \
+          | curl -sS -H "Content-Type: application/json" -d @- "$WEBHOOK" \
+          || echo "알림 전송에 실패했습니다. (배포 결과에는 영향 없음)"

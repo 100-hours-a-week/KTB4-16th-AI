@@ -6,6 +6,9 @@ on:
   push:
     branches:
       - develop
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
   pull_request:
     branches:
       - develop
@@ -15,6 +18,9 @@ jobs:
     if: github.event_name == 'pull_request'
     name: AI CI dev pull_request
     runs-on: ubuntu-latest
+    concurrency:
+      group: pr-ci-${{ github.ref }}
+      cancel-in-progress: true
 
     permissions:
       contents: read
@@ -70,57 +76,13 @@ jobs:
           path: coverage.xml
           retention-days: 7
 
-  pr-notify:
-    name: Discord notification (dev PR)
-    runs-on: ubuntu-latest
-    needs: pr-ci
-
-    # CI가 실패해도 알림 작업 실행
-    if: ${{ always() && github.event_name == 'pull_request' }}
-    permissions: {}
-
-    env:
-      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-
-    steps:
-      - name: Send CI result to Discord
-        if: ${{ env.DISCORD_WEBHOOK != '' }}
-        uses: Ilshidur/action-discord@0.3.2
+      - name: Notify result
+        if: ${{ always() }}
+        uses: ./.github/actions/notify-discord
         with:
-          args: "AI CI 결과 알림"
-        env:
-          DISCORD_USERNAME: MURO_BOT
-          DISCORD_EMBEDS: |
-            [
-              {
-                "title": "AI develop CI: ${{ needs.pr-ci.result }}",
-                "description": ${{ toJSON(github.event.pull_request.title) }},
-                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                "color": ${{ needs.pr-ci.result == 'success' && 3066993 || 15158332 }},
-                "fields": [
-                  {
-                    "name": "PR",
-                    "value": "[#${{ github.event.pull_request.number }}](${{ github.event.pull_request.html_url }})",
-                    "inline": true
-                  },
-                  {
-                    "name": "작성자",
-                    "value": ${{ toJSON(github.event.pull_request.user.login) }},
-                    "inline": true
-                  },
-                  {
-                    "name": "작업 브랜치",
-                    "value": ${{ toJSON(github.head_ref) }},
-                    "inline": true
-                  },
-                  {
-                    "name": "대상 브랜치",
-                    "value": ${{ toJSON(github.base_ref) }},
-                    "inline": true
-                  }
-                ]
-              }
-            ]
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          title: "AI CI dev pull_request"
+          status: ${{ job.status }}
 
   push-ci:
     if: github.event_name == 'push'
@@ -215,47 +177,10 @@ jobs:
             --package=@semantic-release/exec@7 \
             semantic-release
 
-  push-notify:
-    name: Discord notification (dev release)
-    runs-on: ubuntu-latest
-    needs: push-ci
-    if: ${{ always() && github.event_name == 'push' }}
-    permissions: {}
-
-    env:
-      DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
-
-    steps:
-      - name: Send CI result to Discord
-        if: ${{ env.DISCORD_WEBHOOK != '' }}
-        uses: Ilshidur/action-discord@0.3.2
+      - name: Notify result
+        if: ${{ always() }}
+        uses: ./.github/actions/notify-discord
         with:
-          args: "AI Dev push CI 결과 알림"
-        env:
-          DISCORD_USERNAME: MURO_BOT
-          DISCORD_EMBEDS: |
-            [
-              {
-                "title": "AI Dev CI: ${{ needs.push-ci.result }}",
-                "description": ${{ toJSON(github.event.head_commit.message || '커밋 메시지 없음') }},
-                "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}",
-                "color": ${{ needs.push-ci.result == 'success' && 3066993 || 15158332 }},
-                "fields": [
-                  {
-                    "name": "커밋",
-                    "value": "[커밋 확인](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})",
-                    "inline": true
-                  },
-                  {
-                    "name": "푸시한 사람",
-                    "value": ${{ toJSON(github.actor) }},
-                    "inline": true
-                  },
-                  {
-                    "name": "브랜치",
-                    "value": ${{ toJSON(github.ref_name) }},
-                    "inline": true
-                  }
-                ]
-              }
-            ]
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
+          title: "AI CI dev release"
+          status: ${{ job.status }}
