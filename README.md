@@ -1,4 +1,4 @@
-# Muro AI Server
+# Mulo AI Server
 
 같은 코드베이스로 프로세스 4개를 띄운다.
 
@@ -30,7 +30,11 @@ python -m app.main
 |---|---|---|
 | LLM — knowledge (음악 무드 묘사, 투표 문항 생성) | Claude API | Claude API 유지 |
 | LLM — general (검색어 리라이팅, 요약, 답변, 클러스터 이름) | Claude API | RunPod 로컬 LLM |
+<<<<<<< HEAD
 | 텍스트 임베딩 | OpenAI `text-embedding-3-small` | ③ Embedding Service, KURE-v1 (ONNX fp32, CPU). 양자화는 V3 |
+=======
+| 텍스트 임베딩 | OpenAI `text-embedding-3-small` -> 'KURE-v1' | ④ Embedding Service, GCP CPU (ONNX) |
+>>>>>>> origin/main
 | CLIP (사진 임베딩) | Replicate `openai/clip` | RunPod 직접 서빙 |
 | 모더레이션 | — | ② Moderation Service, KcELECTRA, GCP CPU (ONNX) |
 
