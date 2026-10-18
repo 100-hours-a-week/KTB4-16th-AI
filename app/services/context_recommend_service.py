@@ -140,7 +140,10 @@ class ContextRecommendService:
         # 과거에 들은 곡(취향 참고로 쓴 곡)과 재추천 때 클라이언트가 보낸 곡을 함께 뺀다
         excluded = {r.external_track_id for r in references} | set(req.exclude_track_ids)
         saved_songs = await self._pick_saved(curation, excluded)
-        pool_songs = self._pick_from_pool(curation, references, self._pool_count - len(saved_songs))
+        situation_vector = await self._mood_vector(curation.mood_sentence)
+        pool_songs = self._pick_from_pool(
+            curation, references, self._pool_count - len(saved_songs), situation_vector
+        )
         if not curation.songs and not pool_songs and not saved_songs:
             logger.warning("곡 추천 결과를 파싱하지 못함, 폴백")
             return _degraded(req, basis)
@@ -228,8 +231,22 @@ class ContextRecommendService:
             exclude_ids=excluded,
         )
 
+    async def _mood_vector(self, sentence: str) -> list[float] | None:
+        """Claude가 쓴 분위기 문장을 벡터로. 실패해도 태그 점수로 고르면 되니 추천은 계속한다."""
+        if not sentence or self._pool is None:
+            return None
+        try:
+            return await self._embedder.embed(sentence)
+        except Exception:
+            logger.warning("분위기 문장 임베딩 실패 — 태그 점수로만 고름", exc_info=True)
+            return None
+
     def _pick_from_pool(
-        self, curation: CurationResult, references: list["ReferenceTrack"], count: int
+        self,
+        curation: CurationResult,
+        references: list["ReferenceTrack"],
+        count: int,
+        situation_vector: list[float] | None = None,
     ) -> list[SongCandidate]:
         if self._pool is None:
             return []
@@ -240,6 +257,7 @@ class ContextRecommendService:
                 curation.situation_moods,
                 count,
                 exclude=curation.songs + heard,
+                situation_vector=situation_vector,
             )
         except Exception:
             logger.exception("곡 풀에서 고르기 실패 — LLM 곡만 사용")

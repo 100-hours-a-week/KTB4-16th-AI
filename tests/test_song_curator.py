@@ -174,3 +174,22 @@ def test_axis_names_used_in_the_situation_exist_in_the_axes_file():
     assert MEME_KIND in {t.ko for t in specs[KIND_AXIS].tags}
     assert EXPRESSION_AXIS in specs
     assert specs[EXPRESSION_AXIS].when == MEME_KIND
+
+
+async def test_curate_reads_the_mood_sentence_line():
+    response = HAPPY_RESPONSE.replace(
+        "곡:", "분위기: 퇴근길 창밖 빗소리처럼 조용하고 쓸쓸한 노래\n곡:", 1
+    )
+
+    curation = await SongCurator(ScriptedLLM(response)).curate_from_tags(["카페"])
+
+    assert curation.mood_sentence == "퇴근길 창밖 빗소리처럼 조용하고 쓸쓸한 노래"
+    assert len(curation.songs) == 2  # 분위기 줄이 곡 줄로 읽히지 않는다
+
+
+async def test_curate_without_mood_sentence_or_with_copied_template_gives_empty():
+    plain = await SongCurator(ScriptedLLM(HAPPY_RESPONSE)).curate_from_tags(["카페"])
+    copied = HAPPY_RESPONSE.replace("곡:", "분위기: <한 문장>\n곡:", 1)
+    template = await SongCurator(ScriptedLLM(copied)).curate_from_tags(["카페"])
+
+    assert plain.mood_sentence == "" and template.mood_sentence == ""

@@ -34,7 +34,7 @@ from app.clients.llm_client import LLMClient
 from app.components.music_tags import GENRE_VOCAB, MOOD_VOCAB
 from app.exceptions import LLMError
 
-PROMPT_VERSION = "song-curate-v7"
+PROMPT_VERSION = "song-curate-v8"
 
 # Spotify 확인 단계에서 일부가 탈락하므로(일반 6~7/8, 인디 2~4/8 실측) 최종 5곡보다 넉넉히 받는다.
 CANDIDATE_COUNT = 10
@@ -63,6 +63,7 @@ def system_prompt(count: int = CANDIDATE_COUNT) -> str:
 
 출력 형식(꺾쇠 <> 부분만 실제 값으로 바꿔 쓰고, 다른 말은 붙이지 않는다):
 상황: 장르=<장르>,<장르> | 무드=<무드>,<무드>
+분위기: <이 상황에 어울리는 곡의 분위기를 곡 소개처럼 한 문장으로>
 곡:
 <가수> - <곡 제목> | 장르=<장르> | 무드=<무드>,<무드>
 (곡 줄을 {count}번 쓴다)"""
@@ -96,6 +97,8 @@ class CurationResult:
     situation_genres: tuple[str, ...]
     situation_moods: tuple[str, ...]
     songs: list[SongCandidate]
+    # 곡 풀 설명과 같은 말투의 한 문장 — 곡 풀 벡터와 비교할 질문 문장이다 (없으면 빈 문자열)
+    mood_sentence: str = ""
 
 
 class SongCurator:
@@ -190,7 +193,13 @@ def _parse(text: str) -> CurationResult:
     situation_genres: tuple[str, ...] = ()
     situation_moods: tuple[str, ...] = ()
     songs: list[SongCandidate] = []
+    mood_sentence = ""
     for line in lines:
+        if line.startswith("분위기:"):
+            sentence = line.removeprefix("분위기:").strip()
+            # 형식 예시 줄(<...>)을 그대로 베낀 경우는 버린다
+            mood_sentence = "" if "<" in sentence else sentence
+            continue
         if line.startswith("상황:"):
             situation_genres, situation_moods = _parse_tags_field(line.removeprefix("상황:"))
             continue
@@ -212,5 +221,8 @@ def _parse(text: str) -> CurationResult:
             )
 
     return CurationResult(
-        situation_genres=situation_genres, situation_moods=situation_moods, songs=songs
+        situation_genres=situation_genres,
+        situation_moods=situation_moods,
+        songs=songs,
+        mood_sentence=mood_sentence,
     )
