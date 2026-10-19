@@ -90,6 +90,13 @@ class Settings(BaseSettings):
     memory_search_location_weight: float = 2.0  # 조건 점수 안에서 장소·지역·동 조건의 가중치
     memory_search_other_condition_weight: float = 1.0  # 그 밖의 조건
     memory_search_scan_limit: int = 5000  # 조건 비교를 위해 읽는 자물쇠의 최대 개수 (최근순)
+    # 기억 검색(과 추천의 같은 날씨 취향)이 자물쇠 조건 값을 읽는 곳.
+    #   mysql: 질문마다 백엔드 MySQL에서 읽는다 (기본, 지금 방식)
+    #   postgres: AI PostgreSQL의 record_facts에서 읽는다. 채우기 도구로 값을 먼저 채운 뒤에 바꾼다
+    memory_record_source: Literal["mysql", "postgres"] = "mysql"
+    # record_facts에 코멘트 원문(comment_text)을 저장할지. 기본은 저장하지 않는다 (개인정보).
+    # 끄면 postgres로 읽을 때 "사전에 없는 장소를 코멘트 글자로 찾기"가 동작하지 않는다
+    record_facts_store_comment: bool = False
     memory_search_condition_candidates: int = 50  # 조건으로만 후보가 되는 기록의 최대 개수
     # 프론트는 앞 5건을 먼저 보여주고 "더보기"에서 나머지를 보여준다. 모두 맞는 기록이 이 건수보다
     # 적을 때만 일부만 맞는 기록을 문장으로 제안한다 (요청 limit이 더 작으면 그 값)

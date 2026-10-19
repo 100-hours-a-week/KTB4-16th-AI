@@ -67,6 +67,7 @@ from app.db.repositories.memory_record_repository import (
     MemoryRecordSource,
     TrackName,
 )
+from app.db.repositories.record_fact_repository import RecordFactRepository
 from app.db.repositories.report_repository import MonthlyReportRepository
 from app.db.repositories.track_lookup_repository import TrackLookupRepository, TrackLookupStore
 from app.db.repositories.track_mood_repository import TrackMoodRepository
@@ -338,9 +339,39 @@ class _NoMemoryRecords:
         return []
 
 
+class _PgMemoryRecords:
+    """기억 검색의 자물쇠 확인·조건 정보 — AI PostgreSQL의 record_facts에서 읽는다.
+
+    백엔드 MySQL에는 접속하지 않는다. 값은 채우기 도구(app/tools/backfill_record_facts.py)가 넣는다.
+    """
+
+    @staticmethod
+    async def _read(read):
+        try:
+            async with postgres.get_sessionmaker()() as session:
+                return await read(RecordFactRepository(session))
+        except SQLAlchemyError as e:
+            raise UpstreamError("AI DB에서 자물쇠 정보를 읽지 못했어요.") from e
+
+    async def existing_ids(self, *, user_id: int, record_ids: list[int]) -> set[int]:
+        return await self._read(
+            lambda repo: repo.existing_ids(user_id=user_id, record_ids=record_ids)
+        )
+
+    async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
+        return await self._read(lambda repo: repo.list_condition_rows(user_id=user_id, limit=limit))
+
+    async def list_track_names(self, *, user_id: int, limit: int) -> list[TrackName]:
+        return await self._read(lambda repo: repo.list_track_names(user_id=user_id, limit=limit))
+
+
 def get_memory_record_source() -> MemoryRecordSource:
     s = get_settings()
-    if s.ai_client_mode == "fake" or not s.backend_mysql_url:
+    if s.ai_client_mode == "fake":
+        return _NoMemoryRecords()
+    if s.memory_record_source == "postgres":
+        return _PgMemoryRecords()  # 백엔드 DB 주소가 없어도 된다
+    if not s.backend_mysql_url:
         return _NoMemoryRecords()
     return _DbMemoryRecords()
 

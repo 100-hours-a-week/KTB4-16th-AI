@@ -9,8 +9,10 @@ from sqlalchemy import (
     BigInteger,
     Date,
     DateTime,
+    Float,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -54,6 +56,34 @@ class RecordEmbedding(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RecordFact(Base):
+    """자물쇠 1건의 조건 검색용 값 — 백엔드 MySQL(records·places·music_tracks)에서 옮겨 온 사본.
+
+    기억 검색이 날짜·날씨·기온·기분·장소·곡명·가수를 질문마다 백엔드에서 읽지 않고 여기서 읽는다
+    (설정 MEMORY_RECORD_SOURCE=postgres). 원본은 백엔드 DB이고, 이 표는 채우기 도구가 맞춘다.
+    recorded_at은 백엔드 created_at 그대로(한국시간)라 시간대 없는 칸이다.
+    comment_text는 기본으로 비워 둔다(개인정보). 사전에 없는 장소를 코멘트 글자로 찾을 때만 쓴다.
+    """
+
+    __tablename__ = "record_facts"
+    __table_args__ = (Index("ix_record_facts_user_recorded", "user_id", "recorded_at"),)
+
+    record_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=False))
+    weather_condition: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    temperature: Mapped[float | None] = mapped_column(Float(53), nullable=True)
+    mood_score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    dong_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    dong_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float(53), nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float(53), nullable=True)
+    comment_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    track_title: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    artist_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class TrackMood(Base):
