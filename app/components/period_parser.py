@@ -110,6 +110,13 @@ def _rules(
     def year_word_season(m: re.Match[str]) -> Span:
         return season_range(seasons[m[2]], today.year + _YEAR_OFFSETS[m[1]])
 
+    def year_word_date(m: re.Match[str]) -> Span:
+        try:
+            day = date(today.year + _YEAR_OFFSETS[m[1]], int(m[2]), int(m[3]))
+        except ValueError:  # 2월 30일처럼 없는 날짜
+            return None
+        return day, day
+
     def year_word_month(m: re.Match[str]) -> Span:
         month = int(m[2])
         return month_range(today.year + _YEAR_OFFSETS[m[1]], month) if 1 <= month <= 12 else None
@@ -168,6 +175,11 @@ def _rules(
         (re.compile(r"(?<![0-9])(\d{4})\s*년\s*(\d{1,2})\s*월"), year_month),
         (re.compile(r"(?<![0-9])((?:19|20)\d{2})\s*년"), year_only),
         (re.compile(_BEFORE + rf"({_YEAR_WORDS})\s*({season_names})"), year_word_season),
+        # "작년 10월 15일": 달만 말한 규칙보다 먼저 봐야 "15일"이 버려지지 않는다
+        (
+            re.compile(_BEFORE + rf"({_YEAR_WORDS})\s*(\d{{1,2}})\s*월\s*(\d{{1,2}})\s*일"),
+            year_word_date,
+        ),
         (re.compile(_BEFORE + rf"({_YEAR_WORDS})\s*(\d{{1,2}})\s*월"), year_word_month),
         (re.compile(_BEFORE + rf"(지난|저번|이번|올)\s*({season_names})"), relative_season),
         (re.compile(_BEFORE + rf"({_YEAR_WORDS})"), year_word),

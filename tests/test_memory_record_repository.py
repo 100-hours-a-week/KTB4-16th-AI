@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
-from app.db.repositories.memory_record_repository import MemoryRecordRepository
+from app.db.repositories.memory_record_repository import MemoryRecordRepository, TrackName
 
 
 class FakeMysqlSession:
@@ -82,6 +82,8 @@ def _condition_row(record_id=1, **overrides):
         "latitude": Decimal("37.544000"),
         "longitude": Decimal("127.037000"),
         "comment": "광교산 단풍",
+        "track_title": "소나기",
+        "artist_name": "RESCENE, 리센느",
     }
     values.update(overrides)
     return SimpleNamespace(**values)
@@ -98,7 +100,10 @@ async def test_condition_rows_query_is_scoped_to_user_and_limited():
     assert "ORDER BY r.created_at DESC" in sql and "LIMIT :limit" in sql  # 최근순, 개수 제한
     assert params == {"user_id": 5, "limit": 300}
     assert "r.comment" in sql  # 글자 검색에 쓰는 코멘트
-    assert "music_tracks" not in sql  # 곡 제목·가수 이름은 글자 검색 대상이 아니다
+    # 가수·곡명 검색용으로 곡 제목·가수만 합쳐 읽는다 (앨범 이미지·링크는 읽지 않는다)
+    assert "JOIN music_tracks m ON r.music_track_id = m.music_track_id" in sql
+    assert "m.title AS track_title" in sql and "m.artist_name" in sql
+    assert "album_image_url" not in sql and "external_url" not in sql
 
 
 async def test_condition_rows_convert_decimals_and_codes():
@@ -112,6 +117,7 @@ async def test_condition_rows_convert_decimals_and_codes():
     assert row.dong_name == "성수동1가"
     assert row.dong_code == "1120011500"  # 숫자로 와도 문자열로
     assert row.comment == "광교산 단풍"
+    assert (row.track_title, row.artist_name) == ("소나기", "RESCENE, 리센느")
 
 
 async def test_condition_rows_keep_missing_values_as_none():
@@ -125,6 +131,8 @@ async def test_condition_rows_keep_missing_values_as_none():
         latitude=None,
         longitude=None,
         comment=None,
+        track_title=None,
+        artist_name=None,
     )
     session = FakeMysqlSession([empty])
 
@@ -134,3 +142,24 @@ async def test_condition_rows_keep_missing_values_as_none():
     assert row.dong_name is None and row.dong_code is None
     assert row.latitude is None and row.longitude is None
     assert row.comment is None  # 코멘트를 안 쓴 자물쇠
+    assert row.track_title is None and row.artist_name is None
+
+
+async def test_track_names_query_is_scoped_to_user_distinct_and_limited():
+    session = FakeMysqlSession(
+        [
+            SimpleNamespace(title="소나기", artist_name="RESCENE"),
+            SimpleNamespace(title=None, artist_name=None),
+        ]
+    )
+
+    names = await MemoryRecordRepository(session).list_track_names(user_id=5, limit=300)
+
+    sql, params = session.executed[0]
+    assert "SELECT DISTINCT m.title, m.artist_name" in sql  # 같은 곡은 한 번만
+    assert "r.user_id = :user_id" in sql  # 다른 사용자의 곡은 읽히지 않는다
+    assert "r.deleted_at IS NULL" in sql  # 삭제된 자물쇠의 곡은 뺀다
+    assert "LIMIT :limit" in sql
+    assert "album_image_url" not in sql and "external_url" not in sql
+    assert params == {"user_id": 5, "limit": 300}
+    assert names == [TrackName("소나기", "RESCENE"), TrackName(None, None)]

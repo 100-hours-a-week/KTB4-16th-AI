@@ -4,7 +4,8 @@
   질문 → 임베딩 1번 → 내 기록에서 코멘트·곡 분위기 벡터 검색 → 합치기·최소 유사도 →
   상위 N개가 이 사용자의 삭제되지 않은 자물쇠인지 백엔드 MySQL에서 확인 → 템플릿 답변
 
-질문에 조건(장소·지역·기간·계절·날씨·기온·기분·곡 무드)이 있으면 위에 이어서:
+질문에 조건(장소·지역·기간·계절·날씨·요일·시간대·기온·기분·장르·곡 무드, 그리고 이 사용자가
+저장한 곡의 가수·곡명)이 있으면 위에 이어서:
   질문 해석(규칙) → 내 자물쇠의 가벼운 정보 읽기(코멘트 포함) → 조건 점수 → 조건으로만 후보가 된
   기록의 벡터 유사도 구하기 → 벡터 점수와 조건 점수 합치기 → "모든 조건에 맞는 기록"은 전체(최대
   limit개)를 결과로, "일부만 맞는 기록"은 화면에 먼저 보이는 5건이 안 찰 때만 답변 문장의 제안
@@ -47,8 +48,10 @@ from app.components.memory_answer import (
 from app.components.query_conditions import Condition
 from app.components.question_parser import QuestionParser
 from app.components.rank_fusion import combine_with_conditions, fuse
+from app.components.track_lexicon import TrackLexicon
 from app.components.vector_search import MemoryVectorSearch, SimilarRecord
 from app.db.repositories.memory_record_repository import ConditionRow, MemoryRecordSource
+from app.exceptions import UpstreamError
 from app.schemas.memory_search import (
     MemoryRecordItem,
     MemorySearchRequest,
@@ -111,7 +114,11 @@ class MemorySearchService:
         self._today = today
 
     async def search(self, req: MemorySearchRequest) -> MemorySearchResponse:
-        conditions = self._parser.parse(req.query_text, self._today()) if self._parser else []
+        conditions = (
+            self._parser.parse(req.query_text, self._today(), await self._lexicon(req.user_id))
+            if self._parser
+            else []
+        )
         query_vector = await self._embedder.embed(req.query_text)
 
         # 같은 DB 세션을 쓰므로 하나씩 순서대로 실행한다
@@ -139,6 +146,16 @@ class MemorySearchService:
                 )
             return await self._search_by_similarity(req, comment_hits, music_hits, notices)
         return await self._search_by_similarity(req, comment_hits, music_hits)
+
+    async def _lexicon(self, user_id: int) -> TrackLexicon:
+        """이 사용자가 저장한 곡의 가수·곡명 사전. 질문에서 가수·곡명을 알아보는 데 쓴다."""
+        try:
+            names = await self._records.list_track_names(user_id=user_id, limit=self._scan_limit)
+        except UpstreamError:
+            # 이름 목록은 검색을 돕는 부가 정보다. 못 읽어도 가수·곡명 없이 평소처럼 검색한다
+            logger.warning("기억 검색 곡 목록 읽기 실패 — 가수·곡명 조건 없이 진행", exc_info=True)
+            return TrackLexicon.build([])
+        return TrackLexicon.build(names)
 
     async def _search_by_similarity(
         self,
@@ -196,6 +213,12 @@ class MemorySearchService:
             if any(c.kind == "song_mood" for c in conditions)
             else {}
         )
+        # 곡 장르 태그는 AI DB에 있다. 장르 조건이 있을 때만 읽는다
+        genres = (
+            await self._search.genres_by_record(req.user_id)
+            if any(c.kind == "genre" for c in conditions)
+            else {}
+        )
         music_similarity = {h.record_id: h.similarity for h in music_hits}
 
         def score(similarity: dict[int, float]):
@@ -206,6 +229,7 @@ class MemorySearchService:
                 music_similarity=similarity,
                 min_similarity=self._min_similarity,
                 weights=self._condition_weights,
+                genres=genres,
             )
 
         # 조건으로만 후보가 된 기록(위 두 검색의 상위 후보에 없는 것)은 유사도를 따로 구한다
@@ -263,6 +287,7 @@ class MemorySearchService:
             found=len(matched),
             total=len(ranking.exact),
             suggestions=len(suggestions),
+            llm_labels=[_llm_label(c) for c in conditions],
         )
         return MemorySearchResponse(
             answer=compose_answer(headline, notices=notices),
@@ -276,16 +301,29 @@ class MemorySearchService:
         )
 
     async def _headline(
-        self, labels: Sequence[str], *, found: int, total: int, suggestions: int
+        self,
+        labels: Sequence[str],
+        *,
+        found: int,
+        total: int,
+        suggestions: int,
+        llm_labels: Sequence[str] | None = None,
     ) -> str:
-        """앞머리 문장. LLM이 쓰되 못 쓰면(꺼짐·실패·시간 초과·검증 실패) 템플릿으로 대신한다."""
+        """앞머리 문장. LLM이 쓰되 못 쓰면(꺼짐·실패·시간 초과·검증 실패) 템플릿으로 대신한다.
+
+        labels는 템플릿 문장(코드)에 쓰는 조건 이름이고, llm_labels는 LLM에 보내는 조건 이름이다.
+        가수·곡명은 사용자의 음악 정보라서 LLM에는 이름 대신 "가수"·"곡명"만 보낸다.
+        """
         fallback = template_headline(labels, found=found, total=total, suggestions=suggestions)
         if self._headline_writer is None or (found == 0 and suggestions == 0):
             return fallback  # 결과가 없으면 근거가 없어서 LLM을 부르지 않는다
         try:
             text = await asyncio.wait_for(
                 self._headline_writer.write(
-                    labels, found=found, total=total, suggestions=suggestions
+                    llm_labels if llm_labels is not None else labels,
+                    found=found,
+                    total=total,
+                    suggestions=suggestions,
                 ),
                 timeout=self._headline_timeout,
             )
@@ -296,6 +334,11 @@ class MemorySearchService:
             logger.warning("기억 검색 앞머리 LLM 응답이 기준에 안 맞아 템플릿 문장으로 대신")
             return fallback
         return text
+
+
+def _llm_label(cond: Condition) -> str:
+    """LLM에 보내는 조건 이름. 가수·곡명은 이름을 숨기고 종류만 보낸다."""
+    return {"artist": "가수", "title": "곡명"}.get(cond.kind, cond.label)
 
 
 def _owned(ranked: Sequence, existing: set[int], limit: int) -> list:
