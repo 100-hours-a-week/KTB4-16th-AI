@@ -406,3 +406,50 @@ def test_small_onboarding_group_goes_to_common_like_any_small_group():
 def test_unreadable_onboarding_behaves_like_no_onboarding():
     result = assign_genres(_many(1, "b1", 1), GENRES, min_group_size=1, preferred=None)
     assert result[1].music_genre == "발라드"
+
+
+class _CatchUpRepo:
+    def __init__(self, filled=()):
+        self._filled = set(filled)
+
+    async def filled_groups(self, day):
+        return self._filled
+
+
+class _CatchUpJobs:
+    def __init__(self):
+        self.added: list[dict] = []
+
+    async def enqueue_if_absent(self, **fields):
+        if any(a["dedupe_key"] == fields["dedupe_key"] for a in self.added):
+            return False
+        self.added.append(fields)
+        return True
+
+
+async def test_catch_up_queues_a_batch_when_todays_questions_are_missing():
+    jobs = _CatchUpJobs()
+
+    queued = await w.catch_up(_CatchUpRepo(), jobs, date(2026, 10, 19), {"공통"})
+
+    assert queued is True
+    assert jobs.added[0]["payload"] == {"date": "2026-10-19"}
+    assert jobs.added[0]["dedupe_key"] == "2026-10-19:catch-up"  # 23시 배치 키와 다르다
+
+
+async def test_catch_up_does_nothing_when_todays_questions_exist():
+    jobs = _CatchUpJobs()
+
+    queued = await w.catch_up(_CatchUpRepo(filled={"공통"}), jobs, date(2026, 10, 19), {"공통"})
+
+    assert queued is False and jobs.added == []
+
+
+async def test_catch_up_is_queued_only_once_per_day():
+    jobs = _CatchUpJobs()
+    today = date(2026, 10, 19)
+
+    first = await w.catch_up(_CatchUpRepo(), jobs, today, {"공통"})
+    second = await w.catch_up(_CatchUpRepo(), jobs, today, {"공통"})
+
+    assert (first, second) == (True, False)

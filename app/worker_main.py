@@ -106,6 +106,11 @@ async def main() -> None:
         loop.add_signal_handler(sig, stop.set)
 
     logger.info("worker 시작 (client mode: %s)", settings.ai_client_mode)
+    try:
+        if await balance_daily_worker.enqueue_catch_up(datetime.now(UTC)):
+            logger.info("기능6 오늘 질문이 비어 있어 배치를 바로 예약")
+    except Exception:
+        logger.exception("기능6 catch-up 확인 실패 — 23시 배치에 맡김")
     while not stop.is_set():
         await schedule_daily(datetime.now(UTC))
         try:
