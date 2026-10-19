@@ -255,6 +255,21 @@ async def test_exact_record_that_no_longer_exists_is_skipped(parser):
     assert res.answer.startswith("서울숲 근처, 가을 조건에 모두 맞는 자물쇠는 없어요.")
 
 
+async def test_cloudy_question_finds_records_whose_stored_weather_has_other_case_or_spaces(parser):
+    rows = [
+        make_row(1, weather_condition="CLOUDY"),
+        make_row(2, weather_condition="overcast"),
+        make_row(3, weather_condition=" Cloudy "),
+        make_row(4, weather_condition="CLEAR"),
+    ]
+    details = {i: make_record(i) for i in (1, 2, 3, 4)}
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("흐린 날 들은 음악"))
+
+    assert sorted(m.record_id for m in res.records) == [1, 2, 3]
+
+
 async def test_combined_period_place_mood_question(parser):
     rows = [
         make_row(1, created_at=datetime(2025, 10, 3), mood_score=-30, **SEOUL_FOREST),

@@ -107,6 +107,15 @@ def test_weather_and_missing_weather():
     assert not _score(make_row(3, weather_condition=None), rain).matched
 
 
+def test_weather_value_is_compared_ignoring_case_and_surrounding_spaces():
+    cloudy = Condition("weather", "흐린 날", weather=frozenset({"CLOUDY", "OVERCAST"}))
+
+    for value in ("CLOUDY", "cloudy", " Cloudy ", "overcast", "OVERCAST\n"):
+        assert _score(make_row(1, weather_condition=value), cloudy).all_matched, value
+    assert not _score(make_row(2, weather_condition="CLOUDS"), cloudy).matched
+    assert not _score(make_row(3, weather_condition=""), cloudy).matched
+
+
 def test_temperature_and_mood_ranges_include_bounds_and_skip_missing_values():
     cold = Condition("temperature", "추운 날", low=-50, high=5)
     sad = Condition("mood", "기분이 안 좋았던 때", low=-50, high=-20)
