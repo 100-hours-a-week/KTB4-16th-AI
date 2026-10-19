@@ -97,10 +97,7 @@ async def handle(payload: dict[str, Any]) -> None:
         if s.backend_mysql_url:
             async with mysql.get_sessionmaker()() as my:
                 await _assign(
-                    BalanceDailyRepository(my, pg),
-                    s.balance_min_group_size,
-                    s.balance_common_only,
-                    s.balance_min_saved_tracks,
+                    BalanceDailyRepository(my, pg), s.balance_min_group_size, s.balance_common_only
                 )
         else:
             logger.warning("백엔드 DB 설정 없음 — 그룹 계산 없이 질문만 만든다")
@@ -143,10 +140,7 @@ def question_groups(common_only: bool) -> set[str]:
 
 
 async def _assign(
-    repo: BalanceDailyRepository,
-    min_group_size: int,
-    common_only: bool = False,
-    min_saved: int = 3,
+    repo: BalanceDailyRepository, min_group_size: int, common_only: bool = False
 ) -> None:
     saved = await repo.saved_tracks()
     if common_only:
@@ -154,7 +148,7 @@ async def _assign(
     else:
         genre_of = await repo.genre_of({t.external_track_id for t in saved})
         preferred = await repo.preferred_genres()
-        assignments = assign_genres(saved, genre_of, min_group_size, preferred, min_saved)
+        assignments = assign_genres(saved, genre_of, min_group_size, preferred)
     await repo.save_assignments(assignments)
     logger.info("사용자 그룹 %d명 저장", len(assignments))
 

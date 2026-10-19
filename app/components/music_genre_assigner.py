@@ -1,18 +1,15 @@
 """기능6 사용자별 취향 투표 그룹(music_genre) 계산 — 규칙 기반, LLM 없음.
 
-온보딩 선호 장르(users.preferred_genres)를 읽을 수 있을 때:
-1. 온보딩을 안 한 사람, 저장한 곡이 최소 곡 수(min_saved)보다 적은 사람, 온보딩만 하고 자물쇠가
-   없는 사람은 공통
-2. 온보딩과 자물쇠가 둘 다 충분하면 대표 장르 하나를 뽑는다 — 저장한 곡의 장르(곡마다 1개)를 세고,
-   온보딩에서 고른 장르에는 곡 PREFERRED_BONUS개만큼 가산점을 준다 (동률이면 더 최근에 저장한
-   장르, 그래도 같으면 온보딩에서 먼저 고른 장르)
-온보딩을 읽지 못하면(preferred가 None) 예전처럼 저장한 곡의 장르 1등으로 정한다.
-
+1. 저장한 자물쇠 곡이 있으면 곡들의 장르(곡마다 1개)를 세서 가장 많은 장르 (동률이면 더 최근에
+   저장한 장르). 이때 온보딩 장르는 쓰지 않는다.
+2. 자물쇠가 없는 사람은 온보딩에서 고른 장르(users.preferred_genres, 여러 개)를 쓴다 — 고른
+   장르 중 사람이 가장 많은 장르가 대표 (같은 질문에 다른 답을 고른 사람을 만날 확률이 크다).
+   동률이면 먼저 고른 장르. 온보딩도 없으면 공통
 3. 그룹 인원이 최소 인원보다 적으면 공통 — 같은 질문에 다른 답을 고른 사람이 모여야
    매칭이 되므로, 사람이 적은 장르로 쪼개면 매칭이 안 된다
 4. 공통 그룹마저 최소 인원보다 적으면 가장 큰 장르 그룹에 합친다 — 공통이 너무 작아
    매칭이 안 되는 것보다, 장르가 조금 달라도 사람이 많은 그룹이 낫다
-   (자물쇠가 없는 사용자는 여기 안 나오고, 백엔드가 공통으로 처리한다)
+   (자물쇠가 없는 사용자는 온보딩을 안 했으면 여기 안 나오고, 백엔드가 공통으로 처리한다)
 
 결과는 13개 장르 + 공통 중 하나.
 """
@@ -27,12 +24,6 @@ from app.components.music_tags import COMMON_GROUP, GENRE_VOCAB
 SOURCE_RECORDS = "records"
 SOURCE_COMMON = "common"
 SOURCE_MERGED = "merged"  # 공통이 작아서 가장 큰 장르 그룹에 합쳐짐
-
-# 온보딩에서 고른 장르는 저장한 곡 PREFERRED_BONUS개를 더한 것으로 센다 (가벼운 가산점).
-# 정답을 알 데이터가 아직 없어서 감으로 정한 초기값이다.
-PREFERRED_BONUS = 1
-# 저장한 곡이 이보다 적으면 대표 장르를 믿기 어려워 공통으로 둔다 (설정 balance_min_saved_tracks)
-DEFAULT_MIN_SAVED = 3
 
 
 @dataclass(frozen=True)
@@ -81,7 +72,6 @@ def assign_genres(
     genre_of: dict[str, str],
     min_group_size: int,
     preferred: dict[int, list[str]] | None = None,
-    min_saved: int = DEFAULT_MIN_SAVED,
 ) -> dict[int, Assignment]:
     counts: dict[int, Counter] = defaultdict(Counter)
     latest: dict[tuple[int, str], datetime] = {}
@@ -95,31 +85,27 @@ def assign_genres(
         if key not in latest or s.saved_at > latest[key]:
             latest[key] = s.saved_at
 
+    # 1) 자물쇠가 있는 사람: 저장한 곡의 장르 1등 (온보딩은 보지 않는다)
     top: dict[int, str] = {}
-    if preferred is None:
-        # 온보딩을 읽지 못함 — 저장한 곡의 장르 1등
-        for user_id in users:
-            if counts[user_id]:
-                top[user_id] = max(
-                    counts[user_id], key=lambda g: (counts[user_id][g], latest[(user_id, g)])
-                )
-    else:
-        users |= set(preferred)
-        for user_id in users:
-            picks = [g for g in preferred.get(user_id, []) if g in GENRE_VOCAB]
-            if not picks or sum(counts[user_id].values()) < min_saved:
-                continue
-            score = Counter(counts[user_id])
-            for genre in picks:
-                score[genre] += PREFERRED_BONUS
+    for user_id in users:
+        if counts[user_id]:
             top[user_id] = max(
-                score,
-                key=lambda g: (
-                    score[g],
-                    (1, latest[(user_id, g)]) if (user_id, g) in latest else (0, None),
-                    -picks.index(g) if g in picks else -len(GENRE_VOCAB),
-                ),
+                counts[user_id], key=lambda g: (counts[user_id][g], latest[(user_id, g)])
             )
+
+    # 2) 자물쇠로 장르를 못 정한 사람: 온보딩에서 고른 장르 중 사람이 가장 많은 장르
+    picks_of = {
+        uid: [g for g in genres if g in GENRE_VOCAB]
+        for uid, genres in (preferred or {}).items()
+        if uid not in top
+    }
+    picks_of = {uid: picks for uid, picks in picks_of.items() if picks}
+    support = Counter(top.values())
+    for picks in picks_of.values():
+        support.update(picks)
+    for user_id, picks in picks_of.items():
+        users.add(user_id)
+        top[user_id] = max(picks, key=lambda g: (support[g], -picks.index(g)))
 
     group_size = Counter(top.values())
     result: dict[int, Assignment] = {}

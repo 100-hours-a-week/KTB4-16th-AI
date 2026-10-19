@@ -371,36 +371,38 @@ def _many(user, track, n):
     return [_s(user, track) for _ in range(n)]
 
 
-def test_without_onboarding_or_with_too_few_saved_songs_goes_to_common():
-    saved = _many(1, "b1", 5) + _many(2, "b1", 2) + _many(3, "b1", 5)
-    # 1: 온보딩 안 함 → 공통 / 2: 온보딩 했지만 저장 2곡 < 3 → 공통 / 3: 둘 다 충분
+def test_onboarding_is_ignored_when_the_user_has_saved_songs():
+    # 저장한 곡은 발라드뿐이지만 온보딩에서 인디를 골랐다 → 자물쇠가 있으니 온보딩은 안 본다
     result = assign_genres(
-        saved, GENRES, min_group_size=1, preferred={2: ["발라드"], 3: ["발라드"]}
+        _many(1, "b1", 2), GENRES, min_group_size=1, preferred={1: ["인디음악", "댄스"]}
     )
-    assert result[1].music_genre == "공통"
-    assert result[2].music_genre == "공통"
-    assert result[3].music_genre == "발라드"
+    assert result[1].music_genre == "발라드"
 
 
-def test_onboarding_only_user_goes_to_common():
+def test_user_without_saved_songs_uses_the_most_popular_genre_among_their_onboarding_picks():
+    # 5, 6, 7은 자물쇠 없이 온보딩만 — 5는 [댄스, 발라드]를 골랐고 발라드를 고른 사람이 더 많다
+    preferred = {5: ["댄스", "발라드"], 6: ["발라드"], 7: ["발라드", "인디음악"]}
+    result = assign_genres([], GENRES, min_group_size=1, preferred=preferred)
+    assert result[5].music_genre == "발라드"
+
+
+def test_onboarding_ties_go_to_the_genre_picked_first():
     result = assign_genres([], GENRES, min_group_size=1, preferred={5: ["댄스", "발라드"]})
-    assert result[5].music_genre == "공통"
+    assert result[5].music_genre == "댄스"
 
 
-def test_onboarding_bonus_breaks_a_near_tie_in_favor_of_the_picked_genre():
-    # 발라드 3곡, 인디 3곡 동점 → 온보딩에서 인디를 골랐으면 +1로 인디
-    saved = _many(1, "b1", 3) + _many(1, "i1", 3)
-    result = assign_genres(saved, GENRES, min_group_size=1, preferred={1: ["인디음악"]})
-    assert result[1].music_genre == "인디음악"
+def test_saved_song_users_count_toward_the_popularity_of_a_genre_for_onboarding_only_users():
+    # 발라드 자물쇠 사용자 2명 + 온보딩만 한 사용자 [댄스, 발라드] → 발라드(2)가 댄스(0)보다 크다
+    saved = _many(1, "b1", 1) + _many(2, "b1", 1)
+    result = assign_genres(saved, GENRES, min_group_size=1, preferred={9: ["댄스", "발라드"]})
+    assert result[9].music_genre == "발라드"
 
 
-def test_saved_songs_still_win_over_a_single_onboarding_bonus():
-    saved = _many(1, "b1", 5) + _many(1, "i1", 3)
-    result = assign_genres(saved, GENRES, min_group_size=1, preferred={1: ["인디음악"]})
-    assert result[1].music_genre == "발라드"  # 5 > 3+1
+def test_small_onboarding_group_goes_to_common_like_any_small_group():
+    result = assign_genres([], GENRES, min_group_size=2, preferred={5: ["댄스"]})
+    assert result[5].music_genre == "공통"  # 댄스를 고른 사람이 1명뿐
 
 
-def test_unreadable_onboarding_falls_back_to_saved_songs_only():
-    saved = _many(1, "b1", 1)  # preferred=None → 저장한 곡 1등(최소 곡 수 규칙 없음)
-    result = assign_genres(saved, GENRES, min_group_size=1, preferred=None)
+def test_unreadable_onboarding_behaves_like_no_onboarding():
+    result = assign_genres(_many(1, "b1", 1), GENRES, min_group_size=1, preferred=None)
     assert result[1].music_genre == "발라드"
