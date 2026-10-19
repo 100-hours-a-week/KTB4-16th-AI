@@ -270,6 +270,42 @@ async def test_cloudy_question_finds_records_whose_stored_weather_has_other_case
     assert sorted(m.record_id for m in res.records) == [1, 2, 3]
 
 
+async def test_evening_question_finds_records_saved_between_17_and_21(parser):
+    rows = [
+        make_row(1, created_at=datetime(2026, 10, 3, 17, 0)),
+        make_row(2, created_at=datetime(2026, 10, 4, 20, 59)),
+        make_row(3, created_at=datetime(2026, 10, 5, 21, 0)),
+        make_row(4, created_at=datetime(2026, 10, 6, 9, 30)),
+    ]
+    details = {i: make_record(i) for i in (1, 2, 3, 4)}
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("저녁에 들은 노래"))
+
+    assert sorted(m.record_id for m in res.records) == [1, 2]
+    assert res.answer == "저녁 시간 조건에 맞는 자물쇠를 찾았어요."
+
+
+async def test_last_weekend_question_needs_both_last_week_and_a_weekend_day(parser):
+    rows = [
+        make_row(1, created_at=datetime(2026, 10, 10, 15, 0)),  # 지난주 토
+        make_row(2, created_at=datetime(2026, 10, 11, 9, 0)),  # 지난주 일
+        make_row(3, created_at=datetime(2026, 10, 7, 12, 0)),  # 지난주 수 (주말이 아니다)
+        make_row(4, created_at=datetime(2026, 10, 3, 12, 0)),  # 지지난주 토 (지난주가 아니다)
+    ]
+    details = {i: make_record(i) for i in (1, 2, 3, 4)}
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("지난 주말에 들은 노래"))
+
+    assert sorted(m.record_id for m in res.records) == [1, 2]
+    # 하나만 맞는 기록은 제안으로 나간다
+    assert {s.record_id: s.matched_conditions for s in res.suggested_records} == {
+        3: ["지난 주"],
+        4: ["주말"],
+    }
+
+
 async def test_combined_period_place_mood_question(parser):
     rows = [
         make_row(1, created_at=datetime(2025, 10, 3), mood_score=-30, **SEOUL_FOREST),

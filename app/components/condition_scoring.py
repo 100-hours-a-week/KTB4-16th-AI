@@ -191,6 +191,10 @@ def _condition_score(
             return _flag(row.created_at.month in cond.months)
         case "weather":
             return _flag(_weather_code(row.weather_condition) in cond.weather)
+        case "time":
+            return _flag(row.created_at.hour in cond.hours)
+        case "weekday":
+            return _flag(row.created_at.weekday() in cond.weekdays)
         case "temperature":
             return _flag(_in_range(row.temperature, cond))
         case "mood":

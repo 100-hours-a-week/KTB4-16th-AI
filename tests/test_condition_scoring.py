@@ -116,6 +116,36 @@ def test_weather_value_is_compared_ignoring_case_and_surrounding_spaces():
     assert not _score(make_row(3, weather_condition=""), cloudy).matched
 
 
+def test_time_of_day_uses_the_hour_with_exact_boundaries():
+    evening = Condition("time", "저녁 시간", hours=frozenset({17, 18, 19, 20}))
+
+    def at(hour, minute=0):
+        return _score(make_row(1, created_at=datetime(2026, 10, 3, hour, minute)), evening)
+
+    assert not at(16, 59).matched
+    assert at(17, 0).all_matched
+    assert at(20, 59).all_matched
+    assert not at(21, 0).matched
+
+
+def test_night_includes_after_midnight():
+    night = Condition("time", "밤 시간", hours=frozenset({21, 22, 23, 0, 1, 2, 3, 4}))
+
+    for hour in (21, 23, 0, 2, 4):
+        assert _score(make_row(1, created_at=datetime(2026, 10, 3, hour, 30)), night).all_matched
+    for hour in (5, 12, 20):
+        assert not _score(make_row(1, created_at=datetime(2026, 10, 3, hour, 30)), night).matched
+
+
+def test_weekday_condition_uses_the_day_of_week():
+    weekend = Condition("weekday", "주말", weekdays=frozenset({5, 6}))
+
+    assert _score(make_row(1, created_at=datetime(2026, 10, 10, 9)), weekend).all_matched  # 토
+    assert _score(make_row(2, created_at=datetime(2026, 10, 11, 9)), weekend).all_matched  # 일
+    assert not _score(make_row(3, created_at=datetime(2026, 10, 12, 9)), weekend).matched  # 월
+    assert not _score(make_row(4, created_at=datetime(2026, 10, 9, 23, 59)), weekend).matched  # 금
+
+
 def test_temperature_and_mood_ranges_include_bounds_and_skip_missing_values():
     cold = Condition("temperature", "추운 날", low=-50, high=5)
     sad = Condition("mood", "기분이 안 좋았던 때", low=-50, high=-20)
