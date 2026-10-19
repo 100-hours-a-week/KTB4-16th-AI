@@ -66,3 +66,31 @@ def test_aggregate_counts_only_the_genre_for_genre_groups():
     common = aggregate(rows, moods, "공통")
     assert common.record_count == 4
     assert common.top_places == [("성수동", 2), ("한강", 1)]
+
+
+def test_common_group_reports_the_saved_count_per_genre_most_first():
+    rows = [_row("t1", "잔나비"), _row("t1", "잔나비"), _row("t2", "아이유"), _row("t3", "모름")]
+    moods = {
+        "t1": SimpleNamespace(genre="인디음악", moods=["그리운"]),
+        "t2": SimpleNamespace(genre="발라드", moods=["잔잔한"]),
+    }
+
+    common = aggregate(rows, moods, "공통")
+    indie = aggregate(rows, moods, "인디음악")
+
+    assert common.genre_counts == [
+        ("인디음악", 2),
+        ("발라드", 1),
+    ]  # 장르를 모르는 곡은 센 곡 수에서 빠짐
+    assert indie.genre_counts == [("인디음악", 2)]
+
+
+async def test_prompt_includes_the_genre_distribution():
+    llm = ScriptedLLM(RESPONSE)
+    stats = GenreStats(
+        3, [("잔나비", 2)], [], [], [], genre_counts=[("인디음악", 2), ("발라드", 1)]
+    )
+
+    await QuestionGenerator(llm).generate("공통", stats, count=1)
+
+    assert "장르별 저장 수: 인디음악(2), 발라드(1)" in llm.last_prompt

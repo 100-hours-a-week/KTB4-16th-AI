@@ -62,6 +62,7 @@ def _build_prompt(music_genre: str, stats: GenreStats, count: int) -> str:
     else:
         lines.append(f"재료 (최근 사용자들이 저장한 음악 기록 {stats.record_count}건 집계):")
         lines += [
+            _stat_line("장르별 저장 수", stats.genre_counts),
             _stat_line("많이 저장된 가수", stats.top_artists),
             _stat_line("많이 붙은 무드", stats.top_moods),
             _stat_line("많이 저장된 장소", stats.top_places),

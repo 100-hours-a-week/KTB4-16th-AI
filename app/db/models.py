@@ -86,8 +86,8 @@ class TrackLookup(Base):
     멈춘 적이 있다(2026-10-02, 429 QUOTA_EXCEEDED). 같은 곡은 자주 다시 나오므로 한 번
     확인한 결과를 저장해 두고 재사용한다.
 
-    Spotify 개발자 약관은 메타데이터·커버의 "임시" 캐시만 허용하고 무기한 저장을 금지해서,
-    verified_at 기준으로 유효기간이 지나면 다시 확인한다(track_resolver의 TTL 참고).
+    찾은 곡은 기한 없이 쓰고, 없는 곡만 verified_at 기준으로 하루가 지나면 다시 확인한다
+    (track_resolver의 TTL 참고).
     external_track_id가 NULL이면 "Spotify에 없는 곡"(LLM이 지어낸 곡 등)이라는 기록이다.
     """
 
