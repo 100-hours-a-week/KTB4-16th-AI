@@ -83,6 +83,33 @@ async def enqueue_daily(target: date) -> None:
             logger.info("기능6 매일 배치 예약: %s", target)
 
 
+async def catch_up(repo, jobs, today: date, groups: set[str]) -> bool:
+    """오늘 질문이 비어 있으면 배치를 바로 넣는다 — 23시 창을 놓쳤거나 배치가 실패한 날을 메운다.
+
+    매일 23시 배치의 키(날짜)와 달리 따로 "catch-up" 키로 넣어서, 그날 23시 배치가 이미
+    실패로 끝났어도 다시 한 번 시도할 수 있다. 같은 날은 한 번만 넣는다(서버가 여러 대여도).
+    오늘과 내일 질문을 함께 만든다(balance_question_days_ahead). 새로 넣었으면 True.
+    """
+    if not groups - await repo.filled_groups(today):
+        return False
+    fields = job_fields(today)
+    fields["dedupe_key"] = f"{today.isoformat()}:catch-up"
+    return await jobs.enqueue_if_absent(**fields)
+
+
+async def enqueue_catch_up(now: datetime) -> bool:
+    """서버가 켜질 때 한 번 부른다."""
+    s = get_settings()
+    today = now.astimezone(KST).date()
+    async with get_sessionmaker()() as session:
+        return await catch_up(
+            BalanceDailyRepository(None, session),
+            JobRepository(session),
+            today,
+            question_groups(s.balance_common_only),
+        )
+
+
 async def handle(payload: dict[str, Any]) -> None:
     # 늦게 import — dependencies가 서비스·클라이언트를 모두 불러와서 워커 시작이 무거워지지 않게
     from app.dependencies import get_clients, get_genre_stats_source, get_song_pool
