@@ -14,6 +14,8 @@ ConditionKind = Literal[
     "period",  # 지난달·작년 가을처럼 날짜 범위 → 기록한 날짜
     "season",  # 계절·N월 → 기록한 달 (해는 따지지 않는다)
     "weather",  # 날씨 → 기록 당시 날씨
+    "time",  # 아침·저녁·퇴근길 같은 시간대 → 기록한 시각(시)
+    "weekday",  # 주말·평일·금요일 → 기록한 요일
     "temperature",  # 기온 표현 → 기록 당시 기온
     "mood",  # 사용자가 입력한 기분 점수
     "song_mood",  # 곡 무드 태그 (잔잔한, 신나는 …)
@@ -35,6 +37,8 @@ class Condition:
     ranges: tuple[tuple[date, date], ...] = ()  # period: (시작일, 종료일) 둘 다 포함
     months: frozenset[int] = frozenset()  # season
     weather: frozenset[str] = frozenset()  # weather: records.weather_condition 값
+    hours: frozenset[int] = frozenset()  # time: 맞는 시각(0~23시). 자정을 넘기는 구간도 풀어 둔다
+    weekdays: frozenset[int] = frozenset()  # weekday: 월=0 … 일=6 (date.weekday())
     low: float | None = None  # temperature·mood 범위 (양끝 포함)
     high: float | None = None
     # region 전용. 약칭("수원", "공주")처럼 일반 낱말과 겹칠 수 있는 이름이면 False

@@ -118,6 +118,78 @@ def test_weather_words_do_not_catch_unrelated_words(parser, question):
     assert "weather" not in _kinds(parser, question)
 
 
+@pytest.mark.parametrize(
+    ("question", "expected_hours"),
+    [
+        ("새벽에 들은 노래", {0, 1, 2, 3, 4}),
+        ("아침에 들은 음악", {5, 6, 7, 8, 9, 10}),
+        ("낮에 들은 노래", {11, 12, 13, 14, 15, 16}),
+        ("오후에 들은 노래", {12, 13, 14, 15, 16, 17}),
+        ("점심시간에 들은 노래", {11, 12, 13}),
+        ("저녁에 들은 노래", {17, 18, 19, 20}),
+        ("밤에 들은 노래", {21, 22, 23, 0, 1, 2, 3, 4}),  # 자정을 넘긴다 (새벽 포함)
+        ("출근길에 들은 노래", {6, 7, 8, 9}),
+        ("퇴근길에 들은 노래", {17, 18, 19, 20}),
+        ("아침이나 저녁에 들은 노래", {5, 6, 7, 8, 9, 10, 17, 18, 19, 20}),  # 둘 중 하나
+    ],
+)
+def test_time_of_day(parser, question, expected_hours):
+    assert _one(parser, question, "time").hours == expected_hours
+
+
+@pytest.mark.parametrize(
+    ("question", "expected_days"),
+    [
+        ("주말에 들은 노래", {5, 6}),
+        ("평일에 들은 노래", {0, 1, 2, 3, 4}),
+        ("금요일에 들은 노래", {4}),
+        ("토요일이나 일요일에 들은 노래", {5, 6}),
+    ],
+)
+def test_weekday(parser, question, expected_days):
+    assert _one(parser, question, "weekday").weekdays == expected_days
+
+
+def test_time_and_weekday_combine_with_other_conditions(parser):
+    kinds = _kinds(parser, "비 오는 날 금요일 저녁에 들은 노래")
+
+    assert kinds == ["weather", "weekday", "time"]
+
+
+def test_last_weekend_is_last_week_and_weekend(parser):
+    conditions = parser.parse(
+        "지난 주말에 들은 노래", TODAY
+    )  # 2026-10-12(월) → 지난주는 10/5~10/11
+
+    assert [c.kind for c in conditions] == ["period", "weekday"]
+    assert conditions[0].ranges == ((date(2026, 10, 5), date(2026, 10, 11)),)
+    assert conditions[0].label == "지난 주"  # "지난, 주말"처럼 앞 낱말만 나오지 않는다
+    assert conditions[1].weekdays == {5, 6}
+
+
+def test_this_weekend_is_this_week_and_weekend(parser):
+    conditions = parser.parse("이번 주말에 들은 노래", TODAY)
+
+    assert [c.kind for c in conditions] == ["period", "weekday"]
+    assert conditions[0].ranges == ((date(2026, 10, 12), date(2026, 10, 18)),)
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "낮은 목소리의 노래",  # "낮"이 아니다
+        "저녁노을 보며 들은 노래",
+        "아침이슬 같은 노래",  # 곡 이름 같은 말
+        "밤하늘을 보며 들은 노래",
+        "한 주를 마무리하며 들은 노래",
+    ],
+)
+def test_time_words_do_not_catch_unrelated_words(parser, question):
+    kinds = _kinds(parser, question)
+
+    assert "time" not in kinds and "weekday" not in kinds
+
+
 def test_temperature(parser):
     cond = _one(parser, "추웠던 날 들은 노래", "temperature")
     assert (cond.low, cond.high) == (-50, 5)
@@ -276,3 +348,37 @@ def test_known_and_unknown_places_can_be_asked_together(parser):
 def test_ordinary_place_words_do_not_become_conditions(parser):
     assert _kinds(parser, "공원에서 들은 노래") == []
     assert _kinds(parser, "이 지역에서 들은 노래") == []
+
+
+_TIME_AND_WEEKDAY = """
+    time_of_day:
+      - {label: 밤, hours: [21, 5], words: ["밤에"]}
+    weekday:
+      - {label: 주말, days: [5, 6], words: ["주말"]}
+    """
+
+
+def test_time_and_weekday_sections_are_optional_and_load_when_present(tmp_path):
+    without = QuestionRules.load(_rules(tmp_path, _VALID))
+    with_them = QuestionRules.load(_rules(tmp_path, _VALID + _TIME_AND_WEEKDAY))
+
+    assert without.times == () and without.weekdays == ()
+    assert with_them.times[0].hours == {21, 22, 23, 0, 1, 2, 3, 4}
+    assert with_them.weekdays[0].days == {5, 6}
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ("[21, 5]", "[5, 5]", "hours"),  # 시작과 끝이 같다
+        ("[21, 5]", "[24, 5]", "hours"),  # 시작은 0~23
+        ("[21, 5]", "[21, 0]", "hours"),  # 끝은 1~24
+        ("[5, 6]", "[5, 7]", "days"),  # 요일은 0~6
+        ('words: ["밤에"]', "words: []", "words"),
+    ],
+)
+def test_invalid_time_and_weekday_rules_are_rejected(tmp_path, old, new, message):
+    body = (_VALID + _TIME_AND_WEEKDAY).replace(old, new)
+
+    with pytest.raises(ValueError, match=message):
+        QuestionRules.load(_rules(tmp_path, body))

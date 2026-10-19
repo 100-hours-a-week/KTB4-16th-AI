@@ -4,7 +4,8 @@ DB를 부르지 않고 질문 글자와 우리 서버의 규칙 파일(places.ya
 question_rules.yaml)만 본다. 자물쇠에 저장된 값과 맞는지는 뒤 단계(condition_scoring)가 비교한다.
 
 한 번 잡힌 글자는 공백으로 지워서 다른 규칙이 다시 쓰지 못하게 한다. 그래서 순서가 중요하다:
-기간 → 장소 → 지역 → 동 → 계절·달 → 날씨 → 기온 → 기분 → 곡 무드 → (남은 글자에서) 사전에 없는 장소.
+기간 → 장소 → 지역 → 동 → 계절·달 → 날씨 → 요일 → 시간대 → 기온 → 기분 → 곡 무드 →
+(남은 글자에서) 사전에 없는 장소.
 (예: "서울숲"을 장소로 가져가야 "서울"이 지역으로 또 잡히지 않고, "우울했을 때"를 기분으로
 가져가야 "우울"이 곡 무드로 또 잡히지 않는다.)
 """
@@ -68,6 +69,8 @@ class QuestionParser:
 
         text = self._add_seasons(text, conditions)
         text = self._add_weather(text, conditions)
+        text = self._add_weekdays(text, conditions)
+        text = self._add_times(text, conditions)
         text = self._add_ranges(text, self._rules.temperature, "temperature", conditions)
         text = self._add_ranges(text, self._rules.mood, "mood", conditions)
         text = self._add_song_moods(text, conditions)
@@ -107,6 +110,31 @@ class QuestionParser:
                 values |= rule.conditions
         if labels:
             conditions.append(Condition("weather", "·".join(labels), weather=frozenset(values)))
+        return text
+
+    def _add_weekdays(self, text: str, conditions: list[Condition]) -> str:
+        labels: list[str] = []
+        days: set[int] = set()
+        for rule in self._rules.weekdays:
+            matched, text = _consume(text, rule.patterns)
+            if matched:
+                labels.append(rule.label)
+                days |= rule.days
+        if labels:
+            conditions.append(Condition("weekday", "·".join(labels), weekdays=frozenset(days)))
+        return text
+
+    def _add_times(self, text: str, conditions: list[Condition]) -> str:
+        """시간대: 여러 개를 말하면("아침이나 저녁") 그중 하나에 맞으면 된다."""
+        labels: list[str] = []
+        hours: set[int] = set()
+        for rule in self._rules.times:
+            matched, text = _consume(text, rule.patterns)
+            if matched:
+                labels.append(rule.label)
+                hours |= rule.hours
+        if labels:
+            conditions.append(Condition("time", "·".join(labels), hours=frozenset(hours)))
         return text
 
     @staticmethod
