@@ -25,8 +25,8 @@ import random
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any
 
-from app.components.music_genre_assigner import assign_genres
-from app.components.music_tags import MUSIC_GENRE_GROUPS
+from app.components.music_genre_assigner import assign_all_common, assign_genres
+from app.components.music_tags import COMMON_GROUP, MUSIC_GENRE_GROUPS
 from app.components.question_generator import PROMPT_VERSION, QuestionGenerator
 from app.components.song_battle_generator import PROMPT_VERSION as BATTLE_PROMPT_VERSION
 from app.components.song_battle_generator import generate_battle
@@ -96,7 +96,9 @@ async def handle(payload: dict[str, Any]) -> None:
     async with get_sessionmaker()() as pg:
         if s.backend_mysql_url:
             async with mysql.get_sessionmaker()() as my:
-                await _assign(BalanceDailyRepository(my, pg), s.balance_min_group_size)
+                await _assign(
+                    BalanceDailyRepository(my, pg), s.balance_min_group_size, s.balance_common_only
+                )
         else:
             logger.warning("백엔드 DB 설정 없음 — 그룹 계산 없이 질문만 만든다")
 
@@ -108,9 +110,10 @@ async def handle(payload: dict[str, Any]) -> None:
         battle_used_pairs = await repo.recent_battle_pairs(target)
         battle_rng = random.Random()
         failed: list[str] = []
+        groups = question_groups(s.balance_common_only)
         for offset in range(s.balance_question_days_ahead):
             day = target + timedelta(days=offset)
-            for genre in sorted(MUSIC_GENRE_GROUPS - await repo.filled_groups(day)):
+            for genre in sorted(groups - await repo.filled_groups(day)):
                 try:
                     await _fill(
                         repo,
@@ -128,13 +131,23 @@ async def handle(payload: dict[str, Any]) -> None:
                     failed.append(f"{day}/{genre}")
     if failed:
         raise GroupFailedError(f"질문을 못 만든 그룹: {', '.join(failed)}")
-    logger.info("기능6 배치 완료: %s, 그룹 %d개", target, len(MUSIC_GENRE_GROUPS))
+    logger.info("기능6 배치 완료: %s, 그룹 %d개", target, len(groups))
 
 
-async def _assign(repo: BalanceDailyRepository, min_group_size: int) -> None:
+def question_groups(common_only: bool) -> set[str]:
+    """질문을 만들 그룹 — V2까지는 공통만, 아니면 13개 장르 + 공통."""
+    return {COMMON_GROUP} if common_only else set(MUSIC_GENRE_GROUPS)
+
+
+async def _assign(
+    repo: BalanceDailyRepository, min_group_size: int, common_only: bool = False
+) -> None:
     saved = await repo.saved_tracks()
-    genre_of = await repo.genre_of({t.external_track_id for t in saved})
-    assignments = assign_genres(saved, genre_of, min_group_size)
+    if common_only:
+        assignments = assign_all_common(saved)
+    else:
+        genre_of = await repo.genre_of({t.external_track_id for t in saved})
+        assignments = assign_genres(saved, genre_of, min_group_size)
     await repo.save_assignments(assignments)
     logger.info("사용자 그룹 %d명 저장", len(assignments))
 

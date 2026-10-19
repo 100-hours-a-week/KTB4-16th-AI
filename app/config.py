@@ -137,6 +137,9 @@ class Settings(BaseSettings):
     # 그룹 인원이 이보다 적은 장르의 사용자는 공통 그룹으로 (매칭할 사람이 모이지 않으므로).
     # 1:1 매칭이라 2명부터 그룹 유지(10/15 결정), 오픈 후 매칭 성공률을 보고 조정한다
     balance_min_group_size: int = 2
+    # V2까지는 모든 사용자를 공통 그룹으로 묶고 공통 질문만 만든다 (백엔드와 합의, 채팅을 먼저
+    # 열기 위해). 장르별 그룹으로 돌아가려면 False — 그때 balance_min_group_size가 쓰인다.
+    balance_common_only: bool = True
     # 그룹마다 미리 채워 둘 날짜 수 (배치가 하루 실패해도 질문이 비지 않게)
     balance_question_days_ahead: int = 2
 

@@ -74,3 +74,8 @@ def assign_genres(
         for uid in common:
             result[uid] = Assignment(biggest, SOURCE_MERGED)
     return result
+
+
+def assign_all_common(saved: list[SavedTrack]) -> dict[int, Assignment]:
+    """모두를 공통 그룹으로 (V2까지 — 장르별로 나누지 않고 한 질문으로 채팅을 연다)."""
+    return {s.user_id: Assignment(COMMON_GROUP, SOURCE_COMMON) for s in saved}
