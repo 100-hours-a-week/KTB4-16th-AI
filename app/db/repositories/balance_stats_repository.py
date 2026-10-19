@@ -6,7 +6,7 @@ LLM에 보내지 않으므로 읽지 않는다.
 """
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from sqlalchemy import select, text
@@ -25,6 +25,8 @@ class GenreStats:
     top_moods: list[tuple[str, int]]
     top_places: list[tuple[str, int]]
     top_weathers: list[tuple[str, int]]
+    # 장르별로 저장된 자물쇠 수 (많은 순). 공통 그룹에서는 전체 장르 분포가 된다.
+    genre_counts: list[tuple[str, int]] = field(default_factory=list)
 
     @classmethod
     def empty(cls) -> "GenreStats":
@@ -79,12 +81,15 @@ class BalanceStatsRepository:
 def aggregate(rows, moods, music_genre: str) -> GenreStats:
     """공통 그룹은 전체 자물쇠, 장르 그룹은 그 장르 곡이 담긴 자물쇠만 센다."""
     artists, mood_tags, places, weathers = Counter(), Counter(), Counter(), Counter()
+    genres: Counter = Counter()
     count = 0
     for r in rows:
         mood = moods.get(r.external_track_id)
         if music_genre != COMMON_GROUP and (mood is None or mood.genre != music_genre):
             continue
         count += 1
+        if mood is not None and mood.genre:
+            genres[mood.genre] += 1
         if r.artist_name:
             artists[r.artist_name] += 1
         if mood is not None:
@@ -99,4 +104,5 @@ def aggregate(rows, moods, music_genre: str) -> GenreStats:
         top_moods=mood_tags.most_common(TOP_N),
         top_places=places.most_common(TOP_N),
         top_weathers=weathers.most_common(3),
+        genre_counts=genres.most_common(),
     )
