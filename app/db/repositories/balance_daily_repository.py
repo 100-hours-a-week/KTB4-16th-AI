@@ -36,10 +36,10 @@ class BalanceDailyRepository:
         )
         return [SavedTrack(row.user_id, row.external_track_id, row.created_at) for row in rows]
 
-    async def preferred_genres(self) -> dict[int, list[str]]:
-        """온보딩 선호 장르(백엔드 users.preferred_genres). 읽지 못해도 배치는 계속한다."""
+    async def preferred_genres(self) -> dict[int, list[str]] | None:
+        """온보딩 선호 장르(백엔드 users.preferred_genres). 읽지 못하면 None — 배치는 계속한다."""
         if self._mysql is None:
-            return {}
+            return None
         try:
             rows = await self._mysql.execute(
                 text(
@@ -51,7 +51,7 @@ class BalanceDailyRepository:
             logger.warning(
                 "온보딩 선호 장르를 읽지 못함 — 저장한 곡만으로 그룹을 정함", exc_info=True
             )
-            return {}
+            return None
         return {uid: genres for uid, genres in parsed.items() if genres}
 
     async def genre_of(self, track_ids: set[str]) -> dict[str, str]:

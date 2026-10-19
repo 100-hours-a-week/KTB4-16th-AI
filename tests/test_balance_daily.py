@@ -367,19 +367,40 @@ def test_parse_preferred_accepts_json_csv_and_list_and_drops_unknown_genres():
     assert parse_preferred(None) == [] and parse_preferred("") == [] and parse_preferred(7) == []
 
 
-def test_onboarding_genre_decides_for_a_user_with_few_saved_songs():
-    # 저장한 곡은 발라드 1곡뿐이지만 온보딩에서 인디음악을 골랐다 → 3점 > 1점
-    saved = [_s(1, "b1")]
+def _many(user, track, n):
+    return [_s(user, track) for _ in range(n)]
+
+
+def test_without_onboarding_or_with_too_few_saved_songs_goes_to_common():
+    saved = _many(1, "b1", 5) + _many(2, "b1", 2) + _many(3, "b1", 5)
+    # 1: 온보딩 안 함 → 공통 / 2: 온보딩 했지만 저장 2곡 < 3 → 공통 / 3: 둘 다 충분
+    result = assign_genres(
+        saved, GENRES, min_group_size=1, preferred={2: ["발라드"], 3: ["발라드"]}
+    )
+    assert result[1].music_genre == "공통"
+    assert result[2].music_genre == "공통"
+    assert result[3].music_genre == "발라드"
+
+
+def test_onboarding_only_user_goes_to_common():
+    result = assign_genres([], GENRES, min_group_size=1, preferred={5: ["댄스", "발라드"]})
+    assert result[5].music_genre == "공통"
+
+
+def test_onboarding_bonus_breaks_a_near_tie_in_favor_of_the_picked_genre():
+    # 발라드 3곡, 인디 3곡 동점 → 온보딩에서 인디를 골랐으면 +1로 인디
+    saved = _many(1, "b1", 3) + _many(1, "i1", 3)
     result = assign_genres(saved, GENRES, min_group_size=1, preferred={1: ["인디음악"]})
     assert result[1].music_genre == "인디음악"
 
 
-def test_saved_songs_overtake_onboarding_as_they_accumulate():
-    saved = [_s(1, "b1"), _s(1, "b2"), _s(1, "b1"), _s(1, "b2")]  # 발라드 4곡 > 인디 3점
+def test_saved_songs_still_win_over_a_single_onboarding_bonus():
+    saved = _many(1, "b1", 5) + _many(1, "i1", 3)
     result = assign_genres(saved, GENRES, min_group_size=1, preferred={1: ["인디음악"]})
+    assert result[1].music_genre == "발라드"  # 5 > 3+1
+
+
+def test_unreadable_onboarding_falls_back_to_saved_songs_only():
+    saved = _many(1, "b1", 1)  # preferred=None → 저장한 곡 1등(최소 곡 수 규칙 없음)
+    result = assign_genres(saved, GENRES, min_group_size=1, preferred=None)
     assert result[1].music_genre == "발라드"
-
-
-def test_user_with_only_onboarding_gets_that_genre_and_ties_follow_pick_order():
-    result = assign_genres([], GENRES, min_group_size=1, preferred={5: ["댄스", "발라드"]})
-    assert result[5].music_genre == "댄스"  # 동점이면 먼저 고른 장르

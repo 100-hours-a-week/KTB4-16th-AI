@@ -1,9 +1,13 @@
 """기능6 사용자별 취향 투표 그룹(music_genre) 계산 — 규칙 기반, LLM 없음.
 
-1. 저장한 자물쇠 곡들의 장르를 세서 가장 많은 장르 (동률이면 더 최근에 저장한 장르)
-   온보딩에서 고른 선호 장르(users.preferred_genres)는 장르마다 PREFERRED_WEIGHT점을 더해서
-   센다 — 저장한 곡이 적은 새 사용자는 온보딩 장르로, 곡이 쌓이면 실제 저장한 장르로 간다
-2. 저장한 곡도 온보딩 장르도 없으면 공통
+온보딩 선호 장르(users.preferred_genres)를 읽을 수 있을 때:
+1. 온보딩을 안 한 사람, 저장한 곡이 최소 곡 수(min_saved)보다 적은 사람, 온보딩만 하고 자물쇠가
+   없는 사람은 공통
+2. 온보딩과 자물쇠가 둘 다 충분하면 대표 장르 하나를 뽑는다 — 저장한 곡의 장르(곡마다 1개)를 세고,
+   온보딩에서 고른 장르에는 곡 PREFERRED_BONUS개만큼 가산점을 준다 (동률이면 더 최근에 저장한
+   장르, 그래도 같으면 온보딩에서 먼저 고른 장르)
+온보딩을 읽지 못하면(preferred가 None) 예전처럼 저장한 곡의 장르 1등으로 정한다.
+
 3. 그룹 인원이 최소 인원보다 적으면 공통 — 같은 질문에 다른 답을 고른 사람이 모여야
    매칭이 되므로, 사람이 적은 장르로 쪼개면 매칭이 안 된다
 4. 공통 그룹마저 최소 인원보다 적으면 가장 큰 장르 그룹에 합친다 — 공통이 너무 작아
@@ -24,9 +28,11 @@ SOURCE_RECORDS = "records"
 SOURCE_COMMON = "common"
 SOURCE_MERGED = "merged"  # 공통이 작아서 가장 큰 장르 그룹에 합쳐짐
 
-# 온보딩 선호 장르 하나는 저장한 곡 PREFERRED_WEIGHT개와 같다 (저장 3곡이면 온보딩과 동점).
+# 온보딩에서 고른 장르는 저장한 곡 PREFERRED_BONUS개를 더한 것으로 센다 (가벼운 가산점).
 # 정답을 알 데이터가 아직 없어서 감으로 정한 초기값이다.
-PREFERRED_WEIGHT = 3
+PREFERRED_BONUS = 1
+# 저장한 곡이 이보다 적으면 대표 장르를 믿기 어려워 공통으로 둔다 (설정 balance_min_saved_tracks)
+DEFAULT_MIN_SAVED = 3
 
 
 @dataclass(frozen=True)
@@ -75,19 +81,12 @@ def assign_genres(
     genre_of: dict[str, str],
     min_group_size: int,
     preferred: dict[int, list[str]] | None = None,
+    min_saved: int = DEFAULT_MIN_SAVED,
 ) -> dict[int, Assignment]:
     counts: dict[int, Counter] = defaultdict(Counter)
     latest: dict[tuple[int, str], datetime] = {}
-    users: set[int] = set()
-    preferred_rank: dict[tuple[int, str], int] = {}
-    for user_id, genres in (preferred or {}).items():
-        for rank, genre in enumerate(genres):
-            if genre in GENRE_VOCAB:
-                users.add(user_id)
-                counts[user_id][genre] += PREFERRED_WEIGHT
-                preferred_rank[(user_id, genre)] = rank
+    users: set[int] = {s.user_id for s in saved}
     for s in saved:
-        users.add(s.user_id)
         genre = genre_of.get(s.external_track_id, "")
         if genre not in GENRE_VOCAB:
             continue
@@ -97,14 +96,28 @@ def assign_genres(
             latest[key] = s.saved_at
 
     top: dict[int, str] = {}
-    for user_id in users:
-        if counts[user_id]:
+    if preferred is None:
+        # 온보딩을 읽지 못함 — 저장한 곡의 장르 1등
+        for user_id in users:
+            if counts[user_id]:
+                top[user_id] = max(
+                    counts[user_id], key=lambda g: (counts[user_id][g], latest[(user_id, g)])
+                )
+    else:
+        users |= set(preferred)
+        for user_id in users:
+            picks = [g for g in preferred.get(user_id, []) if g in GENRE_VOCAB]
+            if not picks or sum(counts[user_id].values()) < min_saved:
+                continue
+            score = Counter(counts[user_id])
+            for genre in picks:
+                score[genre] += PREFERRED_BONUS
             top[user_id] = max(
-                counts[user_id],
+                score,
                 key=lambda g: (
-                    counts[user_id][g],
+                    score[g],
                     (1, latest[(user_id, g)]) if (user_id, g) in latest else (0, None),
-                    -preferred_rank.get((user_id, g), len(GENRE_VOCAB)),
+                    -picks.index(g) if g in picks else -len(GENRE_VOCAB),
                 ),
             )
 
