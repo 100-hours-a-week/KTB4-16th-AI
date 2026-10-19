@@ -28,6 +28,10 @@ class RecordSearch(Protocol):
 
     async def music_vectors(self, user_id: int, limit: int) -> list[list[float]]: ...
 
+    async def music_vectors_for_records(
+        self, user_id: int, record_ids: list[int]
+    ) -> list[list[float]]: ...
+
 
 class MemoryVectorSearch(Protocol):
     """기능5 기억 검색이 쓰는 두 검색 — 코멘트 벡터와 곡 분위기 벡터."""
@@ -93,6 +97,21 @@ class VectorSearch:
             )
             .order_by(RecordEmbedding.created_at.desc())
             .limit(limit)
+        )
+        return [list(row.music_embedding) for row in rows]
+
+    async def music_vectors_for_records(
+        self, user_id: int, record_ids: list[int]
+    ) -> list[list[float]]:
+        """이 사용자의 자물쇠 중 record_ids에 해당하는 곡 분위기 벡터 (상황이 맞는 기록의 취향)."""
+        if not record_ids:
+            return []
+        rows = await self._session.execute(
+            select(RecordEmbedding.music_embedding).where(
+                RecordEmbedding.user_id == user_id,
+                RecordEmbedding.record_id.in_(record_ids),
+                RecordEmbedding.music_embedding.is_not(None),
+            )
         )
         return [list(row.music_embedding) for row in rows]
 

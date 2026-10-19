@@ -104,6 +104,20 @@ class SongPool:
                 break
         return [song.to_candidate() for song in picked]
 
+    def vectors_for(self, tracks: list[tuple[str, str]]) -> list[tuple[int, tuple[float, ...]]]:
+        """(가수, 제목) 목록 중 곡 풀에 벡터가 있는 곡의 (목록 위치, 벡터).
+
+        가수·제목으로만 찾는다 — 주변 인기곡은 Spotify ID 없이 제목·가수만 온다.
+        곡 풀에 없는 곡은 빠진다.
+        """
+        by_key = {_song_key(s.artist, s.title): s.embedding for s in self._songs if s.embedding}
+        found = []
+        for i, (artist, title) in enumerate(tracks):
+            embedding = by_key.get(_song_key(artist, title))
+            if embedding is not None:
+                found.append((i, embedding))
+        return found
+
     def by_genre(self, genre: str) -> list[PoolSong]:
         """그 장르가 주 장르든 보조 장르든 걸린 곡 전부 — 기능6 곡 대결용."""
         return [song for song in self._songs if genre in song.genres]
