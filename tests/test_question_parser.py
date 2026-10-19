@@ -88,6 +88,36 @@ def test_weather(parser):
     assert _one(parser, "맑은 날 들은 노래", "weather").weather == {"CLEAR"}
 
 
+@pytest.mark.parametrize(
+    ("question", "expected"),
+    [
+        ("흐린 날 들은 음악", {"CLOUDY", "OVERCAST"}),
+        ("날씨가 흐렸을 때 들은 노래", {"CLOUDY", "OVERCAST"}),
+        ("흐릴 때 들은 노래", {"CLOUDY", "OVERCAST"}),
+        ("흐림 날씨에 들은 노래", {"CLOUDY", "OVERCAST"}),
+        ("우중충한 날 들은 노래", {"CLOUDY", "OVERCAST"}),
+        ("구름이 많은 날 들은 노래", {"CLOUDY", "OVERCAST"}),
+        ("먹구름 낀 하늘 아래서 들은 노래", {"CLOUDY", "OVERCAST"}),
+        ("비 왔던 날 들은 노래", {"RAIN", "RAIN_SNOW", "SHOWER"}),
+        ("비 올 때 들은 노래", {"RAIN", "RAIN_SNOW", "SHOWER"}),
+        ("눈 왔던 날 들은 노래", {"SNOW", "RAIN_SNOW"}),
+        ("눈이 올 때 들은 노래", {"SNOW", "RAIN_SNOW"}),
+        ("날씨가 맑았을 때 들은 노래", {"CLEAR"}),
+        ("맑은 하늘 아래서 들은 노래", {"CLEAR"}),
+    ],
+)
+def test_weather_also_understands_past_tense_and_other_wordings(parser, question, expected):
+    assert _one(parser, question, "weather").weather == expected
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["흐름이 좋은 노래", "첫눈에 반한 노래", "준비하면서 들은 노래", "기억이 흐려진 날 들은 노래"],
+)
+def test_weather_words_do_not_catch_unrelated_words(parser, question):
+    assert "weather" not in _kinds(parser, question)
+
+
 def test_temperature(parser):
     cond = _one(parser, "추웠던 날 들은 노래", "temperature")
     assert (cond.low, cond.high) == (-50, 5)

@@ -190,7 +190,7 @@ def _condition_score(
         case "season":
             return _flag(row.created_at.month in cond.months)
         case "weather":
-            return _flag(row.weather_condition in cond.weather)
+            return _flag(_weather_code(row.weather_condition) in cond.weather)
         case "temperature":
             return _flag(_in_range(row.temperature, cond))
         case "mood":
@@ -241,6 +241,14 @@ def _mentions(comment: str | None, patterns: Sequence[re.Pattern[str]]) -> bool:
 def _mentioned_anywhere(word: str, rows: Sequence[ConditionRow]) -> bool:
     pattern = substring_pattern(word)
     return any(_mentions(row.comment, [pattern]) for row in rows)
+
+
+def _weather_code(value: str | None) -> str | None:
+    """DB의 날씨 값을 비교용으로 정리한다 — 앞뒤 공백과 대소문자는 무시한다.
+
+    규칙 파일의 값(CLOUDY 등)은 대문자라서, 저장된 값이 "cloudy"나 " CLOUDY"여도 같은 날씨로 본다.
+    """
+    return None if value is None else value.strip().upper()
 
 
 def _flag(matched: bool) -> float:
