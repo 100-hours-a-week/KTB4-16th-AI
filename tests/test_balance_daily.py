@@ -356,3 +356,30 @@ def test_common_only_is_the_default():
     from app.config import Settings
 
     assert Settings().balance_common_only is True
+
+
+def test_parse_preferred_accepts_json_csv_and_list_and_drops_unknown_genres():
+    from app.components.music_genre_assigner import parse_preferred
+
+    assert parse_preferred('["발라드", "인디음악"]') == ["발라드", "인디음악"]
+    assert parse_preferred("발라드, 댄스") == ["발라드", "댄스"]
+    assert parse_preferred(["랩/힙합", "없는장르", "랩/힙합"]) == ["랩/힙합"]
+    assert parse_preferred(None) == [] and parse_preferred("") == [] and parse_preferred(7) == []
+
+
+def test_onboarding_genre_decides_for_a_user_with_few_saved_songs():
+    # 저장한 곡은 발라드 1곡뿐이지만 온보딩에서 인디음악을 골랐다 → 3점 > 1점
+    saved = [_s(1, "b1")]
+    result = assign_genres(saved, GENRES, min_group_size=1, preferred={1: ["인디음악"]})
+    assert result[1].music_genre == "인디음악"
+
+
+def test_saved_songs_overtake_onboarding_as_they_accumulate():
+    saved = [_s(1, "b1"), _s(1, "b2"), _s(1, "b1"), _s(1, "b2")]  # 발라드 4곡 > 인디 3점
+    result = assign_genres(saved, GENRES, min_group_size=1, preferred={1: ["인디음악"]})
+    assert result[1].music_genre == "발라드"
+
+
+def test_user_with_only_onboarding_gets_that_genre_and_ties_follow_pick_order():
+    result = assign_genres([], GENRES, min_group_size=1, preferred={5: ["댄스", "발라드"]})
+    assert result[5].music_genre == "댄스"  # 동점이면 먼저 고른 장르
