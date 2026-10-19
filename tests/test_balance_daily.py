@@ -332,3 +332,27 @@ async def test_fill_does_not_repeat_a_battle_pair_used_recently():
     )
 
     assert repo.approved[(DAY, "댄스")] == "취향 질문"
+
+
+def test_common_only_puts_every_user_in_the_common_group():
+    from app.components.music_genre_assigner import assign_all_common
+
+    saved = [_s(1, "b1"), _s(2, "i1"), _s(2, "b2"), _s(3, "old")]
+
+    result = assign_all_common(saved)
+
+    assert {a.music_genre for a in result.values()} == {"공통"}
+    assert set(result) == {1, 2, 3}
+    assert {a.source for a in result.values()} == {"common"}
+
+
+def test_question_groups_is_only_common_until_genre_groups_are_turned_on():
+    assert w.question_groups(True) == {"공통"}
+    assert w.question_groups(False) == set(MUSIC_GENRE_GROUPS)
+    assert len(w.question_groups(False)) == 14
+
+
+def test_common_only_is_the_default():
+    from app.config import Settings
+
+    assert Settings().balance_common_only is True
