@@ -50,6 +50,8 @@ class MemoryVectorSearch(Protocol):
 
     async def moods_by_record(self, user_id: int) -> dict[int, tuple[str, ...]]: ...
 
+    async def genres_by_record(self, user_id: int) -> dict[int, str]: ...
+
 
 class VectorSearch:
     def __init__(self, session: AsyncSession):
@@ -194,6 +196,15 @@ class VectorSearch:
             .where(RecordEmbedding.user_id == user_id)
         )
         return {row.record_id: tuple(row.moods or ()) for row in rows}
+
+    async def genres_by_record(self, user_id: int) -> dict[int, str]:
+        """이 사용자의 자물쇠마다 곡 장르 태그(track_moods.genre). 장르가 없는 곡은 빠진다."""
+        rows = await self._session.execute(
+            select(RecordEmbedding.record_id, TrackMood.genre)
+            .join(TrackMood, RecordEmbedding.external_track_id == TrackMood.external_track_id)
+            .where(RecordEmbedding.user_id == user_id)
+        )
+        return {row.record_id: row.genre for row in rows if row.genre}
 
 
 def _to_hits(rows) -> list[SimilarRecord]:

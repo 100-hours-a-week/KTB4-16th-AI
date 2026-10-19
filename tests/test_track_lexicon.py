@@ -1,0 +1,146 @@
+import pytest
+
+from app.components.track_lexicon import (
+    TrackLexicon,
+    artist_keys,
+    artist_names,
+    compact,
+    title_keys,
+    title_variants,
+)
+from app.db.repositories.memory_record_repository import TrackName
+
+
+def _lexicon(*tracks: tuple[str | None, str | None]) -> TrackLexicon:
+    return TrackLexicon.build(TrackName(title, artist) for title, artist in tracks)
+
+
+# ---- 이름 다듬기 -------------------------------------------------------------
+
+
+def test_artist_column_with_several_artists_is_split_one_by_one():
+    assert artist_names("RESCENE, 리센느") == ["RESCENE", "리센느"]
+    assert artist_names("A/B & C") == ["A", "B", "C"]
+    assert artist_names(None) == [] and artist_names("") == []
+
+
+def test_title_variants_drop_brackets_and_dash_suffixes():
+    assert title_variants("밤편지 (Lullaby)") == ["밤편지 (Lullaby)", "밤편지"]
+    assert title_variants("Hype Boy - Special Edition") == [
+        "Hype Boy - Special Edition",
+        "Hype Boy",
+    ]
+    assert title_variants("소나기") == ["소나기"]
+    assert title_variants(None) == [] and title_variants("  ") == []
+
+
+def test_compact_ignores_spaces_case_and_symbols():
+    assert compact("Hype Boy") == compact("hype-boy") == "hypeboy"
+    assert artist_keys("RESCENE, 리센느") == {"rescene", "리센느"}
+    assert title_keys("밤편지 (Lullaby)") == {"밤편지lullaby", "밤편지"}
+
+
+# ---- 질문에서 찾기 -----------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "리센느 노래 들었던 거 뭐 있었지",
+        "리센느가 부른 노래",
+        "리센느의 노래",
+        "리센느노래 들은 날",  # 붙여 쓴 경우
+        "RESCENE 노래",
+        "rescene 노래",
+    ],
+)
+def test_artist_is_found_in_the_question(question):
+    artists, _ = _lexicon(("소나기", "RESCENE, 리센느")).find_artists(question)
+
+    assert artists and artists[0] in ("RESCENE", "리센느")
+
+
+def test_found_text_is_blanked_so_other_rules_cannot_take_it_again():
+    lexicon = _lexicon(("소나기", "리센느"))
+
+    artists, rest = lexicon.find_artists("리센느 노래 들은 날")
+
+    assert artists == ["리센느"]
+    assert "리센느" not in rest and "노래 들은 날" in rest
+
+
+def test_title_is_found_by_its_core_name_and_with_josa_after_it():
+    lexicon = _lexicon(("밤편지 (Lullaby)", "아이유"))
+
+    assert lexicon.find_titles("밤편지 들은 날")[0] == ["밤편지"]
+    assert lexicon.find_titles("밤편지라는 노래 들은 날")[0] == ["밤편지"]
+    assert lexicon.find_titles("밤편지가 듣고 싶던 날")[0] == ["밤편지"]
+
+
+def test_english_title_ignores_case_and_spacing():
+    lexicon = _lexicon(("Hype Boy", "NewJeans"))
+
+    assert lexicon.find_titles("hype boy 들은 날")[0] == ["Hype Boy"]
+    assert lexicon.find_titles("hypeboy 들은 날")[0] == ["Hype Boy"]
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "이대로 끝나는 날 들은 노래",  # "이대"는 이름이 아니다
+        "아이유씨 이야기",  # 뒤가 조사가 아닌 낱말
+        "노래 들은 날",  # 일반어
+        "뉴진스 노래",  # 사전에 없는 표기 (영문으로 저장됨)
+    ],
+)
+def test_words_that_are_not_names_are_not_found(question):
+    lexicon = _lexicon(("Hype Boy", "NewJeans"), ("밤편지", "아이유"), ("이대", "누구"))
+
+    assert lexicon.find_artists(question)[0] == []
+    if "이대" in question:
+        assert lexicon.find_titles(question)[0] == []
+
+
+def test_longer_name_wins_and_the_shorter_one_inside_it_is_not_found_again():
+    lexicon = _lexicon(("Love wins all", "IU"), ("Love", "누군가"))
+
+    titles, rest = lexicon.find_titles("love wins all 들은 날")
+
+    assert titles == ["Love wins all"]
+    assert "love" not in rest.lower()
+
+
+def test_names_shorter_than_two_characters_and_generic_words_stay_out_of_the_lexicon():
+    lexicon = _lexicon(("비", "박"), ("노래", "음악"), (None, None), ("", " "))
+
+    assert not lexicon
+    assert lexicon.find_artists("박 음악 비 노래")[0] == []
+    assert lexicon.find_titles("박 음악 비 노래")[0] == []
+
+
+def test_matches_report_the_span_and_whether_the_name_was_said_explicitly():
+    lexicon = _lexicon(("가을", "누군가"), ("밤편지", "아이유"))
+
+    plain = lexicon.matches("밤편지 들은 날")
+    quoted = lexicon.matches("'가을' 노래 들은 날")
+    called = lexicon.matches("가을이라는 노래 들은 날")
+
+    assert [(m.kind, m.name, m.explicit) for m in plain] == [("title", "밤편지", False)]
+    (q,) = quoted
+    assert (q.name, q.explicit) == ("가을", True)
+    assert "'가을'" == "'가을' 노래 들은 날"[q.start : q.end]  # 따옴표까지 자리에 포함
+    (c,) = called
+    assert (c.name, c.explicit) == ("가을", True)
+    assert "가을이라는" == "가을이라는 노래 들은 날"[c.start : c.end]  # "이라는"까지 포함
+
+
+@pytest.mark.parametrize("question", ['"가을"', "「가을」", "『가을』", "‘가을’"])
+def test_names_wrapped_in_any_kind_of_quotes_are_explicit(question):
+    (match,) = _lexicon(("가을", "누군가")).matches(f"{question} 들은 날")
+
+    assert match.explicit
+
+
+def test_empty_lexicon_is_falsy_and_finds_nothing():
+    assert not TrackLexicon.build([])
+    assert TrackLexicon.build([]).find_artists("아이유 노래") == ([], "아이유 노래")

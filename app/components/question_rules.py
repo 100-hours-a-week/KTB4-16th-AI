@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from app.components.music_tags import MOOD_VOCAB
+from app.components.music_tags import GENRE_VOCAB, MOOD_VOCAB
 from app.components.name_matcher import NOT_AFTER_HANGUL
 
 DEFAULT_RULES_PATH = Path(__file__).resolve().parent.parent / "question_rules.yaml"
@@ -66,6 +66,12 @@ class SongMoodRule:
 
 
 @dataclass(frozen=True)
+class GenreRule:
+    tag: str  # GENRE_VOCAB의 장르 이름
+    patterns: tuple[re.Pattern[str], ...]
+
+
+@dataclass(frozen=True)
 class QuestionRules:
     seasons: tuple[SeasonRule, ...]
     weather: tuple[WeatherRule, ...]
@@ -75,6 +81,7 @@ class QuestionRules:
     # 시간대·요일은 선택이다 (규칙 파일에 없으면 그 조건은 해석하지 않는다)
     times: tuple[TimeRule, ...] = ()
     weekdays: tuple[WeekdayRule, ...] = ()
+    genres: tuple[GenreRule, ...] = ()
 
     @property
     def season_months(self) -> dict[str, frozenset[int]]:
@@ -92,6 +99,7 @@ class QuestionRules:
             song_moods=tuple(_song_moods(data.get("song_moods"), path)),
             times=tuple(_times(data.get("time_of_day"), path)),
             weekdays=tuple(_weekdays(data.get("weekday"), path)),
+            genres=tuple(_genres(data.get("genre"), path)),
         )
 
 
@@ -100,7 +108,7 @@ def rule_pattern(word: str) -> re.Pattern[str]:
     chars = [re.escape(c) for c in word if not c.isspace()]
     if not chars:
         raise ValueError("규칙 단어가 비어 있어요.")
-    return re.compile(NOT_AFTER_HANGUL + r"\s*".join(chars))
+    return re.compile(NOT_AFTER_HANGUL + r"\s*".join(chars), re.IGNORECASE)
 
 
 def _patterns(words: object, where: str, path: Path) -> tuple[re.Pattern[str], ...]:
@@ -206,6 +214,19 @@ def _ranges(raw: object, section: str, path: Path) -> list[RangeRule]:
             )
         rules.append(RangeRule(label, low, high, _patterns(body.get("words"), label, path)))
     return rules
+
+
+def _genres(raw: object, path: Path) -> list[GenreRule]:
+    if raw is None:
+        return []
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError(f"{path}: genre가 비어 있어요.")
+    unknown = set(raw) - set(GENRE_VOCAB)
+    if unknown:
+        raise ValueError(f"{path}: 곡 장르 목록에 없는 이름이에요: {sorted(unknown)}")
+    return [
+        GenreRule(str(tag), _patterns(words, f"장르 {tag}", path)) for tag, words in raw.items()
+    ]
 
 
 def _song_moods(raw: object, path: Path) -> list[SongMoodRule]:

@@ -52,6 +52,33 @@ async def test_moods_map_record_to_tags_and_missing_tags_become_empty():
     assert result == {1: ("잔잔한", "차분한"), 2: (), 3: ()}
 
 
+async def test_genres_are_read_through_the_track_id_for_this_user_only():
+    session = CapturingSession()
+
+    await VectorSearch(session).genres_by_record(user_id=7)
+
+    sql, params = _compile(session.statements[0])
+    assert "track_moods.genre" in sql
+    assert (
+        "JOIN track_moods ON record_embeddings.external_track_id = track_moods.external_track_id"
+        in sql
+    )
+    assert "record_embeddings.user_id =" in sql  # 다른 사용자의 기록은 읽지 않는다
+    assert 7 in params.values()
+
+
+async def test_genres_map_record_to_tag_and_skip_records_without_a_genre():
+    rows = [
+        SimpleNamespace(record_id=1, genre="발라드"),
+        SimpleNamespace(record_id=2, genre=""),
+        SimpleNamespace(record_id=3, genre=None),
+    ]
+
+    result = await VectorSearch(CapturingSession(rows)).genres_by_record(user_id=7)
+
+    assert result == {1: "발라드"}
+
+
 async def test_similarities_for_reads_only_the_given_records_of_this_user():
     session = CapturingSession()
 

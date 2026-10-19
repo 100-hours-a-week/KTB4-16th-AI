@@ -65,6 +65,7 @@ from app.db.repositories.memory_record_repository import (
     ConditionRow,
     MemoryRecordRepository,
     MemoryRecordSource,
+    TrackName,
 )
 from app.db.repositories.report_repository import MonthlyReportRepository
 from app.db.repositories.track_lookup_repository import TrackLookupRepository, TrackLookupStore
@@ -314,6 +315,15 @@ class _DbMemoryRecords:
         except SQLAlchemyError as e:
             raise UpstreamError("백엔드 DB에서 자물쇠 정보를 읽지 못했어요.") from e
 
+    async def list_track_names(self, *, user_id: int, limit: int) -> list[TrackName]:
+        try:
+            async with mysql.get_sessionmaker()() as mysql_session:
+                return await MemoryRecordRepository(mysql_session).list_track_names(
+                    user_id=user_id, limit=limit
+                )
+        except SQLAlchemyError as e:
+            raise UpstreamError("백엔드 DB에서 자물쇠 정보를 읽지 못했어요.") from e
+
 
 class _NoMemoryRecords:
     """백엔드 DB가 없는 로컬·테스트 환경 — 자물쇠를 확인할 수 없어서 결과가 비어 있다."""
@@ -322,6 +332,9 @@ class _NoMemoryRecords:
         return set()
 
     async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
+        return []
+
+    async def list_track_names(self, *, user_id: int, limit: int) -> list[TrackName]:
         return []
 
 

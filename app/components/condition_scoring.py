@@ -17,6 +17,7 @@ from app.components.geo import haversine_km, proximity_score
 from app.components.name_matcher import name_pattern, substring_pattern
 from app.components.place_dictionary import PlaceEntry
 from app.components.query_conditions import LOCATION_KINDS, Condition
+from app.components.track_lexicon import artist_keys, compact, title_keys
 from app.db.repositories.memory_record_repository import ConditionRow
 
 
@@ -106,11 +107,13 @@ def score_rows(
     music_similarity: Mapping[int, float],
     min_similarity: float,
     weights: ConditionWeights,
+    genres: Mapping[int, str] | None = None,
 ) -> dict[int, RecordScore]:
     """자물쇠마다 조건 점수를 낸다. 조건이 없으면 빈 결과.
 
     moods: 자물쇠마다 곡 무드 태그. music_similarity: 자물쇠마다 질문과 곡 분위기의 유사도 —
     곡에 무드 태그가 아직 없을 때 "잔잔한 곡" 같은 조건을 이 유사도로 대신 판단한다.
+    genres: 자물쇠마다 곡 장르 태그 (장르 조건용).
     """
     if not conditions:
         return {}
@@ -125,6 +128,7 @@ def score_rows(
                     cond,
                     row,
                     tags=moods.get(row.record_id, ()),
+                    genre=(genres or {}).get(row.record_id),
                     music_similarity=music_similarity.get(row.record_id),
                     min_similarity=min_similarity,
                     mentioned=_mentions(row.comment, pats),
@@ -164,6 +168,7 @@ def _condition_score(
     row: ConditionRow,
     *,
     tags: Sequence[str],
+    genre: str | None = None,
     music_similarity: float | None,
     min_similarity: float,
     mentioned: bool,
@@ -189,6 +194,8 @@ def _condition_score(
             return _flag(any(start <= day <= end for start, end in cond.ranges))
         case "season":
             return _flag(row.created_at.month in cond.months)
+        case "day":
+            return _flag((row.created_at.month, row.created_at.day) in cond.month_days)
         case "weather":
             return _flag(_weather_code(row.weather_condition) in cond.weather)
         case "time":
@@ -199,6 +206,12 @@ def _condition_score(
             return _flag(_in_range(row.temperature, cond))
         case "mood":
             return _flag(_in_range(row.mood_score, cond))
+        case "artist":
+            return _flag(bool(artist_keys(row.artist_name) & _name_keys(cond)))
+        case "title":
+            return _flag(bool(title_keys(row.track_title) & _name_keys(cond)))
+        case "genre":
+            return _flag(genre is not None and genre in cond.names)
         case "song_mood":
             if tags:  # 태그가 있으면 태그로 판단한다
                 return _flag(any(tag in cond.names for tag in tags))
@@ -245,6 +258,11 @@ def _mentions(comment: str | None, patterns: Sequence[re.Pattern[str]]) -> bool:
 def _mentioned_anywhere(word: str, rows: Sequence[ConditionRow]) -> bool:
     pattern = substring_pattern(word)
     return any(_mentions(row.comment, [pattern]) for row in rows)
+
+
+def _name_keys(cond: Condition) -> frozenset[str]:
+    """가수·곡명 조건의 이름을 비교용 글자로 (공백·대소문자·기호 무시)."""
+    return frozenset(k for k in (compact(n) for n in cond.names) if k)
 
 
 def _weather_code(value: str | None) -> str | None:
