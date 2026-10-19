@@ -147,7 +147,8 @@ async def _assign(
         assignments = assign_all_common(saved)
     else:
         genre_of = await repo.genre_of({t.external_track_id for t in saved})
-        assignments = assign_genres(saved, genre_of, min_group_size)
+        preferred = await repo.preferred_genres()
+        assignments = assign_genres(saved, genre_of, min_group_size, preferred)
     await repo.save_assignments(assignments)
     logger.info("사용자 그룹 %d명 저장", len(assignments))
 

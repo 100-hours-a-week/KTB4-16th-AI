@@ -1,15 +1,18 @@
 """기능6 매일 배치 저장소 — 백엔드 MySQL(저장한 곡)을 읽고 AI Postgres에 그룹·질문을 쓴다."""
 
+import logging
 from datetime import date, timedelta
 
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.components.music_genre_assigner import Assignment, SavedTrack
+from app.components.music_genre_assigner import Assignment, SavedTrack, parse_preferred
 from app.db.models import TrackMood, UserMusicGenre
 
 PAST_QUESTION_DAYS = 60
+
+logger = logging.getLogger("muro.balance_daily")
 
 
 class BalanceDailyRepository:
@@ -32,6 +35,24 @@ class BalanceDailyRepository:
             )
         )
         return [SavedTrack(row.user_id, row.external_track_id, row.created_at) for row in rows]
+
+    async def preferred_genres(self) -> dict[int, list[str]] | None:
+        """온보딩 선호 장르(백엔드 users.preferred_genres). 읽지 못하면 None — 배치는 계속한다."""
+        if self._mysql is None:
+            return None
+        try:
+            rows = await self._mysql.execute(
+                text(
+                    "SELECT user_id, preferred_genres FROM users WHERE preferred_genres IS NOT NULL"
+                )
+            )
+            parsed = {row.user_id: parse_preferred(row.preferred_genres) for row in rows}
+        except Exception:
+            logger.warning(
+                "온보딩 선호 장르를 읽지 못함 — 저장한 곡만으로 그룹을 정함", exc_info=True
+            )
+            return None
+        return {uid: genres for uid, genres in parsed.items() if genres}
 
     async def genre_of(self, track_ids: set[str]) -> dict[str, str]:
         if not track_ids:
