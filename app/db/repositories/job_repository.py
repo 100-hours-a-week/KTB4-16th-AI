@@ -167,6 +167,25 @@ class JobRepository:
         )
         await self._session.commit()
 
+    async def delete_finished(self, *, job_type: str, older_than_hours: int) -> int:
+        """끝난(done·failed·cancelled) job_type 작업 중 오래된 것을 지운다. 지운 개수를 돌려준다.
+
+        5분마다 작업이 하나씩 쌓이는 종류(record_facts 동기화)가 표를 키우지 않게 한다.
+        """
+        result = await self._session.execute(
+            text(
+                """
+                DELETE FROM ai_jobs
+                WHERE job_type = :job_type
+                  AND status IN ('done', 'failed', 'cancelled')
+                  AND updated_at < now() - make_interval(hours => :hours)
+                """
+            ),
+            {"job_type": job_type, "hours": older_than_hours},
+        )
+        await self._session.commit()
+        return result.rowcount
+
     async def count_with_prefix(self, *, job_type: str, dedupe_key_prefix: str) -> int:
         """dedupe_key가 이 접두사로 시작하는 job_type 작업의 개수(상태 무관).
 

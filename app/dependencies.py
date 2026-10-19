@@ -339,6 +339,12 @@ class _NoMemoryRecords:
         return []
 
 
+async def get_record_fact_repository(
+    session: AsyncSession = Depends(get_session),
+) -> AsyncIterator[RecordFactRepository]:
+    yield RecordFactRepository(session)
+
+
 class _PgMemoryRecords:
     """기억 검색의 자물쇠 확인·조건 정보 — AI PostgreSQL의 record_facts에서 읽는다.
 

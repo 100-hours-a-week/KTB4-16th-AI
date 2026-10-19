@@ -211,3 +211,14 @@ def test_model_columns_match_the_migration():
         "artist_name",
         "synced_at",
     }
+
+
+async def test_record_ids_are_listed_in_order_after_the_given_id_with_a_limit():
+    session = CapturingSession([SimpleNamespace(record_id=11), SimpleNamespace(record_id=12)])
+
+    ids = await RecordFactRepository(session).list_record_ids(after_id=10, limit=500)
+
+    sql, params = _compile(session.statements[0])
+    assert "record_facts.record_id >" in sql and "ORDER BY record_facts.record_id" in sql
+    assert "LIMIT" in sql and 10 in params.values() and 500 in params.values()
+    assert ids == [11, 12]

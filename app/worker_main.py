@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from app.config import get_settings
 from app.db.postgres import get_engine, get_sessionmaker
 from app.db.repositories.job_repository import ClaimedJob, JobRepository
-from app.workers import balance_daily_worker, embedding_worker, report_worker
+from app.workers import balance_daily_worker, embedding_worker, record_facts_worker, report_worker
 from app.workers.types import JobFinishedHook, JobHandler
 
 logger = logging.getLogger("muro.worker")
@@ -21,6 +21,7 @@ HANDLERS: dict[str, JobHandler] = {
     report_worker.JOB_TYPE: report_worker.handle,
     report_worker.BATCH_NOTIFY_JOB_TYPE: report_worker.handle_batch_notify,
     balance_daily_worker.JOB_TYPE: balance_daily_worker.handle,
+    record_facts_worker.JOB_TYPE: record_facts_worker.handle,
 }
 
 # 성공이든 최종 실패든 job이 끝나면 부른다. 핸들러 안(성공 경로)에만 두면 실패로
@@ -81,6 +82,7 @@ async def _on_finished(job: ClaimedJob) -> None:
 
 
 _scheduled: set = set()
+_facts_scheduled: dict[str, str] = {}  # 종류(recent·full) → 마지막으로 큐에 넣은 작업 이름
 
 
 async def schedule_daily(now: datetime) -> None:
@@ -94,6 +96,14 @@ async def schedule_daily(now: datetime) -> None:
         _scheduled.add(target)
     except Exception:
         logger.exception("기능6 매일 배치 예약 실패 — 다음 루프에서 다시 시도")
+
+
+async def schedule_record_facts_sync(now: datetime) -> None:
+    """5분마다 최근 변경 반영을, 하루 한 번 전체 맞추기를 큐에 넣는다 (설정이 켜져 있을 때만)."""
+    try:
+        await record_facts_worker.enqueue_due(now, _facts_scheduled)
+    except Exception:
+        logger.exception("record_facts 동기화 예약 실패 — 다음 루프에서 다시 시도")
 
 
 async def main() -> None:
@@ -113,6 +123,7 @@ async def main() -> None:
         logger.exception("기능6 catch-up 확인 실패 — 23시 배치에 맡김")
     while not stop.is_set():
         await schedule_daily(datetime.now(UTC))
+        await schedule_record_facts_sync(datetime.now(UTC))
         try:
             processed = await run_once()
         except Exception:

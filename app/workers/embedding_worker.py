@@ -17,12 +17,15 @@ from app.dependencies import (
 )
 from app.schemas.embeddings import EmbeddingGenerateRequest
 from app.services.embedding_service import EmbeddingService
+from app.workers import record_facts_worker
 
 JOB_TYPE = "embedding"
 
 
 async def handle(payload: dict[str, Any]) -> None:
     req = EmbeddingGenerateRequest.model_validate(payload)
+    # 벡터를 만들기 전에 조건 검색용 값부터 반영한다 (벡터 만들기가 오래 걸려도 먼저 반영됨)
+    await record_facts_worker.sync_record(req.record_id)
     clients = get_clients()
     async with get_sessionmaker()() as session:
         service = EmbeddingService(

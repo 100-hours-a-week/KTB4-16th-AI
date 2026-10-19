@@ -14,6 +14,7 @@ from app.dependencies import (  # noqa: E402
     get_embedding_store,
     get_job_repository,
     get_monthly_report_repository,
+    get_record_fact_repository,
 )
 from app.main import create_app  # noqa: E402
 
@@ -73,6 +74,15 @@ class InMemoryEmbeddingStore:
         self.rows.pop(record_id, None)
 
 
+class InMemoryRecordFacts:
+    def __init__(self) -> None:
+        self.rows: dict[int, Any] = {}
+
+    async def delete_many(self, record_ids) -> None:
+        for record_id in record_ids:
+            self.rows.pop(record_id, None)
+
+
 class InMemoryMonthlyReportRepository:
     def __init__(self) -> None:
         self.rows: dict[tuple[int, int, int], dict[str, Any]] = {}
@@ -118,6 +128,11 @@ def store() -> InMemoryEmbeddingStore:
 
 
 @pytest.fixture
+def facts() -> InMemoryRecordFacts:
+    return InMemoryRecordFacts()
+
+
+@pytest.fixture
 def monthly_reports() -> InMemoryMonthlyReportRepository:
     return InMemoryMonthlyReportRepository()
 
@@ -126,11 +141,13 @@ def monthly_reports() -> InMemoryMonthlyReportRepository:
 def client(
     jobs: InMemoryJobRepository,
     store: InMemoryEmbeddingStore,
+    facts: InMemoryRecordFacts,
     monthly_reports: InMemoryMonthlyReportRepository,
 ) -> TestClient:
     app = create_app()
     app.dependency_overrides[get_job_repository] = lambda: jobs
     app.dependency_overrides[get_embedding_store] = lambda: store
+    app.dependency_overrides[get_record_fact_repository] = lambda: facts
     app.dependency_overrides[get_monthly_report_repository] = lambda: monthly_reports
     return TestClient(app)
 

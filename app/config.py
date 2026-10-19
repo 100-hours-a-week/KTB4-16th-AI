@@ -97,6 +97,12 @@ class Settings(BaseSettings):
     # record_facts에 코멘트 원문(comment_text)을 저장할지. 기본은 저장하지 않는다 (개인정보).
     # 끄면 postgres로 읽을 때 "사전에 없는 장소를 코멘트 글자로 찾기"가 동작하지 않는다
     record_facts_store_comment: bool = False
+    # record_facts 동기화: 워커가 백엔드 MySQL의 변경(저장·삭제)을 반영한다.
+    # BACKEND_MYSQL_URL이 있어야 하고, 기본은 꺼짐이다 — 채우기 도구로 값을 먼저 채운 뒤에 켠다
+    record_facts_sync_enabled: bool = False
+    record_facts_sync_interval_seconds: int = 300  # 최근 변경을 반영하는 주기
+    record_facts_sync_lookback_minutes: int = 60  # 되짚어 읽는 시간 (겹쳐 읽어 놓치지 않게)
+    record_facts_full_sync_hour: int = 4  # 하루 한 번 전체를 맞추는 시각 (한국시간 시)
     memory_search_condition_candidates: int = 50  # 조건으로만 후보가 되는 기록의 최대 개수
     # 프론트는 앞 5건을 먼저 보여주고 "더보기"에서 나머지를 보여준다. 모두 맞는 기록이 이 건수보다
     # 적을 때만 일부만 맞는 기록을 문장으로 제안한다 (요청 limit이 더 작으면 그 값)

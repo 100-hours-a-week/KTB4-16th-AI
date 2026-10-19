@@ -25,62 +25,24 @@ import argparse
 import asyncio
 import logging
 from dataclasses import dataclass
-from decimal import Decimal
 
-from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.components.record_facts_sync import SELECT_ACTIVE, copy_records, fact_from_row
 from app.config import get_settings
-from app.db.repositories.record_fact_repository import RecordFactData, RecordFactRepository
+from app.db.repositories.record_fact_repository import RecordFactRepository
+
+__all__ = ["Counts", "backfill", "fact_from_row"]
 
 logger = logging.getLogger("muro.backfill_facts")
 
 DEFAULT_BATCH_SIZE = 500
-
-_SELECT = text(
-    """
-    SELECT r.record_id, r.user_id, r.created_at, r.weather_condition, r.temperature,
-           r.mood_score, r.comment, p.legal_dong_name, p.legal_dong_code,
-           p.latitude, p.longitude, m.title AS track_title, m.artist_name
-    FROM records r
-    LEFT JOIN places p ON r.place_id = p.place_id
-    LEFT JOIN music_tracks m ON r.music_track_id = m.music_track_id
-    WHERE r.deleted_at IS NULL AND r.record_id > :after_id
-    ORDER BY r.record_id
-    LIMIT :limit
-    """
-)
 
 
 @dataclass
 class Counts:
     records: int = 0
     with_comment: int = 0
-
-
-def fact_from_row(row, *, store_comment: bool) -> RecordFactData:
-    """백엔드 MySQL의 한 행을 record_facts 한 행으로 바꾼다. 없는 값은 None으로 둔다."""
-    comment = row.comment.strip() if row.comment and row.comment.strip() else None
-    return RecordFactData(
-        record_id=row.record_id,
-        user_id=row.user_id,
-        recorded_at=row.created_at,
-        weather_condition=row.weather_condition,
-        temperature=_to_float(row.temperature),
-        mood_score=None if row.mood_score is None else int(row.mood_score),
-        dong_name=row.legal_dong_name,
-        dong_code=None if row.legal_dong_code is None else str(row.legal_dong_code),
-        latitude=_to_float(row.latitude),
-        longitude=_to_float(row.longitude),
-        comment_text=comment if store_comment else None,
-        track_title=row.track_title,
-        artist_name=row.artist_name,
-    )
-
-
-def _to_float(value: object) -> float | None:
-    # MySQL DECIMAL은 Decimal로 온다
-    return None if value is None else float(value) if isinstance(value, Decimal) else value
 
 
 async def backfill(
@@ -92,23 +54,16 @@ async def backfill(
     store_comment: bool,
     repository=RecordFactRepository,
 ) -> Counts:
-    counts = Counts()
-    after_id = 0
-    while True:
-        async with mysql() as backend:
-            rows = (
-                await backend.execute(_SELECT, {"after_id": after_id, "limit": batch_size})
-            ).all()
-        if not rows:
-            return counts
-        after_id = rows[-1].record_id
-        facts = [fact_from_row(row, store_comment=store_comment) for row in rows]
-        counts.records += len(facts)
-        counts.with_comment += sum(1 for f in facts if f.comment_text)
-        if not dry_run:
-            async with pg() as session:
-                await repository(session).upsert_many(facts)
-        logger.info("record_facts %d건 처리", counts.records)
+    result = await copy_records(
+        mysql,
+        pg,
+        statement=SELECT_ACTIVE,
+        batch_size=batch_size,
+        store_comment=store_comment,
+        dry_run=dry_run,
+        repository=repository,
+    )
+    return Counts(records=result.upserted, with_comment=result.with_comment)
 
 
 async def run(*, batch_size: int, dry_run: bool, store_comment: bool) -> Counts:

@@ -93,6 +93,16 @@ class RecordFactRepository:
         )
         return [TrackName(title=row.track_title, artist_name=row.artist_name) for row in rows]
 
+    async def list_record_ids(self, *, after_id: int, limit: int) -> list[int]:
+        """record_facts의 자물쇠 ID를 after_id보다 큰 것부터 오름차순으로 limit개 (전체 맞추기)."""
+        rows = await self._session.execute(
+            select(RecordFact.record_id)
+            .where(RecordFact.record_id > after_id)
+            .order_by(RecordFact.record_id)
+            .limit(limit)
+        )
+        return [row.record_id for row in rows]
+
     # ---- 쓰기 ---------------------------------------------------------------------
 
     async def upsert_many(self, facts: Sequence[RecordFactData]) -> int:

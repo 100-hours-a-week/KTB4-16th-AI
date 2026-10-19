@@ -99,6 +99,17 @@ def test_delete_removes_pending_job_and_vectors(client, jobs, store, record_payl
     assert 1029 not in store.rows
 
 
+def test_delete_also_removes_the_condition_search_values(client, store, facts):
+    store.rows[1029] = object()
+    facts.rows[1029] = object()
+    facts.rows[1030] = object()  # 다른 자물쇠는 그대로
+
+    res = client.delete("/api/embeddings/1029", headers=AUTH)
+
+    assert res.status_code == 204
+    assert 1029 not in facts.rows and 1030 in facts.rows
+
+
 def test_delete_unknown_record_is_still_204(client):
     assert client.delete("/api/embeddings/999", headers=AUTH).status_code == 204
 
