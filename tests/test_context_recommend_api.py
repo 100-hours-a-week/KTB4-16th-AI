@@ -18,6 +18,9 @@ class EmptyRecordSearch:
     async def music_vectors(self, user_id, limit):
         return []
 
+    async def music_vectors_for_records(self, user_id, record_ids):
+        return []
+
 
 def _client() -> TestClient:
     app = create_app()

@@ -17,12 +17,16 @@ def _normalize(vector: list[float]) -> list[float] | None:
     return [x / length for x in vector]
 
 
-def mean_vector(vectors: list[list[float]]) -> list[float] | None:
-    """같은 길이의 벡터들의 평균 (길이 1로 맞춤). 비었거나 길이가 섞이면 None."""
+def mean_vector(
+    vectors: list[list[float]], weights: list[float] | None = None
+) -> list[float] | None:
+    """같은 길이의 벡터들의 (가중) 평균 (길이 1로 맞춤). 비었거나 길이가 섞이면 None."""
     if not vectors or len({len(v) for v in vectors}) != 1:
         return None
+    if weights is None or len(weights) != len(vectors):
+        weights = [1.0] * len(vectors)
     dim = len(vectors[0])
-    total = [sum(v[i] for v in vectors) for i in range(dim)]
+    total = [sum(w * v[i] for w, v in zip(weights, vectors, strict=True)) for i in range(dim)]
     return _normalize(total)
 
 

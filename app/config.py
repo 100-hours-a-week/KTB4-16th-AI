@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     # 곡을 고를 때 질문 벡터에 내 취향 벡터를 섞는 비율 (0=끔, 0.3=상황 70% + 취향 30%).
     # 정답을 알 데이터가 아직 없어서 감으로 둔 초기값 — 같은 상황 세트로 비교해 정한다.
     personal_taste_weight: float = 0.3
+    # 지금과 같은 날씨에 저장한 기록이 이 수 이상이면, 전체 평균 대신 그 기록들로 취향 벡터를 만든다
+    situational_taste_min_records: int = 3
+    # 주변 사람들이 많이 담은 곡(곡 풀에 있는 곡)의 벡터를 질문 벡터에 섞는 비율 (0=끔). 초기값.
+    nearby_weight: float = 0.2
     memory_search_comment_weight: float = 0.5
     memory_search_music_weight: float = 0.5
     memory_search_candidates: int = 20  # 검색기마다 가져오는 후보 수
