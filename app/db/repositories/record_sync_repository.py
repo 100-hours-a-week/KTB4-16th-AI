@@ -84,14 +84,17 @@ class BackendRecordReader:
         """커서 다음부터 바뀐 자물쇠를 (바뀐 시각, record_id) 순으로. 삭제된 것도 포함.
 
         바뀐 시각 = updated_at과 deleted_at 중 늦은 쪽 — 소프트 삭제 때 updated_at을 안
-        건드리는 경우에도 삭제를 놓치지 않게.
+        건드리는 경우에도 삭제를 놓치지 않게. 백엔드는 자물쇠를 수정하기 전까지 updated_at을
+        NULL로 두므로 비어 있으면 created_at으로 본다 (GREATEST는 NULL이 하나라도 있으면
+        NULL이 되어, 그대로 두면 한 번도 수정하지 않은 자물쇠가 모두 걸러진다).
         """
         s = get_settings()
         sql = f"""
             SELECT * FROM (
                 SELECT r.record_id, r.user_id, r.comment, r.created_at, r.deleted_at,
                        r.weather_condition, r.temperature, r.mood_score,
-                       GREATEST(r.updated_at, COALESCE(r.deleted_at, r.updated_at)) AS changed_at,
+                       GREATEST(COALESCE(r.updated_at, r.created_at),
+                                COALESCE(r.deleted_at, r.created_at)) AS changed_at,
                        m.title, m.artist_name, m.external_track_id,
                        p.legal_dong_name, p.legal_dong_code, p.latitude, p.longitude,
                        ph.{s.backend_photo_key_column} AS photo_key

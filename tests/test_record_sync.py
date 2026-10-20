@@ -314,3 +314,28 @@ async def test_raw_json_drops_the_comment_when_comment_storage_is_off():
     facts, _ = await _run_with_facts([replace(_rich(1, 1), raw_record=raw)], store_comment=False)
 
     assert facts.rows[1].raw_record == {"record_id": 1, "extra_col": 7}
+
+
+class _CapturingMysql:
+    """백엔드 DB 대신 보낸 SQL만 기록하고 빈 결과를 돌려준다."""
+
+    def __init__(self):
+        self.statements = []
+
+    async def execute(self, statement, params=None):
+        self.statements.append(" ".join(str(statement).split()))
+        return []
+
+
+async def test_changed_time_falls_back_to_created_at_when_updated_at_is_null():
+    from app.db.repositories.record_sync_repository import BackendRecordReader
+
+    mysql = _CapturingMysql()
+    await BackendRecordReader(mysql).changed_since(Cursor(EPOCH, 0), 10)
+
+    # 수정한 적 없는 자물쇠는 updated_at이 NULL이다. GREATEST는 NULL이 하나라도 있으면 NULL이라
+    # 칸마다 created_at으로 대신하지 않으면 그런 자물쇠가 한 건도 읽히지 않는다
+    assert (
+        "GREATEST(COALESCE(r.updated_at, r.created_at), COALESCE(r.deleted_at, r.created_at))"
+        in mysql.statements[0]
+    )
