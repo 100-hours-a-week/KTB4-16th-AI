@@ -1,7 +1,5 @@
 from datetime import UTC, datetime, timedelta
 
-import pytest
-
 from app.db.repositories.record_sync_repository import EPOCH, ChangedRecord, Cursor
 from app.schemas.embeddings import EmbeddingGenerateRequest
 from app.workers import record_sync_worker as w
@@ -120,12 +118,13 @@ async def test_record_without_photo_is_skipped_but_cursor_moves():
     assert list(jobs.enqueued) == ["2"] and cursors.cursor.record_id == 2
 
 
-async def test_failure_keeps_cursor_at_last_success():
+async def test_photo_signing_failure_skips_only_that_embedding_and_keeps_syncing():
     signer = FakeSigner(fail_on="photos/b.jpg")
-    cursors = FakeCursors()
-    with pytest.raises(RuntimeError):
-        await _run([_rec(1, 1), _rec(2, 2, photo="photos/b.jpg")], signer=signer, cursors=cursors)
-    assert cursors.cursor.record_id == 1  # 다음 실행에서 2번부터 다시
+    n, cursors, jobs, _ = await _run(
+        [_rec(1, 1), _rec(2, 2, photo="photos/b.jpg"), _rec(3, 3)], signer=signer
+    )
+    assert list(jobs.enqueued) == ["1", "3"]  # 2번은 임베딩만 건너뜀
+    assert n == 3 and cursors.cursor.record_id == 3  # 3번까지 동기화는 계속된다
 
 
 def test_slot_key_groups_five_minutes():
@@ -151,7 +150,6 @@ async def test_schedule_does_nothing_while_sync_is_disabled(monkeypatch):
     from datetime import UTC, datetime
 
     from app import worker_main
-    from app.config import get_settings
     from app.workers import record_sync_worker
 
     called = []
@@ -159,13 +157,23 @@ async def test_schedule_does_nothing_while_sync_is_disabled(monkeypatch):
     async def fake_schedule(now):
         called.append(now)
 
+    class Off:
+        record_sync_enabled = False
+
     monkeypatch.setattr(record_sync_worker, "schedule", fake_schedule)
     monkeypatch.setattr(worker_main, "_sync_slots", set())
-    assert get_settings().record_sync_enabled is False  # 기본은 꺼짐
+    monkeypatch.setattr(worker_main, "get_settings", lambda: Off())
 
     await worker_main.schedule_record_sync(datetime(2026, 10, 20, 5, 0, tzinfo=UTC))
 
     assert called == []
+
+
+async def test_sync_and_comment_storage_are_on_by_default():
+    from app.config import get_settings
+
+    s = get_settings()
+    assert s.record_sync_enabled is True and s.record_facts_store_comment is True
 
 
 class FakeFacts:
@@ -244,3 +252,20 @@ async def test_deleted_record_is_removed_from_facts():
     facts, _ = await _run_with_facts([_rich(1, 1), _rec(1, 2, deleted=True)])
 
     assert facts.deleted == [1]
+
+
+async def test_record_facts_are_saved_even_when_photo_signing_fails():
+    from dataclasses import replace
+
+    facts = FakeFacts()
+    bad = replace(_rich(1, 1), photo_key="photos/b.jpg")
+    await w.sync(
+        FakeReader([bad]),
+        FakeCursors(),
+        FakeJobs(),
+        FakeStore(),
+        FakeSigner(fail_on="photos/b.jpg"),
+        500,
+        facts=facts,
+    )
+    assert 1 in facts.rows  # 원문은 사진 문제와 상관없이 저장된다
