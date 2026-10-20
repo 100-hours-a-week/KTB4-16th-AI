@@ -69,3 +69,13 @@ def test_no_embedding_process_when_provider_is_openai(monkeypatch):
         assert "embedding" not in commands()
     finally:
         get_settings.cache_clear()
+
+
+def test_public_servers_use_h11_so_a_java_http2_upgrade_does_not_drop_the_body(run_worker_env):
+    """호출하는 쪽(Java HttpClient)이 Upgrade: h2c를 보내도 본문이 안 버려지게 h11로 띄운다."""
+    run_worker_env(None)
+    cmds = commands()
+
+    for name in ("gateway", "moderation"):
+        cmd = cmds[name]
+        assert cmd[cmd.index("--http") + 1] == "h11", name

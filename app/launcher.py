@@ -27,7 +27,11 @@ STOP_TIMEOUT_SECONDS = 10
 
 def commands() -> dict[str, list[str]]:
     settings = get_settings()
-    uvicorn = [sys.executable, "-m", "uvicorn", "--host", "0.0.0.0"]
+    # --http h11: 호출하는 쪽이 Java 기본 HTTP 클라이언트처럼 HTTP/2로 바꾸자는 헤더
+    # (Upgrade: h2c)를 같이 보내도 요청 본문을 버리지 않는다. 기본(httptools)은 그 요청의 본문을
+    # 버려서 앱이 "body: Field required"로 거절했다(2026-10-20, 모더레이션 호출 실패).
+    # h11은 업그레이드 요청을 지원 안 한다고 경고만 남기고 일반 HTTP/1.1로 끝까지 처리한다
+    uvicorn = [sys.executable, "-m", "uvicorn", "--host", "0.0.0.0", "--http", "h11"]
     cmds = {
         "gateway": [*uvicorn, "app.main:app", "--port", str(settings.gateway_port)],
         "moderation": [
