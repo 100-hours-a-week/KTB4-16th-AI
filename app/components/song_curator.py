@@ -80,6 +80,10 @@ class SongCandidate:
     title: str
     genre: str
     moods: tuple[str, ...]
+    # DB(곡 풀·저장된 곡)에서 고른 곡이 하이브리드 점수(태그+벡터)를 Spotify 확인 뒤까지
+    # 들고 가는 칸.
+    # Claude가 추천한 곡은 None (벡터가 없어 같은 기준으로 비교할 수 없다)
+    score: float | None = None
 
     @property
     def search_query(self) -> str:

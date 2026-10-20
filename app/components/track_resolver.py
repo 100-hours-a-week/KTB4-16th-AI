@@ -84,6 +84,7 @@ class TrackResolver:
                     moods=song.moods,
                     album_image_url=track.album_image_url,
                     external_url=track.external_url,
+                    score=song.score,
                 )
             )
         return resolved
@@ -245,6 +246,7 @@ def _to_candidate(track: SpotifyTrack, song: SongCandidate) -> TrackCandidate:
         moods=song.moods,
         album_image_url=track.album_image_url,
         external_url=track.external_url,
+        score=song.score,
     )
 
 
