@@ -12,6 +12,7 @@ from app.api import (
     embeddings,
     health,
     memory_search,
+    moderation_proxy,
     photo_recommend,
     playlist,
     reports,
@@ -27,6 +28,8 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
 
     app.include_router(health.router)
+    app.include_router(moderation_proxy.health_router)
+    app.include_router(moderation_proxy.router, dependencies=[Depends(verify_internal_token)])
     for module in (
         embeddings,
         photo_recommend,

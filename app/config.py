@@ -164,6 +164,9 @@ class Settings(BaseSettings):
     # python -m app.main (전체 실행)이 띄우는 두 API 서버 포트
     gateway_port: int = 8000
     moderation_port: int = 8001
+    # 게이트웨이가 모더레이션(8001)으로 전달할 때 기다리는 시간. 백엔드는 1초 안에 못 받으면
+    # 실패(차단)로 처리하므로 이보다 길게 붙잡고 있을 필요가 없다.
+    moderation_proxy_timeout_seconds: float = 2.0
     embedding_port: int = 8002  # 컨테이너 안(127.0.0.1)에서만 열림
 
     # Prometheus 지표 (GET /metrics). 인증 없이 열리므로 외부에 노출되지 않는 내부망에서만
