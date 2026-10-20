@@ -35,8 +35,17 @@ async def test_korean_name_asks_for_the_english_spelling():
     assert "영어(로마자) 표기" in llm.calls[0][0]
 
 
-async def test_an_unknown_artist_gives_an_empty_result_not_an_error():
-    assert await ArtistAliasTagger(StubLLM("표기: 없음")).aliases("SunLake") == ()
+async def test_a_name_that_is_not_an_artist_gives_an_empty_result_not_an_error():
+    assert await ArtistAliasTagger(StubLLM("표기: 없음")).aliases("Various Artists") == ()
+
+
+async def test_unknown_artists_are_asked_for_a_pronunciation_based_spelling_instead_of_nothing():
+    korean, english = StubLLM("표기: 리센느"), StubLLM("표기: Kang Baeksu")
+
+    assert await ArtistAliasTagger(korean).aliases("RESCENE") == ("리센느",)
+    assert await ArtistAliasTagger(english).aliases("강백수") == ("Kang Baeksu",)
+    # 모르면 포기하지 말고 발음대로 옮기라고 시킨다 (덜 알려진 가수도 한글로 물으면 찾도록)
+    assert "발음" in korean.calls[0][0] and "로마자 표기법" in english.calls[0][0]
 
 
 async def test_several_spellings_are_kept_without_duplicates_and_capped_at_three():

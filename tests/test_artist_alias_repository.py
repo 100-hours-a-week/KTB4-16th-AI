@@ -58,13 +58,15 @@ async def test_source_names_are_the_distinct_artist_columns_of_record_facts():
     assert names == ["BIGBANG"]
 
 
-async def test_known_keys_are_limited_to_the_given_version():
+async def test_known_keys_are_the_given_version_and_the_ones_a_person_entered():
     session = CapturingSession([SimpleNamespace(name_key="bigbang")])
 
     keys = await ArtistAliasRepository(session).known_keys("model|v1")
 
     sql, params = _compile(session.statements[0])
-    assert "artist_aliases.alias_version = " in sql and "model|v1" in params.values()
+    assert "artist_aliases.alias_version IN" in sql
+    # 사람이 고쳐 넣은 행은 다시 변환해서 덮어쓰지 않는다
+    assert [["model|v1", "manual"]] == [v for v in params.values() if isinstance(v, list)]
     assert keys == {"bigbang"}
 
 

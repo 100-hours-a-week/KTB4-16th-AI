@@ -13,6 +13,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ArtistAlias, RecordFact
 
+# 사람이 직접 고쳐 넣은 행의 alias_version. 워커가 LLM으로 덮어쓰지 않는다 (LLM이 모르거나 틀리는
+# 가수를 바로잡는 용도). 넣는 법: name_key는 가수 이름에서 공백·기호를 빼고 소문자로 만든 글자
+MANUAL_VERSION = "manual"
+
 
 class ArtistAliasSource(Protocol):
     async def aliases_for(self, name_keys: Collection[str]) -> dict[str, list[str]]: ...
@@ -47,9 +51,11 @@ class ArtistAliasRepository:
         return [row.artist_name for row in rows]
 
     async def known_keys(self, version: str) -> set[str]:
-        """이 버전으로 이미 변환한(모른다고 답한 것 포함) 가수의 name_key."""
+        """이 버전으로 이미 변환했거나 사람이 직접 넣은 가수의 name_key."""
         rows = await self._session.execute(
-            select(ArtistAlias.name_key).where(ArtistAlias.alias_version == version)
+            select(ArtistAlias.name_key).where(
+                ArtistAlias.alias_version.in_([version, MANUAL_VERSION])
+            )
         )
         return {row.name_key for row in rows}
 
