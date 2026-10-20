@@ -30,10 +30,11 @@
 import asyncio
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from app.clients.spotify_client import SpotifySearchClient
+from app.components.db_picker import DbPickConfig, pick_db_songs
 from app.components.embedder import Embedder
 from app.components.reranker import Reranker, TrackCandidate
 from app.components.saved_song_pool import SavedSongPool
@@ -122,7 +123,9 @@ class ContextRecommendService:
         record_source: MemoryRecordSource | None = None,
         situational_min_records: int = 3,
         nearby_weight: float = 0.0,
+        db_pick: DbPickConfig = DbPickConfig(),
     ):
+        self._db_pick = db_pick
         self._taste_weight = taste_weight
         self._record_source = record_source
         self._situational_min_records = situational_min_records
@@ -157,9 +160,8 @@ class ContextRecommendService:
         excluded = {r.external_track_id for r in references} | set(req.exclude_track_ids)
         situation_vector = await self._mood_vector(curation.mood_sentence)
         situation_vector = await self._bias_vector(req, situation_vector)
-        saved_songs = await self._pick_saved(curation, excluded, situation_vector)
-        pool_songs = self._pick_from_pool(
-            curation, references, self._pool_count - len(saved_songs), situation_vector
+        saved_songs, pool_songs = await self._pick_db(
+            curation, references, excluded, situation_vector
         )
         if not curation.songs and not pool_songs and not saved_songs:
             logger.warning("곡 추천 결과를 파싱하지 못함, 폴백")
@@ -203,11 +205,20 @@ class ContextRecommendService:
     def _keep(
         self, curation: CurationResult, candidates: list[TrackCandidate]
     ) -> list[tuple[TrackCandidate, float]]:
-        """점수 순으로 줄 세우고 기준 미만은 뺀다."""
+        """태그 점수 순으로 줄 세우고 기준 미만은 뺀다 (Claude 곡처럼 벡터가 없는 곡용)."""
         ranked = self._reranker.rank(
             curation.situation_genres, curation.situation_moods, candidates
         )
         return [(c, score) for c, score in ranked if score >= MIN_RERANK_SCORE]
+
+    def _keep_db(
+        self, curation: CurationResult, candidates: list[TrackCandidate]
+    ) -> list[tuple[TrackCandidate, float]]:
+        """DB 곡: 곡을 고를 때 받은 하이브리드 점수(태그+벡터) 순. 점수가 없는 곡은 태그 점수로."""
+        scored = [(c, c.score) for c in candidates if c.score is not None]
+        scored.sort(key=lambda pair: pair[1], reverse=True)
+        unscored = self._keep(curation, [c for c in candidates if c.score is None])
+        return scored + unscored
 
     def _mix(
         self,
@@ -216,8 +227,12 @@ class ContextRecommendService:
         pool_found: list[TrackCandidate],
         limit: int,
     ) -> list[tuple[TrackCandidate, float]]:
-        """곡 풀 pool_count곡 + 나머지는 LLM 곡. 한쪽이 모자라면 다른 쪽으로 채우고 점수 순으로."""
-        pool_kept = self._keep(curation, pool_found)
+        """DB 곡(저장된 곡+곡 풀) pool_count곡을 하이브리드 점수 순으로, 그 뒤에 Claude 곡을 둔다.
+
+        Claude 곡은 벡터가 없어 DB 곡과 같은 점수로 비교할 수 없으니 순서를 겨루지 않고 뒤에 둔다.
+        한쪽이 모자라면 다른 쪽으로 채운다.
+        """
+        pool_kept = self._keep_db(curation, pool_found)
         llm_kept = self._keep(curation, llm_found)
         pool_first = pool_kept[: min(self._pool_count, limit)]
         ordered = (
@@ -235,24 +250,45 @@ class ContextRecommendService:
             mixed.append((c, score))
             if len(mixed) == limit:
                 break
-        return sorted(mixed, key=lambda pair: pair[1], reverse=True)
+        return mixed
 
-    async def _pick_saved(
+    async def _pick_db(
         self,
         curation: CurationResult,
+        references: list["ReferenceTrack"],
         excluded: set[str],
-        situation_vector: list[float] | None = None,
-    ) -> list[SavedSong]:
-        """사용자들이 저장한 곡에서 먼저 채운다. 모자라면 그만큼 TJ 곡 풀이 채운다."""
-        if self._saved_pool is None:
-            return []
-        return await self._saved_pool.pick(
-            curation.situation_genres,
-            curation.situation_moods,
-            self._saved_count,
-            exclude_ids=excluded,
-            situation_vector=situation_vector,
+        situation_vector: list[float] | None,
+    ) -> tuple[list[SavedSong], list[SongCandidate]]:
+        """저장된 곡과 곡 풀을 같은 점수(태그+벡터)로 겨뤄 DB 몫만큼 고른다 (db_picker)."""
+        total = self._pool_count if self._pool is not None else self._saved_count
+        if total <= 0:
+            return [], []
+        heard = [SongCandidate(_first_artist(r.artist), r.title, "", ()) for r in references]
+        pool_ranked = []
+        if self._pool is not None:
+            try:
+                pool_ranked = self._pool.ranked(
+                    curation.situation_genres,
+                    curation.situation_moods,
+                    exclude=curation.songs + heard,
+                    situation_vector=situation_vector,
+                )
+            except Exception:
+                logger.exception("곡 풀에서 고르기 실패 — 저장된 곡·LLM 곡만 사용")
+        saved_ranked = []
+        if self._saved_pool is not None:
+            saved_ranked = await self._saved_pool.ranked(
+                curation.situation_genres,
+                curation.situation_moods,
+                exclude_ids=excluded,
+                situation_vector=situation_vector,
+            )
+        config = replace(
+            self._db_pick,
+            min_saved=min(self._saved_count, total),
+            max_saved=max(self._db_pick.max_saved, self._saved_count),
         )
+        return pick_db_songs(saved_ranked, pool_ranked, total, config)
 
     async def _mood_vector(self, sentence: str) -> list[float] | None:
         """Claude가 쓴 분위기 문장을 벡터로. 실패해도 태그 점수로 고르면 되니 추천은 계속한다."""
@@ -320,28 +356,6 @@ class ContextRecommendService:
         weights = [float(nearby[i].count or 1) for i, _ in found]
         mean = mean_vector([list(embedding) for _, embedding in found], weights)
         return blend_taste(vector, mean, self._nearby_weight)
-
-    def _pick_from_pool(
-        self,
-        curation: CurationResult,
-        references: list["ReferenceTrack"],
-        count: int,
-        situation_vector: list[float] | None = None,
-    ) -> list[SongCandidate]:
-        if self._pool is None:
-            return []
-        heard = [SongCandidate(_first_artist(r.artist), r.title, "", ()) for r in references]
-        try:
-            return self._pool.pick(
-                curation.situation_genres,
-                curation.situation_moods,
-                count,
-                exclude=curation.songs + heard,
-                situation_vector=situation_vector,
-            )
-        except Exception:
-            logger.exception("곡 풀에서 고르기 실패 — LLM 곡만 사용")
-            return []
 
     async def _personal_references(self, user_id: int, moment: str) -> list[ReferenceTrack]:
         """지금 상황과 비슷한 과거 자물쇠에서 들은 곡. 못 찾거나 실패하면 빈 목록(=GENERIC).

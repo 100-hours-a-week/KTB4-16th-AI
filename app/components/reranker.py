@@ -40,6 +40,8 @@ class TrackCandidate:
     album_image_url: str | None = None
     external_url: str | None = None
     popularity: int = 0  # Spotify 제공값 0~100, 못 받으면 0(가장 불리하게)
+    # DB 곡이 곡을 고를 때 받은 하이브리드 점수(태그+벡터, 0~1). Claude 곡은 None
+    score: float | None = None
 
 
 class Reranker:

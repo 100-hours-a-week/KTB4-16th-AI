@@ -135,6 +135,12 @@ class Settings(BaseSettings):
     # 1로 둔 이유: 오픈 직후엔 저장된 곡이 적어서 다 거기서 뽑으면 같은 곡만 돌 수 있다.
     # 저장 곡이 쌓이면 올려 가며 실측한다. 0이면 TJ 곡 풀만 사용.
     song_pool_saved_count: int = 1
+    # 저장된 곡은 DB 몫 안에서 곡 풀과 같은 점수로 겨룬다 (db_picker). song_pool_saved_count는 최소
+    # 곡 수(하한), 이 값은 최대 곡 수(상한). 점수 = 태그 가중치·태그 점수 + 벡터 가중치·벡터 유사도.
+    # 가중치는 감으로 둔 초기값 — 같은 상황 세트로 비교해 정한다
+    song_pool_saved_max: int = 2
+    rerank_tag_weight: float = 0.5
+    rerank_vector_weight: float = 0.5
     # 곡 풀 파일 — Docker 빌드 때 비공개 HF 저장소에서 받아 둔다(공개 레포에 두지 않음).
     # 로컬에서 쓰려면 HF에서 받아 SONG_POOL_PATH로 지정
     song_pool_path: str = "/app/models/song_pool/song_pool.json"

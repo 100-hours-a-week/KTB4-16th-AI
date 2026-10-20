@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.clients.spotify_client import SpotifySearchClient
+from app.components.db_picker import DbPickConfig
 from app.components.embedder import Embedder
 from app.components.reranker import Reranker
 from app.components.saved_song_pool import SavedSongPool
@@ -58,5 +59,10 @@ async def context_recommend(
         record_source=record_source,
         situational_min_records=s.situational_taste_min_records,
         nearby_weight=s.nearby_weight,
+        db_pick=DbPickConfig(
+            tag_weight=s.rerank_tag_weight,
+            vector_weight=s.rerank_vector_weight,
+            max_saved=s.song_pool_saved_max,
+        ),
     )
     return await service.recommend(req)

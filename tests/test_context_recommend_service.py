@@ -592,7 +592,7 @@ class _VectorRecordingPool:
     def __len__(self):
         return 1
 
-    def pick(self, genres, moods, count, exclude=None, situation_vector=None):
+    def ranked(self, genres, moods, exclude=None, situation_vector=None):
         self.vector = situation_vector
         return []
 
@@ -719,7 +719,7 @@ class _VectorRecordingRealPool:
     def vectors_for(self, tracks):
         return self._pool.vectors_for(tracks)
 
-    def pick(self, *args, situation_vector=None, **kwargs):
+    def ranked(self, *args, situation_vector=None, **kwargs):
         self.vector = situation_vector
         return []
 
@@ -739,3 +739,86 @@ async def test_nearby_songs_in_the_pool_pull_the_query_toward_them():
     )
 
     assert off[1] == 0 and on[1] > 0  # 곡 풀에 있는 곡 쪽(축 2)으로 이동
+
+
+async def test_db_songs_come_first_in_hybrid_score_order_and_the_claude_song_comes_last():
+    import random
+
+    from app.components.song_pool import PoolSong, SongPool
+
+    pool = SongPool(
+        [
+            PoolSong("A", "먼곡", ("발라드",), ("잔잔한", "그리운"), 0, (0.0, 1.0, 0.0)),
+            PoolSong("B", "가까운곡", ("발라드",), ("잔잔한", "그리운"), 0, (1.0, 0.0, 0.0)),
+        ],
+        rng=random.Random(0),
+    )
+    claude = _song("L", "클로드곡", moods=("잔잔한", "그리운"))
+    curation = CurationResult(
+        ("발라드",), ("잔잔한", "그리운"), [claude], mood_sentence="비 오는 저녁의 쓸쓸한 노래"
+    )
+    service = ContextRecommendService(
+        embedder=StubEmbedder(),  # 상황 문장 벡터 [1, 0, 0] — B와 같은 방향
+        record_search=StubRecordSearch(),
+        song_curator=StubSongCurator(curation),
+        reranker=Reranker(),
+        spotify_search=StubSpotify(
+            _search_for(("L", "클로드곡"), ("A", "먼곡"), ("B", "가까운곡"))
+        ),
+        song_pool=pool,
+        pool_count=2,
+        llm_count=3,
+    )
+
+    res = await service.recommend(_req(limit=5))
+
+    assert [t.title for t in res.tracks] == ["가까운곡", "먼곡", "클로드곡"]
+    assert res.tracks[0].rerank_score == 1.0 and res.tracks[1].rerank_score == 0.5
+
+
+async def test_saved_and_pool_songs_compete_for_the_db_slots_in_the_context_flow():
+    import random
+
+    from app.components.song_pool import PoolSong, SongPool
+    from app.db.repositories.track_mood_repository import SavedSong
+
+    pool = SongPool(
+        [
+            PoolSong(f"가수{i}", f"풀곡{i}", ("발라드",), ("잔잔한", "그리운"), 0, (0.0, 1.0, 0.0))
+            for i in range(4)
+        ],
+        rng=random.Random(0),
+    )
+    close_saved = SavedSong("s_close", "발라드", ("잔잔한", "그리운"), embedding=(1.0, 0.0, 0.0))
+    saved = _saved_pool_with(close_saved)
+    curation = CurationResult(("발라드",), ("잔잔한", "그리운"), [], mood_sentence="비 오는 저녁")
+    tracks = {"s_close": _track_json("s_close", "저장곡", "누군가")}
+    search = _search_for(*[(f"가수{i}", f"풀곡{i}") for i in range(4)])
+    service = ContextRecommendService(
+        embedder=StubEmbedder(),
+        record_search=StubRecordSearch(),
+        song_curator=StubSongCurator(curation),
+        reranker=Reranker(),
+        spotify_search=StubSpotify(search, tracks=tracks),
+        song_pool=pool,
+        pool_count=3,
+        saved_pool=saved,
+        saved_count=1,
+    )
+
+    res = await service.recommend(_req(limit=5))
+
+    assert res.tracks[0].external_track_id == "s_close"  # 분위기가 가장 가까운 저장된 곡이 1등
+    assert len(res.tracks) == 3  # DB 몫 3곡
+
+
+def _saved_pool_with(*songs):
+    import random
+
+    from app.components.saved_song_pool import SavedSongPool
+
+    class _Search:
+        async def search_by_tags(self, genres, moods_, limit):
+            return list(songs)
+
+    return SavedSongPool(_Search(), rng=random.Random(0))
