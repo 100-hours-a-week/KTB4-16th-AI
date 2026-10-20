@@ -243,3 +243,21 @@ class SyncState(Base):
     last_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_record_id: Mapped[int] = mapped_column(BigInteger, server_default="0")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ArtistAlias(Base):
+    """가수 이름의 다른 표기(영어↔한글) 목록. 기억 검색이 질문에서 가수를 찾을 때 함께 비교한다.
+
+    가수 이름은 공백·기호·대소문자를 뺀 글자(name_key)로 구분한다. aliases가 빈 목록이면
+    "LLM이 모른다고 답함"이라는 결과라서 같은 alias_version에서는 다시 묻지 않는다.
+    alias_version이 현재 설정(LLM·프롬프트)과 다르면 다시 만든다.
+    """
+
+    __tablename__ = "artist_aliases"
+
+    name_key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    artist_name: Mapped[str] = mapped_column(String(200))
+    aliases: Mapped[list[str]] = mapped_column(ARRAY(String(100)), server_default="{}")
+    alias_version: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

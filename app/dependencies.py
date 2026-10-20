@@ -2,7 +2,7 @@
 
 import logging
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Collection
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -54,6 +54,7 @@ from app.components.vector_search import MemoryVectorSearch, RecordSearch, Vecto
 from app.config import Settings, get_settings
 from app.db import mysql, postgres
 from app.db.postgres import get_session
+from app.db.repositories.artist_alias_repository import ArtistAliasRepository, ArtistAliasSource
 from app.db.repositories.balance_stats_repository import (
     BalanceStatsRepository,
     GenreStats,
@@ -365,6 +366,23 @@ class _PgMemoryRecords:
         return await self._read(lambda repo: repo.list_track_names(user_id=user_id, limit=limit))
 
 
+class _PgArtistAliases:
+    """가수 이름의 다른 표기 — AI PostgreSQL의 artist_aliases에서 읽는다 (질문에서 가수 찾기용)."""
+
+    async def aliases_for(self, name_keys: Collection[str]) -> dict[str, list[str]]:
+        try:
+            async with postgres.get_sessionmaker()() as session:
+                return await ArtistAliasRepository(session).aliases_for(name_keys)
+        except SQLAlchemyError as e:
+            raise UpstreamError("AI DB에서 가수 별칭을 읽지 못했어요.") from e
+
+
+def get_artist_alias_source() -> ArtistAliasSource | None:
+    if get_settings().ai_client_mode == "fake":
+        return None  # 로컬·테스트 환경: DB 없이 저장된 이름 그대로만 찾는다
+    return _PgArtistAliases()
+
+
 def get_memory_record_source() -> MemoryRecordSource:
     s = get_settings()
     if s.ai_client_mode == "fake":
@@ -410,6 +428,7 @@ async def get_memory_search_service(
             HeadlineWriter(get_clients().llm_general) if s.memory_answer_llm_enabled else None
         ),
         headline_timeout=s.memory_answer_llm_timeout_seconds,
+        aliases=get_artist_alias_source(),
     )
 
 

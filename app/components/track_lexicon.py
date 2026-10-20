@@ -13,7 +13,7 @@
 """
 
 import re
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -75,6 +75,11 @@ def title_keys(title: str | None) -> frozenset[str]:
     return frozenset(k for k in (compact(t) for t in title_variants(title)) if k)
 
 
+def artist_name_keys(tracks: Iterable[TrackName]) -> set[str]:
+    """이 곡들의 가수(한 명씩)를 비교용 글자로 — 가수 별칭 표를 찾는 열쇠."""
+    return {key for t in tracks for a in artist_names(t.artist_name) if (key := compact(a))}
+
+
 def _usable(key: str) -> bool:
     return len(key) >= MIN_NAME_LENGTH and key not in STOPWORDS
 
@@ -105,7 +110,13 @@ class TrackLexicon:
         self._titles = dict(titles)
 
     @classmethod
-    def build(cls, tracks: Iterable[TrackName]) -> "TrackLexicon":
+    def build(
+        cls, tracks: Iterable[TrackName], aliases: Mapping[str, Sequence[str]] | None = None
+    ) -> "TrackLexicon":
+        """aliases: 가수 비교용 글자(compact) → 다른 표기들 ("rescene" → ["리센느"]).
+
+        다른 표기로 질문해도 저장된 이름의 가수로 찾는다. 안내 문장에는 저장된 이름을 쓴다."""
+        aliases = aliases or {}
         artists: dict[str, str] = {}
         titles: dict[str, str] = {}
         for track in tracks:
@@ -113,6 +124,10 @@ class TrackLexicon:
                 key = compact(name)
                 if _usable(key):
                     artists.setdefault(key, name)
+                    for alias in aliases.get(key, ()):
+                        alias_key = compact(alias)
+                        if _usable(alias_key):
+                            artists.setdefault(alias_key, name)
             variants = title_variants(track.title)
             if variants:
                 display = variants[-1]  # 꼬리를 뗀 이름이 안내 문장에 쓰기 좋다

@@ -876,3 +876,58 @@ async def test_no_suggested_records_for_questions_without_conditions(parser):
     res = await service.search(_request("그때 들은 노래"))
 
     assert res.suggested_records == []
+
+
+class FakeAliases:
+    """가수 별칭 표 대역 — 요청한 열쇠에 해당하는 별칭만 돌려준다."""
+
+    def __init__(self, table=None, error: Exception | None = None):
+        self.table = table or {}
+        self.error = error
+        self.calls: list[set[str]] = []
+
+    async def aliases_for(self, name_keys):
+        self.calls.append(set(name_keys))
+        if self.error:
+            raise self.error
+        return {k: v for k, v in self.table.items() if k in name_keys}
+
+
+def _english_stored_world():
+    """저장된 가수 이름이 영어뿐인 자물쇠 — 한글로 물으면 별칭이 있어야 찾는다."""
+    rows = [
+        make_row(1, track_title="소나기", artist_name="RESCENE"),
+        make_row(2, track_title="Love Attack", artist_name="RESCENE"),
+        make_row(3, track_title="밤편지", artist_name="IU"),
+    ]
+    details = {i: make_record(i) for i in (1, 2, 3)}
+    names = [TrackName(r.track_title, r.artist_name) for r in rows]
+    return FakeMemoryRecords({USER: details}, {USER: rows}, {USER: names})
+
+
+async def test_korean_question_finds_an_artist_stored_in_english_through_the_alias(parser):
+    aliases = FakeAliases({"rescene": ["리센느"], "iu": ["아이유"]})
+    service = _service(parser, FakeVectorSearch(), _english_stored_world(), aliases=aliases)
+
+    res = await service.search(_request("리센느 노래 들었던 거 뭐 있었지"))
+
+    assert sorted(m.record_id for m in res.records) == [1, 2]
+    assert res.answer == "가수 RESCENE 조건에 맞는 자물쇠를 찾았어요."
+    assert aliases.calls == [{"rescene", "iu"}]  # 이 사용자의 가수들만 찾는다
+
+
+async def test_without_aliases_the_korean_question_does_not_find_the_english_stored_artist(parser):
+    service = _service(parser, FakeVectorSearch(), _english_stored_world())
+
+    res = await service.search(_request("리센느 노래 들었던 거 뭐 있었지"))
+
+    assert res.records == []
+
+
+async def test_alias_lookup_failure_falls_back_to_the_stored_names(parser):
+    aliases = FakeAliases(error=UpstreamError("AI DB에서 가수 별칭을 읽지 못했어요."))
+    service = _service(parser, FakeVectorSearch(), _english_stored_world(), aliases=aliases)
+
+    res = await service.search(_request("RESCENE 노래 들었던 거 뭐 있었지"))
+
+    assert sorted(m.record_id for m in res.records) == [1, 2]
