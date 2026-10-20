@@ -148,7 +148,10 @@ class Settings(BaseSettings):
     # 기능6 모더레이션 모델 (KcELECTRA ONNX) — Docker 빌드 때 HF 비공개 저장소에서 받아 둔다
     moderation_model_dir: str = "/app/models/moderation"
     moderation_model_version: str = "kcelectra-v1-stage3"
-    moderation_threshold: float = 0.5
+    # 유해 확률이 이 값 이상이면 유해. 0.5였는데 정상 채팅이 막힌다는 이야기가 있어 0.9로 올렸다
+    # (2026-10-20). 지난 실험에서 올려도 오탐은 크게 안 줄고 놓침(욕 통과)만 늘었으니, 욕이 너무
+    # 통과하면 다시 내린다. 환경변수 MODERATION_THRESHOLD로도 바꿀 수 있다
+    moderation_threshold: float = 0.9
     moderation_threads: int = 2
 
     # 기능6 오늘의 질문 — 최근 며칠치 자물쇠로 장르별 통계를 낼지, 최대 몇 건까지 볼지
