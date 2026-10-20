@@ -88,3 +88,9 @@ def _clear_cached_client():
     get_moderation_client.cache_clear()
     yield
     get_moderation_client.cache_clear()
+
+
+def test_proxy_waits_up_to_five_seconds_for_the_moderation_service():
+    from app.config import get_settings
+
+    assert get_settings().moderation_proxy_timeout_seconds == 5.0
