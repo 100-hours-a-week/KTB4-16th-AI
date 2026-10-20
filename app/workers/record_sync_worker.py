@@ -104,7 +104,17 @@ def fact_of(record: ChangedRecord, *, store_comment: bool) -> RecordFactData:
         comment_text=comment if store_comment else None,
         track_title=record.title or None,
         artist_name=record.artist_name or None,
+        raw_record=_raw_without_comment(record, store_comment),
     )
+
+
+def _raw_without_comment(record: ChangedRecord, store_comment: bool) -> dict[str, Any] | None:
+    """원문 전체. 코멘트 저장을 껐다면 raw에서도 코멘트 칸을 뺀다 (설정이 서로 어긋나지 않게)."""
+    if record.raw_record is None:
+        return None
+    if store_comment:
+        return record.raw_record
+    return {k: v for k, v in record.raw_record.items() if k != "comment"}
 
 
 async def sync(

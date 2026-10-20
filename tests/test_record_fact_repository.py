@@ -209,5 +209,6 @@ def test_model_columns_match_the_migration():
         "comment_text",
         "track_title",
         "artist_name",
+        "raw_record",  # 마이그레이션 0013: records 한 행 전체
         "synced_at",
     }

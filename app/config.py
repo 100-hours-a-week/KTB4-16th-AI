@@ -98,6 +98,8 @@ class Settings(BaseSettings):
     # 원문을 쓰고, 끄면 postgres로 읽을 때 "사전에 없는 장소를 코멘트 글자로 찾기"가 안 된다.
     # 자물쇠가 삭제되면 record_facts 행도 함께 지워진다 (개인정보)
     record_facts_store_comment: bool = True
+    # records 한 행의 모든 칸을 JSON 원문(record_facts.raw_record)으로도 저장할지 (기본 저장)
+    record_facts_store_raw: bool = True
     memory_search_condition_candidates: int = 50  # 조건으로만 후보가 되는 기록의 최대 개수
     # 프론트는 앞 5건을 먼저 보여주고 "더보기"에서 나머지를 보여준다. 모두 맞는 기록이 이 건수보다
     # 적을 때만 일부만 맞는 기록을 문장으로 제안한다 (요청 limit이 더 작으면 그 값)

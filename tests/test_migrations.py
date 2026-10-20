@@ -120,3 +120,9 @@ def test_sync_state_migration_follows_the_record_facts_migration():
     revision = _script().get_revision("0012")
 
     assert revision.down_revision == "0011"
+
+
+def test_record_facts_raw_migration_follows_the_sync_state_migration():
+    revision = _script().get_revision("0013")
+
+    assert revision.down_revision == "0012"
