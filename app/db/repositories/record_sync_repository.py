@@ -5,11 +5,12 @@
 + 요청 본문에는 없던 값(날씨·기온·기분·장소). 뒤의 값들은 기억 검색이 읽는 record_facts에 쓴다.
 """
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, replace
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
+from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,6 +48,22 @@ class ChangedRecord:
     dong_code: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    raw_record: dict[str, Any] | None = None  # records 한 행의 모든 칸 (JSON으로 바꾼 원문)
+
+
+def jsonable(value: Any) -> Any:
+    """DB 값을 JSON에 담을 수 있게 바꾼다 (시각은 글자로, Decimal은 숫자로, bytes는 16진수로)."""
+    if isinstance(value, (datetime, date, time)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value).hex()
+    if isinstance(value, dict):
+        return {str(k): jsonable(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [jsonable(v) for v in value]
+    return value
 
 
 def _to_float(value: object) -> float | None:
@@ -92,7 +109,7 @@ class BackendRecordReader:
         rows = await self._mysql.execute(
             text(sql), {"ts": ts, "rid": cursor.record_id, "limit": limit}
         )
-        return [
+        records = [
             ChangedRecord(
                 record_id=row.record_id,
                 user_id=row.user_id,
@@ -115,6 +132,20 @@ class BackendRecordReader:
             )
             for row in rows
         ]
+        if records and s.record_facts_store_raw:
+            raw = await self._raw_rows([r.record_id for r in records])
+            records = [replace(r, raw_record=raw.get(r.record_id)) for r in records]
+        return records
+
+    async def _raw_rows(self, record_ids: list[int]) -> dict[int, dict[str, Any]]:
+        """records 한 행의 모든 칸 — 칸 이름을 하나씩 적지 않고 통째로 읽어 JSON으로 바꾼다."""
+        rows = await self._mysql.execute(
+            text("SELECT * FROM records WHERE record_id IN :ids").bindparams(
+                bindparam("ids", expanding=True)
+            ),
+            {"ids": record_ids},
+        )
+        return {row.record_id: jsonable(dict(row._mapping)) for row in rows}
 
 
 class SyncCursorStore:

@@ -269,3 +269,48 @@ async def test_record_facts_are_saved_even_when_photo_signing_fails():
         facts=facts,
     )
     assert 1 in facts.rows  # 원문은 사진 문제와 상관없이 저장된다
+
+
+def test_jsonable_turns_database_values_into_json_safe_ones():
+    from datetime import date, time
+    from decimal import Decimal
+
+    from app.db.repositories.record_sync_repository import jsonable
+
+    row = {
+        "created_at": datetime(2026, 10, 15, 21, 30),
+        "day": date(2026, 10, 15),
+        "t": time(21, 30),
+        "temp": Decimal("14.5"),
+        "blob": b"\x01\xff",
+        "n": None,
+        "nested": [Decimal("1.5"), {"x": datetime(2026, 1, 1)}],
+    }
+
+    assert jsonable(row) == {
+        "created_at": "2026-10-15T21:30:00",
+        "day": "2026-10-15",
+        "t": "21:30:00",
+        "temp": 14.5,
+        "blob": "01ff",
+        "n": None,
+        "nested": [1.5, {"x": "2026-01-01T00:00:00"}],
+    }
+
+
+async def test_whole_record_is_kept_as_raw_json_in_the_facts():
+    from dataclasses import replace
+
+    raw = {"record_id": 1, "visibility": "PRIVATE", "comment": "비 오는 날", "extra_col": 7}
+    facts, _ = await _run_with_facts([replace(_rich(1, 1), raw_record=raw)], store_comment=True)
+
+    assert facts.rows[1].raw_record == raw  # 코드가 모르는 칸(extra_col)도 그대로 남는다
+
+
+async def test_raw_json_drops_the_comment_when_comment_storage_is_off():
+    from dataclasses import replace
+
+    raw = {"record_id": 1, "comment": "비 오는 날", "extra_col": 7}
+    facts, _ = await _run_with_facts([replace(_rich(1, 1), raw_record=raw)], store_comment=False)
+
+    assert facts.rows[1].raw_record == {"record_id": 1, "extra_col": 7}

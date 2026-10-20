@@ -83,6 +83,10 @@ class RecordFact(Base):
     comment_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     track_title: Mapped[str | None] = mapped_column(String(300), nullable=True)
     artist_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # 백엔드 records 한 행의 모든 칸을 원문 그대로 (칸이 늘어도 받는다). NULL은 아직 안 채운 행
+    raw_record: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
     synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

@@ -11,6 +11,7 @@
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from sqlalchemy import delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
@@ -35,6 +36,7 @@ class RecordFactData:
     comment_text: str | None = None
     track_title: str | None = None
     artist_name: str | None = None
+    raw_record: dict[str, Any] | None = None  # 백엔드 records 한 행의 모든 칸 (원문 그대로)
 
 
 _UPDATED = (
@@ -50,6 +52,7 @@ _UPDATED = (
     "comment_text",
     "track_title",
     "artist_name",
+    "raw_record",
 )
 
 
