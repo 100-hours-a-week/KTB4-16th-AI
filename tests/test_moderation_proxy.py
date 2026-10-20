@@ -88,3 +88,20 @@ def _clear_cached_client():
     get_moderation_client.cache_clear()
     yield
     get_moderation_client.cache_clear()
+
+
+def test_empty_body_is_logged_at_the_gateway_and_still_forwarded(caplog):
+    import logging
+
+    client, seen = _client(lambda r: httpx.Response(400, json={"code": "INVALID_INPUT"}))
+
+    with caplog.at_level(logging.WARNING, logger="muro.moderation_proxy"):
+        res = client.post(
+            "/api/moderation/check",
+            content=b"",
+            headers={**AUTH, "Content-Type": "application/json"},
+        )
+
+    assert res.status_code == 400  # 안쪽의 판단(본문 필요)을 그대로 전달
+    assert any("본문이 비어 있음" in r.message for r in caplog.records)
+    assert len(seen) == 1 and seen[0].content == b""

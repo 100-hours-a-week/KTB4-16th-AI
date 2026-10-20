@@ -10,6 +10,7 @@
 UPSTREAM_UNAVAILABLE을 준다 (백엔드는 실패를 "차단"으로 처리한다).
 """
 
+import logging
 from functools import lru_cache
 
 import httpx
@@ -17,6 +18,8 @@ from fastapi import APIRouter, Depends, Request, Response
 
 from app.config import get_settings
 from app.exceptions import UpstreamError
+
+logger = logging.getLogger("muro.moderation_proxy")
 
 router = APIRouter(prefix="/api/moderation", tags=["기능6 모더레이션"])
 health_router = APIRouter(prefix="/api/moderation", tags=["health"])
@@ -50,11 +53,21 @@ async def _forward(client: httpx.AsyncClient, method: str, path: str, **kwargs) 
 async def check(
     request: Request, client: httpx.AsyncClient = Depends(get_moderation_client)
 ) -> Response:
+    body = await request.body()
+    if not body:
+        # 호출하는 쪽이 JSON 헤더만 붙이고 본문을 안 보낸 경우 — 안쪽에서 "body: Field required"로만
+        # 보여서 원인을 찾기 어려웠다. 어디서 비어 왔는지 여기서 남긴다 (본문 내용은 남기지 않는다)
+        logger.warning(
+            "모더레이션 요청 본문이 비어 있음 (content-length=%s, content-type=%s) — "
+            "전달하다 빠진 게 아니라 받을 때부터 비어 있었음",
+            request.headers.get("content-length"),
+            request.headers.get("content-type"),
+        )
     return await _forward(
         client,
         "POST",
         CHECK_PATH,
-        content=await request.body(),
+        content=body,
         headers={
             "Content-Type": request.headers.get("content-type", "application/json"),
             # 모더레이션 서비스도 같은 토큰을 확인한다
