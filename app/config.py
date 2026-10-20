@@ -94,9 +94,10 @@ class Settings(BaseSettings):
     #   mysql: 질문마다 백엔드 MySQL에서 읽는다 (기본, 지금 방식)
     #   postgres: AI PostgreSQL의 record_facts에서 읽는다. 채우기 도구로 값을 먼저 채운 뒤에 바꾼다
     memory_record_source: Literal["mysql", "postgres"] = "mysql"
-    # record_facts에 코멘트 원문(comment_text)을 저장할지. 기본은 저장하지 않는다 (개인정보).
-    # 끄면 postgres로 읽을 때 "사전에 없는 장소를 코멘트 글자로 찾기"가 동작하지 않는다
-    record_facts_store_comment: bool = False
+    # record_facts에 코멘트 원문(comment_text)을 저장할지. 기본은 저장한다 — 하이브리드 검색이
+    # 원문을 쓰고, 끄면 postgres로 읽을 때 "사전에 없는 장소를 코멘트 글자로 찾기"가 안 된다.
+    # 자물쇠가 삭제되면 record_facts 행도 함께 지워진다 (개인정보)
+    record_facts_store_comment: bool = True
     memory_search_condition_candidates: int = 50  # 조건으로만 후보가 되는 기록의 최대 개수
     # 프론트는 앞 5건을 먼저 보여주고 "더보기"에서 나머지를 보여준다. 모두 맞는 기록이 이 건수보다
     # 적을 때만 일부만 맞는 기록을 문장으로 제안한다 (요청 limit이 더 작으면 그 값)
@@ -158,10 +159,10 @@ class Settings(BaseSettings):
     balance_question_days_ahead: int = 2
 
     # 기능4 자물쇠 동기화 — AI 워커가 백엔드 DB를 읽어 와서 임베딩 큐에 넣는다 (pull)
-    # 기본은 꺼짐: 백엔드가 아직 POST /api/embeddings/generate로 보내 주는 동안에는 켜지 않는다.
-    # 켜기 전에 확인: 백엔드 읽기 계정이 record_photos를 읽을 수 있는지, 사진 GCS 서명 권한이
-    # 있는지.
-    record_sync_enabled: bool = False
+    # 기본은 켜짐 (2026-10-20 결정: 자물쇠 전체를 AI DB에 원문으로 두고 벡터는 따로 만든다).
+    # BACKEND_MYSQL_URL이 없으면 건너뛴다. 백엔드가 POST /api/embeddings/generate로 보내 주는
+    # 동안에도 같은 recordId는 한 번만 처리돼서 겹쳐도 안전하다. 끄려면 false
+    record_sync_enabled: bool = True
     record_sync_interval_minutes: int = 5
     record_sync_batch_size: int = 500  # 한 번에 읽는 자물쇠 수 (처음 백필 때는 여러 번 반복)
     # 자물쇠 사진이 저장된 백엔드 테이블·칸 (백엔드 스키마 record_photos.image_url 기준)

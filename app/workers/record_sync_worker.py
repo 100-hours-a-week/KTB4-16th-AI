@@ -152,10 +152,19 @@ async def _apply(
         # 자물쇠 사진은 필수라 정상이면 없을 수 없다 — 데이터 문제로 보고 건너뛴다
         logger.warning("사진 없는 자물쇠 %s — 임베딩 건너뜀", record.record_id)
         return
+    try:
+        photo_url = signer.sign(record.photo_key)
+    except Exception:
+        # 사진 주소를 못 만들어도(권한·버킷 설정·없는 파일) 다른 자물쇠의 동기화를 막지 않는다.
+        # 이 자물쇠의 원문(record_facts)은 이미 저장했고, 임베딩은 자물쇠가 바뀔 때 다시 시도된다
+        logger.warning(
+            "자물쇠 %s 사진 주소 생성 실패 — 임베딩 건너뜀", record.record_id, exc_info=True
+        )
+        return
     await jobs.enqueue(
         job_type=embedding_worker.JOB_TYPE,
         dedupe_key=key,
-        payload=embedding_payload(record, signer.sign(record.photo_key)),
+        payload=embedding_payload(record, photo_url),
         max_attempts=get_settings().job_max_attempts,
     )
 
