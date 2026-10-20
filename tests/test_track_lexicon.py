@@ -3,6 +3,7 @@ import pytest
 from app.components.track_lexicon import (
     TrackLexicon,
     artist_keys,
+    artist_name_keys,
     artist_names,
     compact,
     title_keys,
@@ -144,3 +145,55 @@ def test_names_wrapped_in_any_kind_of_quotes_are_explicit(question):
 def test_empty_lexicon_is_falsy_and_finds_nothing():
     assert not TrackLexicon.build([])
     assert TrackLexicon.build([]).find_artists("아이유 노래") == ([], "아이유 노래")
+
+
+# ---- 가수 별칭 (영어↔한글) ---------------------------------------------------
+
+
+def test_other_spelling_finds_the_artist_and_reports_the_stored_name():
+    lexicon = TrackLexicon.build([TrackName("소나기", "RESCENE")], {"rescene": ["리센느"]})
+
+    found, blanked = lexicon.find_artists("리센느 노래 들었던 날")
+
+    assert found == ["RESCENE"]  # 안내 문장에는 저장된 이름을 쓴다
+    assert "리센느" not in blanked
+    assert lexicon.find_artists("RESCENE 노래")[0] == ["RESCENE"]  # 저장된 이름도 그대로 찾는다
+
+
+def test_aliases_apply_to_each_artist_of_a_several_artist_column():
+    lexicon = TrackLexicon.build(
+        [TrackName("곡", "로꼬, 펀치")], {"로꼬": ["Loco"], "펀치": ["Punch"]}
+    )
+
+    assert lexicon.find_artists("loco 노래")[0] == ["로꼬"]
+    assert lexicon.find_artists("punch 노래")[0] == ["펀치"]
+
+
+def test_aliases_of_artists_the_user_never_saved_do_not_leak_in():
+    lexicon = TrackLexicon.build([TrackName("소나기", "RESCENE")], {"adele": ["아델"]})
+
+    assert lexicon.find_artists("아델 노래 들었던 날") == ([], "아델 노래 들었던 날")
+
+
+def test_too_short_or_generic_aliases_are_ignored():
+    lexicon = TrackLexicon.build([TrackName("곡", "RESCENE")], {"rescene": ["가", "노래"]})
+
+    assert not lexicon.find_artists("가 노래")[0]
+
+
+def test_alias_said_with_the_name_marker_is_explicit():
+    lexicon = TrackLexicon.build([TrackName("소나기", "RESCENE")], {"rescene": ["리센느"]})
+
+    (match,) = lexicon.matches("리센느라는 가수")
+
+    assert (match.kind, match.name, match.explicit) == ("artist", "RESCENE", True)
+
+
+def test_artist_name_keys_split_columns_and_skip_empty_ones():
+    tracks = [
+        TrackName("곡", "RESCENE, 리센느"),
+        TrackName("곡", None),
+        TrackName("곡", "Hype Boy"),
+    ]
+
+    assert artist_name_keys(tracks) == {"rescene", "리센느", "hypeboy"}

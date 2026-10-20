@@ -48,8 +48,9 @@ from app.components.memory_answer import (
 from app.components.query_conditions import Condition
 from app.components.question_parser import QuestionParser
 from app.components.rank_fusion import combine_with_conditions, fuse
-from app.components.track_lexicon import TrackLexicon
+from app.components.track_lexicon import TrackLexicon, artist_name_keys
 from app.components.vector_search import MemoryVectorSearch, SimilarRecord
+from app.db.repositories.artist_alias_repository import ArtistAliasSource
 from app.db.repositories.memory_record_repository import ConditionRow, MemoryRecordSource
 from app.exceptions import UpstreamError
 from app.schemas.memory_search import (
@@ -94,6 +95,7 @@ class MemorySearchService:
         headline_writer: HeadlineWriter | None = None,
         headline_timeout: float = 8.0,
         today: Callable[[], date] = today_kst,
+        aliases: ArtistAliasSource | None = None,
     ):
         self._embedder = embedder
         self._search = search
@@ -112,6 +114,7 @@ class MemorySearchService:
         self._headline_writer = headline_writer  # 없으면 앞머리는 템플릿 문장
         self._headline_timeout = headline_timeout
         self._today = today
+        self._aliases = aliases  # 없으면 저장된 이름 그대로만 가수를 찾는다
 
     async def search(self, req: MemorySearchRequest) -> MemorySearchResponse:
         conditions = (
@@ -155,7 +158,17 @@ class MemorySearchService:
             # 이름 목록은 검색을 돕는 부가 정보다. 못 읽어도 가수·곡명 없이 평소처럼 검색한다
             logger.warning("기억 검색 곡 목록 읽기 실패 — 가수·곡명 조건 없이 진행", exc_info=True)
             return TrackLexicon.build([])
-        return TrackLexicon.build(names)
+        return TrackLexicon.build(names, await self._artist_aliases(names))
+
+    async def _artist_aliases(self, names) -> dict[str, list[str]]:
+        """저장된 가수 이름의 다른 표기(영어↔한글). 못 읽어도 저장된 이름만으로 평소처럼 찾는다."""
+        if self._aliases is None:
+            return {}
+        try:
+            return await self._aliases.aliases_for(artist_name_keys(names))
+        except UpstreamError:
+            logger.warning("가수 별칭 읽기 실패 — 별칭 없이 진행", exc_info=True)
+            return {}
 
     async def _search_by_similarity(
         self,

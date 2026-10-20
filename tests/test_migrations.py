@@ -126,3 +126,13 @@ def test_record_facts_raw_migration_follows_the_sync_state_migration():
     revision = _script().get_revision("0013")
 
     assert revision.down_revision == "0012"
+
+
+def test_artist_aliases_migration_follows_the_record_facts_raw_migration_and_only_adds_a_table():
+    revision = _script().get_revision("0014")
+
+    assert revision.down_revision == "0013"
+    sql = _offline_sql("0013:0014")
+    assert any("CREATE TABLE artist_aliases" in s for s in sql)
+    assert not any("ALTER TABLE" in s for s in sql)  # 기존 표는 건드리지 않는다
+    assert any("DROP TABLE artist_aliases" in s for s in _offline_sql("0014:0013"))
