@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends
 
 from app.clients.spotify_client import SpotifySearchClient
 from app.components.clip_tagger import ClipTagger
+from app.components.embedder import Embedder
 from app.components.reranker import Reranker
 from app.components.saved_song_pool import SavedSongPool
 from app.components.song_curator import SongCurator
@@ -10,6 +11,7 @@ from app.config import get_settings
 from app.db.repositories.track_lookup_repository import TrackLookupStore
 from app.dependencies import (
     get_clip_tagger,
+    get_embedder,
     get_reranker,
     get_saved_song_pool,
     get_song_curator,
@@ -33,6 +35,7 @@ async def photo_recommend(
     track_lookups: TrackLookupStore = Depends(get_track_lookup_store),
     song_pool: SongPool | None = Depends(get_song_pool),
     saved_pool: SavedSongPool = Depends(get_saved_song_pool),
+    embedder: Embedder = Depends(get_embedder),
 ) -> PhotoRecommendResponse:
     s = get_settings()
     service = PhotoRecommendService(
@@ -46,5 +49,6 @@ async def photo_recommend(
         llm_count=s.song_pool_llm_count,
         saved_pool=saved_pool,
         saved_count=s.song_pool_saved_count,
+        embedder=embedder,
     )
     return await service.recommend(req)
