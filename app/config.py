@@ -91,9 +91,10 @@ class Settings(BaseSettings):
     memory_search_other_condition_weight: float = 1.0  # 그 밖의 조건
     memory_search_scan_limit: int = 5000  # 조건 비교를 위해 읽는 자물쇠의 최대 개수 (최근순)
     # 기억 검색(과 추천의 같은 날씨 취향)이 자물쇠 조건 값을 읽는 곳.
-    #   mysql: 질문마다 백엔드 MySQL에서 읽는다 (기본, 지금 방식)
-    #   postgres: AI PostgreSQL의 record_facts에서 읽는다. 채우기 도구로 값을 먼저 채운 뒤에 바꾼다
-    memory_record_source: Literal["mysql", "postgres"] = "mysql"
+    #   postgres: AI PostgreSQL의 record_facts에서 읽는다 (기본). 값은 자물쇠 동기화
+    #     (record_sync_enabled)가 채운다. 백엔드 DB 주소가 없어도 동작한다
+    #   mysql: 질문마다 백엔드 MySQL에서 읽는다. 동기화가 멈췄을 때 되돌리는 용도
+    memory_record_source: Literal["mysql", "postgres"] = "postgres"
     # record_facts에 코멘트 원문(comment_text)을 저장할지. 기본은 저장한다 — 하이브리드 검색이
     # 원문을 쓰고, 끄면 postgres로 읽을 때 "사전에 없는 장소를 코멘트 글자로 찾기"가 안 된다.
     # 자물쇠가 삭제되면 record_facts 행도 함께 지워진다 (개인정보)
