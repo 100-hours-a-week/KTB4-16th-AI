@@ -183,9 +183,10 @@ class Settings(BaseSettings):
     # 서명 URL 유효시간 — 임베딩 큐가 재시도해도 끝날 만큼 넉넉히
     photo_signed_url_minutes: int = 120
 
-    # 가수 이름 별칭(영어↔한글) — 워커가 record_facts의 가수 이름을 LLM으로 다른 언어 표기로 바꿔
-    # artist_aliases에 쌓는다. 기억 검색이 "리센느"·"RESCENE"를 어느 쪽으로 저장됐든 찾게 한다.
-    # 아직 변환하지 않은 가수만 부르므로 비용은 가수 한 명당 한 번이다. 끄려면 false
+    # 가수 이름 별칭 — 워커가 record_facts의 가수 이름마다 LLM에게 영어↔한글 표기, 다른 철자, 흔한
+    # 오타, 줄임말·별명을 받아 artist_aliases에 쌓는다. 기억 검색이 "리센느"·"RESCENE"·"지디"를
+    # 저장된 이름과 상관없이 찾게 한다. 아직 변환하지 않은 가수만 부르므로 비용은 한 명당 한 번이다.
+    # 끄려면 false
     artist_alias_enabled: bool = True
     artist_alias_interval_minutes: int = 60
     artist_alias_concurrency: int = 5
