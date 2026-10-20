@@ -70,6 +70,10 @@ PERSONAL_SIMILARITY_THRESHOLD = SIMILARITY_DEFAULTS["kure"]
 SIMILAR_SEARCH_LIMIT = 5
 # 취향 벡터를 만들 때 쓰는 최근 저장 곡 수
 TASTE_RECORD_LIMIT = 50
+# 개인화·벡터 정렬은 있으면 좋은 부가 단계라서, 느리면 기다리지 않고 건너뛴다 (태그 점수로 계속).
+# 임베딩 서비스나 DB가 느릴 때 이 단계가 응답 전체를 붙잡지 않게 한다
+EMBED_TIMEOUT_SECONDS = 2.0
+TASTE_TIMEOUT_SECONDS = 1.5
 # 상황(날씨)이 맞는 기록을 찾으려고 최근 기록을 읽는 수
 SITUATIONAL_ROW_LIMIT = 300
 # 주변 인기곡 중 벡터를 찾아볼 최대 곡 수
@@ -295,7 +299,10 @@ class ContextRecommendService:
         if not sentence or (self._pool is None and self._saved_pool is None):
             return None
         try:
-            return await self._embedder.embed(sentence)
+            return await asyncio.wait_for(self._embedder.embed(sentence), EMBED_TIMEOUT_SECONDS)
+        except TimeoutError:
+            logger.warning("분위기 문장 임베딩이 %.1f초 넘게 걸려 건너뜀", EMBED_TIMEOUT_SECONDS)
+            return None
         except Exception:
             logger.warning("분위기 문장 임베딩 실패 — 태그 점수로만 고름", exc_info=True)
             return None
@@ -318,13 +325,19 @@ class ContextRecommendService:
     async def _taste_vector(self, req: ContextRecommendRequest) -> list[float] | None:
         """지금과 같은 날씨에 저장한 기록이 충분하면 그 기록들로, 아니면 최근 저장 곡 전체로."""
         try:
-            situational = await self._situational_taste(req)
-            if situational is not None:
-                return situational
-            return mean_vector(await self._records.music_vectors(req.user_id, TASTE_RECORD_LIMIT))
+            return await asyncio.wait_for(self._taste_vector_unbounded(req), TASTE_TIMEOUT_SECONDS)
+        except TimeoutError:
+            logger.warning("취향 벡터 조회가 %.1f초 넘게 걸려 건너뜀", TASTE_TIMEOUT_SECONDS)
+            return None
         except Exception:
             logger.warning("취향 벡터 조회 실패 — 상황 벡터만 사용", exc_info=True)
             return None
+
+    async def _taste_vector_unbounded(self, req: ContextRecommendRequest) -> list[float] | None:
+        situational = await self._situational_taste(req)
+        if situational is not None:
+            return situational
+        return mean_vector(await self._records.music_vectors(req.user_id, TASTE_RECORD_LIMIT))
 
     async def _situational_taste(self, req: ContextRecommendRequest) -> list[float] | None:
         if self._record_source is None:
@@ -363,10 +376,17 @@ class ContextRecommendService:
         개인화는 있으면 좋은 부가 신호라, 여기서 난 오류로 추천 전체를 실패시키지 않는다.
         """
         try:
-            query_vector = await self._embedder.embed(moment)
+            query_vector = await asyncio.wait_for(
+                self._embedder.embed(moment), EMBED_TIMEOUT_SECONDS
+            )
             hits = await self._records.similar_by_comment(
                 user_id, query_vector, SIMILAR_SEARCH_LIMIT
             )
+        except TimeoutError:
+            logger.warning(
+                "상황 문장 임베딩이 %.1f초 넘게 걸려 개인 기록 검색을 건너뜀", EMBED_TIMEOUT_SECONDS
+            )
+            return []
         except Exception:
             logger.exception("개인 기록 검색 실패 — GENERIC으로 진행")
             return []

@@ -33,6 +33,7 @@ song_curator.py, reranker.py). 그래서 지금은 song_curator가 곡 추천과
   place만 받아두고 실제 조회는 미구현 — 지금은 빈 tracks로 대체한다.
 """
 
+import asyncio
 import logging
 from dataclasses import replace
 
@@ -55,6 +56,8 @@ from app.schemas.photo_recommend import PhotoRecommendRequest, PhotoRecommendRes
 logger = logging.getLogger("muro.photo_recommend")
 
 RESULT_COUNT = 5
+# 벡터 정렬은 있으면 좋은 부가 단계라서 임베딩이 느리면 기다리지 않고 건너뛴다 (태그 점수로 계속)
+EMBED_TIMEOUT_SECONDS = 2.0
 
 
 class PhotoRecommendService:
@@ -168,7 +171,10 @@ class PhotoRecommendService:
         ):
             return None
         try:
-            return await self._embedder.embed(sentence)
+            return await asyncio.wait_for(self._embedder.embed(sentence), EMBED_TIMEOUT_SECONDS)
+        except TimeoutError:
+            logger.warning("분위기 문장 임베딩이 %.1f초 넘게 걸려 건너뜀", EMBED_TIMEOUT_SECONDS)
+            return None
         except Exception:
             logger.warning("분위기 문장 임베딩 실패 — 태그 점수로만 고름", exc_info=True)
             return None

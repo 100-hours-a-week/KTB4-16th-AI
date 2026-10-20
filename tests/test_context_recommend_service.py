@@ -822,3 +822,57 @@ def _saved_pool_with(*songs):
             return list(songs)
 
     return SavedSongPool(_Search(), rng=random.Random(0))
+
+
+class _HangingEmbedder:
+    model = "hang"
+
+    async def embed(self, text):
+        import asyncio
+
+        await asyncio.sleep(30)
+
+
+async def test_slow_embedding_is_skipped_so_the_request_is_not_held(monkeypatch):
+    import time
+
+    from app.services import context_recommend_service as svc
+
+    monkeypatch.setattr(svc, "EMBED_TIMEOUT_SECONDS", 0.05)
+    pool = _VectorRecordingPool()
+    service = ContextRecommendService(
+        embedder=_HangingEmbedder(),
+        record_search=StubRecordSearch(),
+        song_curator=StubSongCurator(_tagged()),
+        reranker=Reranker(),
+        spotify_search=StubSpotify(DEFAULT_SEARCH),
+        song_pool=pool,
+        pool_count=3,
+    )
+
+    started = time.monotonic()
+    await service.recommend(_req())
+
+    assert time.monotonic() - started < 5  # 30초 걸리는 임베딩을 기다리지 않는다
+    assert pool.vector is None  # 벡터 없이 태그 점수로 계속했다
+
+
+class _SlowRecordSearch(StubRecordSearch):
+    async def music_vectors(self, user_id, limit):
+        import asyncio
+
+        await asyncio.sleep(30)
+
+
+async def test_slow_taste_lookup_is_skipped_and_the_situation_vector_is_used(monkeypatch):
+    import time
+
+    from app.services import context_recommend_service as svc
+
+    monkeypatch.setattr(svc, "TASTE_TIMEOUT_SECONDS", 0.05)
+    started = time.monotonic()
+
+    vector = await _picked_vector(records=_SlowRecordSearch(), taste_weight=0.3)
+
+    assert time.monotonic() - started < 5
+    assert vector == [1.0, 0.0, 0.0]  # 취향을 못 읽어서 상황 벡터 그대로

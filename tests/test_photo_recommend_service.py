@@ -678,3 +678,22 @@ async def test_photo_db_songs_are_ordered_by_hybrid_score_and_the_claude_song_co
     res = await service.recommend(_req())
 
     assert [t.title for t in res.tracks] == ["가까운곡", "먼곡", "클로드곡"]
+
+
+async def test_photo_slow_embedding_is_skipped_so_the_request_is_not_held(monkeypatch):
+    import asyncio
+    import time
+
+    from app.services import photo_recommend_service as svc
+
+    class Hanging:
+        async def embed(self, text):
+            await asyncio.sleep(30)
+
+    monkeypatch.setattr(svc, "EMBED_TIMEOUT_SECONDS", 0.05)
+    started = time.monotonic()
+
+    vector = await _vector_for(embedder=Hanging())
+
+    assert time.monotonic() - started < 5
+    assert vector is None
