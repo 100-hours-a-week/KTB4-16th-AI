@@ -157,6 +157,22 @@ class Settings(BaseSettings):
     # 그룹마다 미리 채워 둘 날짜 수 (배치가 하루 실패해도 질문이 비지 않게)
     balance_question_days_ahead: int = 2
 
+    # 기능4 자물쇠 동기화 — AI 워커가 백엔드 DB를 읽어 와서 임베딩 큐에 넣는다 (pull)
+    # 기본은 꺼짐: 백엔드가 아직 POST /api/embeddings/generate로 보내 주는 동안에는 켜지 않는다.
+    # 켜기 전에 확인: 백엔드 읽기 계정이 record_photos를 읽을 수 있는지, 사진 GCS 서명 권한이
+    # 있는지.
+    record_sync_enabled: bool = False
+    record_sync_interval_minutes: int = 5
+    record_sync_batch_size: int = 500  # 한 번에 읽는 자물쇠 수 (처음 백필 때는 여러 번 반복)
+    # 자물쇠 사진이 저장된 백엔드 테이블·칸 (백엔드 스키마 record_photos.image_url 기준)
+    backend_photo_table: str = "record_photos"
+    backend_photo_record_column: str = "record_id"
+    backend_photo_key_column: str = "image_url"
+    # 사진 GCS 버킷. 비우면 사진 키를 그대로 URL로 쓴다 (키가 이미 https URL인 경우)
+    gcs_photo_bucket: str = ""
+    # 서명 URL 유효시간 — 임베딩 큐가 재시도해도 끝날 만큼 넉넉히
+    photo_signed_url_minutes: int = 120
+
     # 외부 API 공통
     external_timeout_seconds: float = 20.0
     external_max_retries: int = 2

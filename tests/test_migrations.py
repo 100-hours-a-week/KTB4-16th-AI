@@ -114,3 +114,9 @@ def test_record_facts_migration_follows_the_text_embedding_migration_and_only_ad
     assert not any("ALTER TABLE" in s for s in sql)
     down = _offline_sql("0011:0010")
     assert any("DROP TABLE record_facts" in s for s in down)
+
+
+def test_sync_state_migration_follows_the_record_facts_migration():
+    revision = _script().get_revision("0012")
+
+    assert revision.down_revision == "0011"
