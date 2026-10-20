@@ -25,6 +25,10 @@ _BEFORE = r"(?<![가-힣0-9])"
 _YEAR_WORDS = "|".join(sorted(_YEAR_OFFSETS, key=len, reverse=True))  # 긴 말부터 ("재작년"이 먼저)
 
 
+# "지난 주말"에서 앞 낱말만 가져갔을 때의 이름 (안내 문장에 "지난, 주말"로 나오지 않게)
+_WEEKEND_LEAD_LABELS = {"지난": "지난 주", "저번": "지난 주", "이번": "이번 주"}
+
+
 @dataclass(frozen=True)
 class PeriodMatch:
     label: str  # 질문에서 잡힌 말
@@ -50,6 +54,7 @@ def parse_periods(
             span = build(match)
             if span is not None:
                 label = " ".join(match.group(0).split())
+                label = _WEEKEND_LEAD_LABELS.get(label, label)
                 found.append(PeriodMatch(label, span[0], span[1]))
             text = blank_out(text, match.start(), match.end())
     return found, text
@@ -104,6 +109,13 @@ def _rules(
 
     def year_word_season(m: re.Match[str]) -> Span:
         return season_range(seasons[m[2]], today.year + _YEAR_OFFSETS[m[1]])
+
+    def year_word_date(m: re.Match[str]) -> Span:
+        try:
+            day = date(today.year + _YEAR_OFFSETS[m[1]], int(m[2]), int(m[3]))
+        except ValueError:  # 2월 30일처럼 없는 날짜
+            return None
+        return day, day
 
     def year_word_month(m: re.Match[str]) -> Span:
         month = int(m[2])
@@ -163,11 +175,19 @@ def _rules(
         (re.compile(r"(?<![0-9])(\d{4})\s*년\s*(\d{1,2})\s*월"), year_month),
         (re.compile(r"(?<![0-9])((?:19|20)\d{2})\s*년"), year_only),
         (re.compile(_BEFORE + rf"({_YEAR_WORDS})\s*({season_names})"), year_word_season),
+        # "작년 10월 15일": 달만 말한 규칙보다 먼저 봐야 "15일"이 버려지지 않는다
+        (
+            re.compile(_BEFORE + rf"({_YEAR_WORDS})\s*(\d{{1,2}})\s*월\s*(\d{{1,2}})\s*일"),
+            year_word_date,
+        ),
         (re.compile(_BEFORE + rf"({_YEAR_WORDS})\s*(\d{{1,2}})\s*월"), year_word_month),
         (re.compile(_BEFORE + rf"(지난|저번|이번|올)\s*({season_names})"), relative_season),
         (re.compile(_BEFORE + rf"({_YEAR_WORDS})"), year_word),
         (re.compile(_BEFORE + r"(?:지난\s*달|저번\s*달)"), last_month),
         (re.compile(_BEFORE + r"(?:이번\s*달|이달)"), this_month),
+        # "지난 주말": 앞 낱말만 가져가서 그 주로 쓰고, "주말"은 남겨 요일 규칙(weekday)이 잡게 한다
+        (re.compile(_BEFORE + r"(?:지난|저번)\s*(?=주\s*말)"), last_week),
+        (re.compile(_BEFORE + r"이번\s*(?=주\s*말)"), this_week),
         (re.compile(_BEFORE + r"(?:지난\s*주|저번\s*주)(?!말)"), last_week),
         (re.compile(_BEFORE + r"이번\s*주(?!말)"), this_week),
         (re.compile(_BEFORE + rf"({numbers})\s*(일|주|개월|달|년)\s*전"), n_ago),

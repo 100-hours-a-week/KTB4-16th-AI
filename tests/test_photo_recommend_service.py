@@ -575,3 +575,106 @@ async def test_saved_song_lookup_failure_still_answers_with_the_rest():
     ids = [t.external_track_id for t in res.tracks]
     assert "s1" not in ids
     assert ids  # 나머지로 응답
+
+
+# ── 분위기 문장 벡터로 곡 풀 정렬 (기능1과 같은 방식) ───────────────────────
+
+
+class _SentenceEmbedder:
+    def __init__(self, vector=None, error=None):
+        self._vector = vector or [1.0, 0.0, 0.0]
+        self._error = error
+        self.sentences: list[str] = []
+
+    async def embed(self, text):
+        self.sentences.append(text)
+        if self._error:
+            raise self._error
+        return self._vector
+
+
+class _RecordingPool:
+    """곡 풀 대역 — 곡을 고를 때 받은 질문 벡터를 기록한다."""
+
+    def __len__(self):
+        return 1
+
+    def ranked(self, genres, moods, exclude=None, situation_vector=None):
+        self.vector = situation_vector
+        return []
+
+
+async def _vector_for(*, embedder, sentence="귀여운 반려동물과 함께한 따뜻한 카페의 오후"):
+    pool = _RecordingPool()
+    curation = _curation(songs=[_song("가수", "곡")])
+    curation = CurationResult(
+        curation.situation_genres, curation.situation_moods, curation.songs, mood_sentence=sentence
+    )
+    service = PhotoRecommendService(
+        clip_tagger=StubClipTagger(tags=["카페"], axes={"대상": "반려동물"}),
+        song_curator=StubSongCurator(curation=curation),
+        reranker=Reranker(),
+        spotify_search=StubSpotifySearch(_results_for(("가수", "곡"))),
+        song_pool=pool,
+        pool_count=3,
+        embedder=embedder,
+    )
+    await service.recommend(_req())
+    return pool.vector
+
+
+async def test_mood_sentence_is_embedded_and_used_to_rank_the_pool():
+    embedder = _SentenceEmbedder([0.0, 1.0, 0.0])
+
+    vector = await _vector_for(embedder=embedder)
+
+    assert vector == [0.0, 1.0, 0.0]
+    assert embedder.sentences == ["귀여운 반려동물과 함께한 따뜻한 카페의 오후"]
+
+
+async def test_embedding_failure_keeps_the_tag_only_behavior():
+    embedder = _SentenceEmbedder(error=RuntimeError("임베딩 서비스 장애"))
+
+    assert await _vector_for(embedder=embedder) is None
+
+
+async def test_no_embedding_when_claude_wrote_no_mood_sentence_or_no_embedder():
+    embedder = _SentenceEmbedder()
+
+    assert await _vector_for(embedder=embedder, sentence="") is None
+    assert embedder.sentences == []
+    assert await _vector_for(embedder=None) is None
+
+
+async def test_photo_db_songs_are_ordered_by_hybrid_score_and_the_claude_song_comes_last():
+    import random
+
+    from app.components.song_pool import PoolSong, SongPool
+
+    pool = SongPool(
+        [
+            PoolSong("A", "먼곡", ("댄스",), ("신나는", "화려한"), 0, (0.0, 1.0, 0.0)),
+            PoolSong("B", "가까운곡", ("댄스",), ("신나는", "화려한"), 0, (1.0, 0.0, 0.0)),
+        ],
+        rng=random.Random(0),
+    )
+    claude = _song("L", "클로드곡")
+    curation = CurationResult(
+        ("댄스",), ("신나는", "화려한"), [claude], mood_sentence="신나는 파티 분위기"
+    )
+    service = PhotoRecommendService(
+        clip_tagger=StubClipTagger(tags=["파티"]),
+        song_curator=StubSongCurator(curation=curation),
+        reranker=Reranker(),
+        spotify_search=StubSpotifySearch(
+            _results_for(("L", "클로드곡"), ("A", "먼곡"), ("B", "가까운곡"))
+        ),
+        song_pool=pool,
+        pool_count=2,
+        llm_count=3,
+        embedder=_SentenceEmbedder([1.0, 0.0, 0.0]),
+    )
+
+    res = await service.recommend(_req())
+
+    assert [t.title for t in res.tracks] == ["가까운곡", "먼곡", "클로드곡"]

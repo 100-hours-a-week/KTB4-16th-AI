@@ -332,3 +332,124 @@ async def test_fill_does_not_repeat_a_battle_pair_used_recently():
     )
 
     assert repo.approved[(DAY, "댄스")] == "취향 질문"
+
+
+def test_common_only_puts_every_user_in_the_common_group():
+    from app.components.music_genre_assigner import assign_all_common
+
+    saved = [_s(1, "b1"), _s(2, "i1"), _s(2, "b2"), _s(3, "old")]
+
+    result = assign_all_common(saved)
+
+    assert {a.music_genre for a in result.values()} == {"공통"}
+    assert set(result) == {1, 2, 3}
+    assert {a.source for a in result.values()} == {"common"}
+
+
+def test_question_groups_is_only_common_until_genre_groups_are_turned_on():
+    assert w.question_groups(True) == {"공통"}
+    assert w.question_groups(False) == set(MUSIC_GENRE_GROUPS)
+    assert len(w.question_groups(False)) == 14
+
+
+def test_common_only_is_the_default():
+    from app.config import Settings
+
+    assert Settings().balance_common_only is True
+
+
+def test_parse_preferred_accepts_json_csv_and_list_and_drops_unknown_genres():
+    from app.components.music_genre_assigner import parse_preferred
+
+    assert parse_preferred('["발라드", "인디음악"]') == ["발라드", "인디음악"]
+    assert parse_preferred("발라드, 댄스") == ["발라드", "댄스"]
+    assert parse_preferred(["랩/힙합", "없는장르", "랩/힙합"]) == ["랩/힙합"]
+    assert parse_preferred(None) == [] and parse_preferred("") == [] and parse_preferred(7) == []
+
+
+def _many(user, track, n):
+    return [_s(user, track) for _ in range(n)]
+
+
+def test_onboarding_is_ignored_when_the_user_has_saved_songs():
+    # 저장한 곡은 발라드뿐이지만 온보딩에서 인디를 골랐다 → 자물쇠가 있으니 온보딩은 안 본다
+    result = assign_genres(
+        _many(1, "b1", 2), GENRES, min_group_size=1, preferred={1: ["인디음악", "댄스"]}
+    )
+    assert result[1].music_genre == "발라드"
+
+
+def test_user_without_saved_songs_uses_the_most_popular_genre_among_their_onboarding_picks():
+    # 5, 6, 7은 자물쇠 없이 온보딩만 — 5는 [댄스, 발라드]를 골랐고 발라드를 고른 사람이 더 많다
+    preferred = {5: ["댄스", "발라드"], 6: ["발라드"], 7: ["발라드", "인디음악"]}
+    result = assign_genres([], GENRES, min_group_size=1, preferred=preferred)
+    assert result[5].music_genre == "발라드"
+
+
+def test_onboarding_ties_go_to_the_genre_picked_first():
+    result = assign_genres([], GENRES, min_group_size=1, preferred={5: ["댄스", "발라드"]})
+    assert result[5].music_genre == "댄스"
+
+
+def test_saved_song_users_count_toward_the_popularity_of_a_genre_for_onboarding_only_users():
+    # 발라드 자물쇠 사용자 2명 + 온보딩만 한 사용자 [댄스, 발라드] → 발라드(2)가 댄스(0)보다 크다
+    saved = _many(1, "b1", 1) + _many(2, "b1", 1)
+    result = assign_genres(saved, GENRES, min_group_size=1, preferred={9: ["댄스", "발라드"]})
+    assert result[9].music_genre == "발라드"
+
+
+def test_small_onboarding_group_goes_to_common_like_any_small_group():
+    result = assign_genres([], GENRES, min_group_size=2, preferred={5: ["댄스"]})
+    assert result[5].music_genre == "공통"  # 댄스를 고른 사람이 1명뿐
+
+
+def test_unreadable_onboarding_behaves_like_no_onboarding():
+    result = assign_genres(_many(1, "b1", 1), GENRES, min_group_size=1, preferred=None)
+    assert result[1].music_genre == "발라드"
+
+
+class _CatchUpRepo:
+    def __init__(self, filled=()):
+        self._filled = set(filled)
+
+    async def filled_groups(self, day):
+        return self._filled
+
+
+class _CatchUpJobs:
+    def __init__(self):
+        self.added: list[dict] = []
+
+    async def enqueue_if_absent(self, **fields):
+        if any(a["dedupe_key"] == fields["dedupe_key"] for a in self.added):
+            return False
+        self.added.append(fields)
+        return True
+
+
+async def test_catch_up_queues_a_batch_when_todays_questions_are_missing():
+    jobs = _CatchUpJobs()
+
+    queued = await w.catch_up(_CatchUpRepo(), jobs, date(2026, 10, 19), {"공통"})
+
+    assert queued is True
+    assert jobs.added[0]["payload"] == {"date": "2026-10-19"}
+    assert jobs.added[0]["dedupe_key"] == "2026-10-19:catch-up"  # 23시 배치 키와 다르다
+
+
+async def test_catch_up_does_nothing_when_todays_questions_exist():
+    jobs = _CatchUpJobs()
+
+    queued = await w.catch_up(_CatchUpRepo(filled={"공통"}), jobs, date(2026, 10, 19), {"공통"})
+
+    assert queued is False and jobs.added == []
+
+
+async def test_catch_up_is_queued_only_once_per_day():
+    jobs = _CatchUpJobs()
+    today = date(2026, 10, 19)
+
+    first = await w.catch_up(_CatchUpRepo(), jobs, today, {"공통"})
+    second = await w.catch_up(_CatchUpRepo(), jobs, today, {"공통"})
+
+    assert (first, second) == (True, False)

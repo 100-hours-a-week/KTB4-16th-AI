@@ -104,6 +104,48 @@ class SongPool:
                 break
         return [song.to_candidate() for song in picked]
 
+    def ranked(
+        self,
+        situation_genres: tuple[str, ...],
+        situation_moods: tuple[str, ...],
+        exclude: list[SongCandidate] | None = None,
+        situation_vector: list[float] | None = None,
+    ) -> list[tuple[PoolSong, float, float | None]]:
+        """태그 기준(MIN_SCORE)을 넘는 모든 후보를 (곡, 태그 점수, 벡터 유사도)로 돌려준다.
+
+        pick()과 달리 몇 곡을 고를지·무작위·같은 가수 걸러내기는 여기서 하지 않는다 — 저장된 곡과
+        같은 점수로 겨루게 하려고(db_picker) 점수만 매겨서 넘긴다. 벡터가 없거나 차원이 다르면
+        유사도는 None이다.
+        """
+        excluded = {_song_key(s.artist, s.title) for s in exclude or []}
+        usable = situation_vector is not None
+        out: list[tuple[PoolSong, float, float | None]] = []
+        for song in self._songs:
+            if _song_key(song.artist, song.title) in excluded:
+                continue
+            tag = _score(situation_genres, situation_moods, song)
+            if tag < MIN_SCORE:
+                continue
+            sim = None
+            if usable and cosine_rank_usable(situation_vector, song.embedding):
+                sim = cosine_similarity(situation_vector, song.embedding)
+            out.append((song, tag, sim))
+        return out
+
+    def vectors_for(self, tracks: list[tuple[str, str]]) -> list[tuple[int, tuple[float, ...]]]:
+        """(가수, 제목) 목록 중 곡 풀에 벡터가 있는 곡의 (목록 위치, 벡터).
+
+        가수·제목으로만 찾는다 — 주변 인기곡은 Spotify ID 없이 제목·가수만 온다.
+        곡 풀에 없는 곡은 빠진다.
+        """
+        by_key = {_song_key(s.artist, s.title): s.embedding for s in self._songs if s.embedding}
+        found = []
+        for i, (artist, title) in enumerate(tracks):
+            embedding = by_key.get(_song_key(artist, title))
+            if embedding is not None:
+                found.append((i, embedding))
+        return found
+
     def by_genre(self, genre: str) -> list[PoolSong]:
         """그 장르가 주 장르든 보조 장르든 걸린 곡 전부 — 기능6 곡 대결용."""
         return [song for song in self._songs if genre in song.genres]
@@ -137,6 +179,10 @@ def cosine_similarity(vector: list[float], embedding: tuple[float, ...] | None) 
     if embedding is None or not cosine_rank_usable(vector, embedding):
         return -1.0
     return sum(a * b for a, b in zip(vector, embedding, strict=True))
+
+
+def norm_artist(text: str) -> str:
+    return _norm(text)
 
 
 def _norm(text: str) -> str:

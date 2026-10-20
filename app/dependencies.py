@@ -2,7 +2,7 @@
 
 import logging
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Collection
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -54,6 +54,7 @@ from app.components.vector_search import MemoryVectorSearch, RecordSearch, Vecto
 from app.config import Settings, get_settings
 from app.db import mysql, postgres
 from app.db.postgres import get_session
+from app.db.repositories.artist_alias_repository import ArtistAliasRepository, ArtistAliasSource
 from app.db.repositories.balance_stats_repository import (
     BalanceStatsRepository,
     GenreStats,
@@ -65,7 +66,9 @@ from app.db.repositories.memory_record_repository import (
     ConditionRow,
     MemoryRecordRepository,
     MemoryRecordSource,
+    TrackName,
 )
+from app.db.repositories.record_fact_repository import RecordFactRepository
 from app.db.repositories.report_repository import MonthlyReportRepository
 from app.db.repositories.track_lookup_repository import TrackLookupRepository, TrackLookupStore
 from app.db.repositories.track_mood_repository import TrackMoodRepository
@@ -314,6 +317,15 @@ class _DbMemoryRecords:
         except SQLAlchemyError as e:
             raise UpstreamError("백엔드 DB에서 자물쇠 정보를 읽지 못했어요.") from e
 
+    async def list_track_names(self, *, user_id: int, limit: int) -> list[TrackName]:
+        try:
+            async with mysql.get_sessionmaker()() as mysql_session:
+                return await MemoryRecordRepository(mysql_session).list_track_names(
+                    user_id=user_id, limit=limit
+                )
+        except SQLAlchemyError as e:
+            raise UpstreamError("백엔드 DB에서 자물쇠 정보를 읽지 못했어요.") from e
+
 
 class _NoMemoryRecords:
     """백엔드 DB가 없는 로컬·테스트 환경 — 자물쇠를 확인할 수 없어서 결과가 비어 있다."""
@@ -324,10 +336,60 @@ class _NoMemoryRecords:
     async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
         return []
 
+    async def list_track_names(self, *, user_id: int, limit: int) -> list[TrackName]:
+        return []
+
+
+class _PgMemoryRecords:
+    """기억 검색의 자물쇠 확인·조건 정보 — AI PostgreSQL의 record_facts에서 읽는다.
+
+    백엔드 MySQL에는 접속하지 않는다. 값은 채우기 도구(app/tools/backfill_record_facts.py)가 넣는다.
+    """
+
+    @staticmethod
+    async def _read(read):
+        try:
+            async with postgres.get_sessionmaker()() as session:
+                return await read(RecordFactRepository(session))
+        except SQLAlchemyError as e:
+            raise UpstreamError("AI DB에서 자물쇠 정보를 읽지 못했어요.") from e
+
+    async def existing_ids(self, *, user_id: int, record_ids: list[int]) -> set[int]:
+        return await self._read(
+            lambda repo: repo.existing_ids(user_id=user_id, record_ids=record_ids)
+        )
+
+    async def list_condition_rows(self, *, user_id: int, limit: int) -> list[ConditionRow]:
+        return await self._read(lambda repo: repo.list_condition_rows(user_id=user_id, limit=limit))
+
+    async def list_track_names(self, *, user_id: int, limit: int) -> list[TrackName]:
+        return await self._read(lambda repo: repo.list_track_names(user_id=user_id, limit=limit))
+
+
+class _PgArtistAliases:
+    """가수 이름의 다른 표기 — AI PostgreSQL의 artist_aliases에서 읽는다 (질문에서 가수 찾기용)."""
+
+    async def aliases_for(self, name_keys: Collection[str]) -> dict[str, list[str]]:
+        try:
+            async with postgres.get_sessionmaker()() as session:
+                return await ArtistAliasRepository(session).aliases_for(name_keys)
+        except SQLAlchemyError as e:
+            raise UpstreamError("AI DB에서 가수 별칭을 읽지 못했어요.") from e
+
+
+def get_artist_alias_source() -> ArtistAliasSource | None:
+    if get_settings().ai_client_mode == "fake":
+        return None  # 로컬·테스트 환경: DB 없이 저장된 이름 그대로만 찾는다
+    return _PgArtistAliases()
+
 
 def get_memory_record_source() -> MemoryRecordSource:
     s = get_settings()
-    if s.ai_client_mode == "fake" or not s.backend_mysql_url:
+    if s.ai_client_mode == "fake":
+        return _NoMemoryRecords()
+    if s.memory_record_source == "postgres":
+        return _PgMemoryRecords()  # 백엔드 DB 주소가 없어도 된다
+    if not s.backend_mysql_url:
         return _NoMemoryRecords()
     return _DbMemoryRecords()
 
@@ -366,6 +428,7 @@ async def get_memory_search_service(
             HeadlineWriter(get_clients().llm_general) if s.memory_answer_llm_enabled else None
         ),
         headline_timeout=s.memory_answer_llm_timeout_seconds,
+        aliases=get_artist_alias_source(),
     )
 
 

@@ -7,6 +7,8 @@ import pytest
 from app.components.answer_headline import HeadlineWriter, build_prompt
 from app.components.memory_answer import NO_RESULT_TEXT
 from app.components.question_parser import QuestionParser
+from app.db.repositories.memory_record_repository import TrackName
+from app.exceptions import UpstreamError
 from app.schemas.memory_search import MemorySearchRequest
 from app.services.memory_search_service import MemorySearchService
 from tests.memory_fakes import (
@@ -253,6 +255,255 @@ async def test_exact_record_that_no_longer_exists_is_skipped(parser):
 
     assert res.records == []
     assert res.answer.startswith("서울숲 근처, 가을 조건에 모두 맞는 자물쇠는 없어요.")
+
+
+async def test_cloudy_question_finds_records_whose_stored_weather_has_other_case_or_spaces(parser):
+    rows = [
+        make_row(1, weather_condition="CLOUDY"),
+        make_row(2, weather_condition="overcast"),
+        make_row(3, weather_condition=" Cloudy "),
+        make_row(4, weather_condition="CLEAR"),
+    ]
+    details = {i: make_record(i) for i in (1, 2, 3, 4)}
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("흐린 날 들은 음악"))
+
+    assert sorted(m.record_id for m in res.records) == [1, 2, 3]
+
+
+async def test_evening_question_finds_records_saved_between_17_and_21(parser):
+    rows = [
+        make_row(1, created_at=datetime(2026, 10, 3, 17, 0)),
+        make_row(2, created_at=datetime(2026, 10, 4, 20, 59)),
+        make_row(3, created_at=datetime(2026, 10, 5, 21, 0)),
+        make_row(4, created_at=datetime(2026, 10, 6, 9, 30)),
+    ]
+    details = {i: make_record(i) for i in (1, 2, 3, 4)}
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("저녁에 들은 노래"))
+
+    assert sorted(m.record_id for m in res.records) == [1, 2]
+    assert res.answer == "저녁 시간 조건에 맞는 자물쇠를 찾았어요."
+
+
+async def test_last_weekend_question_needs_both_last_week_and_a_weekend_day(parser):
+    rows = [
+        make_row(1, created_at=datetime(2026, 10, 10, 15, 0)),  # 지난주 토
+        make_row(2, created_at=datetime(2026, 10, 11, 9, 0)),  # 지난주 일
+        make_row(3, created_at=datetime(2026, 10, 7, 12, 0)),  # 지난주 수 (주말이 아니다)
+        make_row(4, created_at=datetime(2026, 10, 3, 12, 0)),  # 지지난주 토 (지난주가 아니다)
+    ]
+    details = {i: make_record(i) for i in (1, 2, 3, 4)}
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("지난 주말에 들은 노래"))
+
+    assert sorted(m.record_id for m in res.records) == [1, 2]
+    # 하나만 맞는 기록은 제안으로 나간다
+    assert {s.record_id: s.matched_conditions for s in res.suggested_records} == {
+        3: ["지난 주"],
+        4: ["주말"],
+    }
+
+
+def _track_world():
+    """리센느 곡 2개(1·2번), 아이유 곡 1개(3번), 리센느의 곡이 아닌 분위기가 비슷한 곡(4번)."""
+    rows = [
+        make_row(1, track_title="소나기", artist_name="RESCENE, 리센느"),
+        make_row(2, track_title="Love Attack", artist_name="RESCENE, 리센느"),
+        make_row(3, track_title="밤편지 (Lullaby)", artist_name="아이유"),
+        make_row(4, track_title="Blueming", artist_name="아이유"),
+    ]
+    details = {i: make_record(i) for i in (1, 2, 3, 4)}
+    names = [TrackName(r.track_title, r.artist_name) for r in rows]
+    return rows, details, names
+
+
+async def test_artist_question_returns_that_artists_records_ranked_by_vector_similarity(parser):
+    rows, details, names = _track_world()
+    # 2번이 질문과 분위기가 더 비슷하고, 4번은 리센느의 곡이 아니지만 분위기가 가장 비슷하다
+    search = FakeVectorSearch(
+        comment=[hit(4, 0.95)],
+        music=[hit(2, 0.9), hit(1, 0.7)],
+        comment_similarity={2: 0.8},
+        music_similarity={1: 0.7},
+    )
+    records = FakeMemoryRecords({USER: details}, {USER: rows}, {USER: names})
+    service = _service(parser, search, records)
+
+    res = await service.search(_request("리센느 노래 중에 아련한 감성이었던 그날"))
+
+    assert [m.record_id for m in res.records] == [2, 1]  # 가수 조건으로 거르고, 분위기 순
+    assert res.answer == "가수 리센느 조건에 맞는 자물쇠를 찾았어요."
+    assert records.name_calls == [(USER, 5000)]  # 이 사용자의 곡 목록을 읽었다
+    # 리센느의 곡이 아니면 조건을 하나도 못 맞춰서 제안에도 안 나온다
+    assert res.suggested_records == []
+
+
+async def test_artist_condition_finds_records_that_the_vector_search_missed(parser):
+    rows, details, names = _track_world()
+    search = FakeVectorSearch(comment=[hit(4, 0.95)], music_similarity={1: 0.7, 2: 0.7})
+    service = _service(
+        parser, search, FakeMemoryRecords({USER: details}, {USER: rows}, {USER: names})
+    )
+
+    res = await service.search(_request("리센느 노래 들었던 거 뭐 있었지"))
+
+    assert sorted(m.record_id for m in res.records) == [1, 2]
+    # 조건으로만 후보가 된 기록의 유사도를 구했다 (순서는 점수 순)
+    ((user, looked_up),) = search.similarity_calls
+    assert user == USER and sorted(looked_up) == [1, 2]
+
+
+async def test_title_question_finds_the_track_by_its_core_name(parser):
+    rows, details, names = _track_world()
+    service = _service(
+        parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}, {USER: names})
+    )
+
+    res = await service.search(_request("밤편지 들었던 날"))
+
+    assert [m.record_id for m in res.records] == [3]
+    assert res.answer == "곡 밤편지 조건에 맞는 자물쇠를 찾았어요."
+
+
+async def test_artist_and_season_together_need_both_and_partial_matches_are_suggested(parser):
+    rows = [
+        make_row(
+            1, track_title="소나기", artist_name="리센느", created_at=datetime(2026, 10, 3, 9)
+        ),
+        make_row(
+            2, track_title="Love Attack", artist_name="리센느", created_at=datetime(2026, 5, 3, 9)
+        ),
+        make_row(
+            3, track_title="밤편지", artist_name="아이유", created_at=datetime(2026, 10, 4, 9)
+        ),
+    ]
+    names = [TrackName(r.track_title, r.artist_name) for r in rows]
+    details = {i: make_record(i) for i in (1, 2, 3)}
+    service = _service(
+        parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}, {USER: names})
+    )
+
+    res = await service.search(_request("가을에 리센느 노래 들은 날"))
+
+    assert [m.record_id for m in res.records] == [1]
+    assert {s.record_id: s.matched_conditions for s in res.suggested_records} == {
+        2: ["가수 리센느"],  # 가수만 맞음
+        3: ["가을"],  # 가을만 맞음
+    }
+
+
+async def test_exact_date_question_returns_only_that_day_not_the_whole_month(parser):
+    rows = [
+        make_row(1, created_at=datetime(2026, 10, 19, 9)),
+        make_row(2, created_at=datetime(2026, 10, 15, 9)),
+        make_row(3, created_at=datetime(2026, 10, 15, 21)),
+        make_row(4, created_at=datetime(2025, 10, 15, 9)),  # 다른 해의 같은 날
+        make_row(5, created_at=datetime(2026, 10, 14, 9)),
+    ]
+    details = {r.record_id: make_record(r.record_id) for r in rows}
+    service = _service(parser, FakeVectorSearch(), FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("10월 15일에 뭐 들었더라?"))
+
+    assert sorted(m.record_id for m in res.records) == [2, 3, 4]
+    assert res.answer == "10월 15일 조건에 맞는 자물쇠를 찾았어요."
+
+
+async def test_season_word_and_a_song_with_the_same_name_are_told_apart_by_context(parser):
+    rows = [
+        make_row(1, track_title="가을", artist_name="누군가", created_at=datetime(2026, 3, 3, 9)),
+        make_row(
+            2, track_title="밤편지", artist_name="아이유", created_at=datetime(2026, 10, 3, 9)
+        ),
+    ]
+    names = [TrackName(r.track_title, r.artist_name) for r in rows]
+    details = {1: make_record(1), 2: make_record(2)}
+
+    def build():
+        return _service(
+            parser,
+            FakeVectorSearch(),
+            FakeMemoryRecords({USER: details}, {USER: rows}, {USER: names}),
+        )
+
+    as_season = await build().search(_request("가을에 들었던 노래"))
+    as_title = await build().search(_request("가을이라는 노래 들은 날"))
+
+    assert [m.record_id for m in as_season.records] == [2]  # 10월에 저장한 기록
+    assert [m.record_id for m in as_title.records] == [1]  # 제목이 "가을"인 곡
+
+
+async def test_search_still_works_when_the_users_track_names_cannot_be_read(parser):
+    rows, details, names = _track_world()
+    records = FakeMemoryRecords(
+        {USER: details},
+        {USER: rows},
+        {USER: names},
+        names_error=UpstreamError("백엔드 DB에서 자물쇠 정보를 읽지 못했어요."),
+    )
+    service = _service(parser, FakeVectorSearch(comment=[hit(4, 0.9)]), records)
+
+    res = await service.search(_request("리센느 노래 들었던 거"))
+
+    # 가수 조건 없이 일반 벡터 검색으로 답한다 (오류로 끝나지 않는다)
+    assert [m.record_id for m in res.records] == [4]
+
+
+async def test_genre_question_uses_the_track_genre_tags(parser):
+    rows, details, _ = _track_world()
+    search = FakeVectorSearch(genres={1: "발라드", 2: "댄스", 3: "발라드"})
+    service = _service(parser, search, FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("발라드 들었던 날"))
+
+    assert sorted(m.record_id for m in res.records) == [1, 3]
+    assert search.genre_calls == [USER]  # 장르 조건이 있을 때만 읽는다
+    assert res.answer == "발라드 장르 조건에 맞는 자물쇠를 찾았어요."
+
+
+async def test_genres_are_not_read_when_the_question_has_no_genre(parser):
+    rows, details, names = _track_world()
+    search = FakeVectorSearch()
+    service = _service(
+        parser, search, FakeMemoryRecords({USER: details}, {USER: rows}, {USER: names})
+    )
+
+    await service.search(_request("리센느 노래"))
+
+    assert search.genre_calls == []
+
+
+async def test_question_without_names_still_works_when_the_user_has_no_saved_names(parser):
+    rows, details, _ = _track_world()
+    records = FakeMemoryRecords({USER: details}, {USER: rows})  # 곡 목록이 비어 있다
+    service = _service(parser, FakeVectorSearch(comment=[hit(4, 0.9)]), records)
+
+    res = await service.search(_request("리센느 노래 들었던 거"))
+
+    assert records.row_calls == []  # 조건이 없으니 자물쇠 정보는 읽지 않는다
+    assert [m.record_id for m in res.records] == [4]  # 일반 벡터 검색
+
+
+async def test_llm_gets_the_kind_of_name_condition_but_never_the_artist_or_title(parser):
+    rows, details, names = _track_world()
+    llm = StubLLM("가수 조건에 맞는 자물쇠를 찾았어요.")
+    service = _llm_service(
+        parser,
+        llm,
+        FakeMemoryRecords({USER: details}, {USER: rows}, {USER: names}),
+        search=FakeVectorSearch(),
+    )
+
+    res = await service.search(_request("리센느 노래 중에 Love Attack 들었던 날"))
+
+    (call,) = llm.calls
+    assert "리센느" not in call["prompt"] and "Love Attack" not in call["prompt"]
+    assert "가수" in call["prompt"] and "곡명" in call["prompt"]  # 종류만 보낸다
+    assert res.answer.splitlines()[0] == "가수 조건에 맞는 자물쇠를 찾았어요."
 
 
 async def test_combined_period_place_mood_question(parser):
@@ -625,3 +876,58 @@ async def test_no_suggested_records_for_questions_without_conditions(parser):
     res = await service.search(_request("그때 들은 노래"))
 
     assert res.suggested_records == []
+
+
+class FakeAliases:
+    """가수 별칭 표 대역 — 요청한 열쇠에 해당하는 별칭만 돌려준다."""
+
+    def __init__(self, table=None, error: Exception | None = None):
+        self.table = table or {}
+        self.error = error
+        self.calls: list[set[str]] = []
+
+    async def aliases_for(self, name_keys):
+        self.calls.append(set(name_keys))
+        if self.error:
+            raise self.error
+        return {k: v for k, v in self.table.items() if k in name_keys}
+
+
+def _english_stored_world():
+    """저장된 가수 이름이 영어뿐인 자물쇠 — 한글로 물으면 별칭이 있어야 찾는다."""
+    rows = [
+        make_row(1, track_title="소나기", artist_name="RESCENE"),
+        make_row(2, track_title="Love Attack", artist_name="RESCENE"),
+        make_row(3, track_title="밤편지", artist_name="IU"),
+    ]
+    details = {i: make_record(i) for i in (1, 2, 3)}
+    names = [TrackName(r.track_title, r.artist_name) for r in rows]
+    return FakeMemoryRecords({USER: details}, {USER: rows}, {USER: names})
+
+
+async def test_korean_question_finds_an_artist_stored_in_english_through_the_alias(parser):
+    aliases = FakeAliases({"rescene": ["리센느"], "iu": ["아이유"]})
+    service = _service(parser, FakeVectorSearch(), _english_stored_world(), aliases=aliases)
+
+    res = await service.search(_request("리센느 노래 들었던 거 뭐 있었지"))
+
+    assert sorted(m.record_id for m in res.records) == [1, 2]
+    assert res.answer == "가수 RESCENE 조건에 맞는 자물쇠를 찾았어요."
+    assert aliases.calls == [{"rescene", "iu"}]  # 이 사용자의 가수들만 찾는다
+
+
+async def test_without_aliases_the_korean_question_does_not_find_the_english_stored_artist(parser):
+    service = _service(parser, FakeVectorSearch(), _english_stored_world())
+
+    res = await service.search(_request("리센느 노래 들었던 거 뭐 있었지"))
+
+    assert res.records == []
+
+
+async def test_alias_lookup_failure_falls_back_to_the_stored_names(parser):
+    aliases = FakeAliases(error=UpstreamError("AI DB에서 가수 별칭을 읽지 못했어요."))
+    service = _service(parser, FakeVectorSearch(), _english_stored_world(), aliases=aliases)
+
+    res = await service.search(_request("RESCENE 노래 들었던 거 뭐 있었지"))
+
+    assert sorted(m.record_id for m in res.records) == [1, 2]

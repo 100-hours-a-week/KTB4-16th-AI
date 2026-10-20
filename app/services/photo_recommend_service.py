@@ -17,6 +17,11 @@ song_curator.py, reranker.py). 그래서 지금은 song_curator가 곡 추천과
 곡 풀은 LLM이 준 "상황 장르·무드"로 고르므로 LLM 호출은 늘지 않고, LLM 출력과 Spotify
 검색은 오히려 줄어든다. 곡 풀이 없거나 맞는 곡이 모자라면 LLM 곡으로 채운다.
 
+2026-10-20: Claude가 같은 호출에서 쓴 "분위기 문장"(사진에서 뽑은 모든 정보를 녹인 문장)을 벡터로
+바꿔서, 곡 풀·저장된 곡을 장르·무드로 거른 뒤 그 벡터와 가까운 순으로 정렬한다 (기능1과 같은
+방식). 사진 정보가 장르 2~3개·무드 2~3개로 줄어들면서 사라지는 것을 벡터가 보태 준다. 기능3은
+사용자 ID를 받지 않아서 취향 섞기는 없다. 임베딩이 실패해도 예전 태그 점수 순으로 계속한다.
+
 2026-10-16: 곡 풀 몫 중 일부(기본 1곡)는 사용자들이 자물쇠에 저장한 곡(track_moods)에서
 가져온다 — 곡 풀이 TJ 고정 목록과 저장 곡 두 개로 흩어지지 않게 같은 점수 기준으로 묶어
 한 풀처럼 쓴다(saved_song_pool.py).
@@ -29,9 +34,12 @@ song_curator.py, reranker.py). 그래서 지금은 song_curator가 곡 추천과
 """
 
 import logging
+from dataclasses import replace
 
 from app.clients.spotify_client import SpotifySearchClient
 from app.components.clip_tagger import ClipTagger
+from app.components.db_picker import DbPickConfig, pick_db_songs
+from app.components.embedder import Embedder
 from app.components.reranker import Reranker, TrackCandidate
 from app.components.saved_song_pool import SavedSongPool
 from app.components.song_curator import CANDIDATE_COUNT, CurationResult, SongCandidate, SongCurator
@@ -62,7 +70,11 @@ class PhotoRecommendService:
         llm_count: int = CANDIDATE_COUNT,
         saved_pool: SavedSongPool | None = None,
         saved_count: int = 0,
+        embedder: Embedder | None = None,
+        db_pick: DbPickConfig = DbPickConfig(),
     ):
+        self._db_pick = db_pick
+        self._embedder = embedder
         self._saved_pool = saved_pool
         self._saved_count = saved_count if saved_pool is not None else 0
         self._clip_tagger = clip_tagger
@@ -95,8 +107,8 @@ class PhotoRecommendService:
             logger.warning("곡 추천 실패, 폴백: %s", e)
             return self._fallback(tags=tags)
 
-        saved_songs = await self._pick_saved(curation)
-        pool_songs = self._pick_from_pool(curation, self._pool_count - len(saved_songs))
+        situation_vector = await self._mood_vector(curation.mood_sentence)
+        saved_songs, pool_songs = await self._pick_db(curation, situation_vector)
         if not curation.songs and not pool_songs and not saved_songs:
             # 형식이 깨져 한 줄도 못 건졌다 — 추천 자체가 실패한 것으로 본다
             logger.warning("곡 추천 결과를 파싱하지 못함, 폴백")
@@ -118,12 +130,11 @@ class PhotoRecommendService:
             # 추천받은 곡이 전부 Spotify에 없었다 — 에러는 아니고 빈 결과
             return PhotoRecommendResponse(mood_tags=tags, rewritten_query="", tracks=[])
 
-        # 구성(곡 풀·LLM 몫)은 _mix에서 정했다 — 여기선 고른 5곡의 보여 줄 순서만 정한다
-        ranked = self._rerank_safely(curation, candidates[:RESULT_COUNT])
+        # 구성(DB 곡·Claude 곡 몫)과 순서(DB 곡은 점수 순, Claude 곡은 뒤)는 _mix에서 정했다
         return PhotoRecommendResponse(
             mood_tags=tags,
             rewritten_query="",
-            tracks=[_to_track(c) for c in ranked[:RESULT_COUNT]],
+            tracks=[_to_track(c) for c in candidates[:RESULT_COUNT]],
         )
 
     async def _top_up(
@@ -148,27 +159,51 @@ class PhotoRecommendService:
         seen = {c.external_track_id for c in candidates}
         return candidates + [c for c in more if c.external_track_id not in seen]
 
-    def _pick_from_pool(self, curation: CurationResult, count: int) -> list[SongCandidate]:
-        if self._pool is None:
-            return []
+    async def _mood_vector(self, sentence: str) -> list[float] | None:
+        """Claude가 쓴 분위기 문장을 벡터로. 실패해도 태그 점수로 고르면 되니 추천은 계속한다."""
+        if (
+            self._embedder is None
+            or not sentence
+            or (self._pool is None and self._saved_pool is None)
+        ):
+            return None
         try:
-            return self._pool.pick(
+            return await self._embedder.embed(sentence)
+        except Exception:
+            logger.warning("분위기 문장 임베딩 실패 — 태그 점수로만 고름", exc_info=True)
+            return None
+
+    async def _pick_db(
+        self, curation: CurationResult, situation_vector: list[float] | None
+    ) -> tuple[list[SavedSong], list[SongCandidate]]:
+        """저장된 곡과 곡 풀을 같은 점수(태그+벡터)로 겨뤄 DB 몫만큼 고른다 (db_picker)."""
+        total = self._pool_count if self._pool is not None else self._saved_count
+        if total <= 0:
+            return [], []
+        pool_ranked = []
+        if self._pool is not None:
+            try:
+                pool_ranked = self._pool.ranked(
+                    curation.situation_genres,
+                    curation.situation_moods,
+                    exclude=curation.songs,
+                    situation_vector=situation_vector,
+                )
+            except Exception:
+                logger.exception("곡 풀에서 고르기 실패 — 저장된 곡·LLM 곡만 사용")
+        saved_ranked = []
+        if self._saved_pool is not None:
+            saved_ranked = await self._saved_pool.ranked(
                 curation.situation_genres,
                 curation.situation_moods,
-                count,
-                exclude=curation.songs,
+                situation_vector=situation_vector,
             )
-        except Exception:
-            logger.exception("곡 풀에서 고르기 실패 — LLM 곡만 사용")
-            return []
-
-    async def _pick_saved(self, curation: CurationResult) -> list[SavedSong]:
-        """사용자들이 저장한 곡에서 먼저 채운다. 모자라면 그만큼 곡 풀이 채운다."""
-        if self._saved_pool is None:
-            return []
-        return await self._saved_pool.pick(
-            curation.situation_genres, curation.situation_moods, self._saved_count
+        config = replace(
+            self._db_pick,
+            min_saved=min(self._saved_count, total),
+            max_saved=max(self._db_pick.max_saved, self._saved_count),
         )
+        return pick_db_songs(saved_ranked, pool_ranked, total, config)
 
     def _mix(
         self,
@@ -176,12 +211,13 @@ class PhotoRecommendService:
         llm_found: list[TrackCandidate],
         pool_found: list[TrackCandidate],
     ) -> list[TrackCandidate]:
-        """곡 풀 pool_count곡 + 나머지는 LLM 곡(태그 점수 순).
+        """DB 곡 pool_count곡을 하이브리드 점수 순으로, 그 뒤에 Claude 곡(태그 점수 순)을 둔다.
 
+        Claude 곡은 벡터가 없어 DB 곡과 같은 점수로 비교할 수 없으니 순서를 겨루지 않고 뒤에 둔다.
         한쪽이 모자라면 다른 쪽으로 채운다.
         """
         llm_ranked = self._rerank_safely(curation, llm_found)
-        pool_ranked = self._rerank_safely(curation, pool_found)
+        pool_ranked = self._rank_db(curation, pool_found)
         pool_first = pool_ranked[: self._pool_count]
         ordered = (
             pool_first
@@ -197,6 +233,17 @@ class PhotoRecommendService:
             seen.add(c.external_track_id)
             mixed.append(c)
         return mixed
+
+    def _rank_db(
+        self, curation: CurationResult, candidates: list[TrackCandidate]
+    ) -> list[TrackCandidate]:
+        """DB 곡: 곡을 고를 때 받은 하이브리드 점수 순. 점수가 없는 곡은 태그 점수로 뒤에 붙인다."""
+        scored = sorted(
+            (c for c in candidates if c.score is not None),
+            key=lambda c: c.score,
+            reverse=True,
+        )
+        return scored + self._rerank_safely(curation, [c for c in candidates if c.score is None])
 
     def _rerank_safely(
         self, curation: CurationResult, candidates: list[TrackCandidate]

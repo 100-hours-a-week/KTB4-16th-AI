@@ -34,7 +34,7 @@ from app.clients.llm_client import LLMClient
 from app.components.music_tags import GENRE_VOCAB, MOOD_VOCAB
 from app.exceptions import LLMError
 
-PROMPT_VERSION = "song-curate-v8"
+PROMPT_VERSION = "song-curate-v9"
 
 # Spotify 확인 단계에서 일부가 탈락하므로(일반 6~7/8, 인디 2~4/8 실측) 최종 5곡보다 넉넉히 받는다.
 CANDIDATE_COUNT = 10
@@ -60,6 +60,8 @@ def system_prompt(count: int = CANDIDATE_COUNT) -> str:
 - 존재가 불확실한 곡은 추천하지 않는다.
 - 곡 제목·가수 이름은 Spotify 표기 그대로 쓴다(영어 제목을 한글로 옮기지 않는다).
 - 사용자가 예전에 들었던 곡이 주어지면 그 취향을 참고하되, 그 곡 자체는 다시 추천하지 않는다.
+- 분위기 문장에는 상황에 주어진 정보(사진 종류·대상·분위기·표정·장소·날씨·시간 등)를
+  하나도 빼지 않고 녹인다.
 
 출력 형식(꺾쇠 <> 부분만 실제 값으로 바꿔 쓰고, 다른 말은 붙이지 않는다):
 상황: 장르=<장르>,<장르> | 무드=<무드>,<무드>
@@ -78,6 +80,10 @@ class SongCandidate:
     title: str
     genre: str
     moods: tuple[str, ...]
+    # DB(곡 풀·저장된 곡)에서 고른 곡이 하이브리드 점수(태그+벡터)를 Spotify 확인 뒤까지
+    # 들고 가는 칸.
+    # Claude가 추천한 곡은 None (벡터가 없어 같은 기준으로 비교할 수 없다)
+    score: float | None = None
 
     @property
     def search_query(self) -> str:

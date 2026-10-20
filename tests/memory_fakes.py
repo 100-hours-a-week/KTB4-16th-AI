@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime
 
 from app.components.vector_search import SimilarRecord
-from app.db.repositories.memory_record_repository import ConditionRow
+from app.db.repositories.memory_record_repository import ConditionRow, TrackName
 
 
 def hit(record_id: int, similarity: float) -> SimilarRecord:
@@ -45,18 +45,21 @@ class FakeVectorSearch:
         music=None,
         *,
         moods: dict[int, tuple[str, ...]] | None = None,
+        genres: dict[int, str] | None = None,
         comment_similarity: dict[int, float] | None = None,
         music_similarity: dict[int, float] | None = None,
     ):
         self.comment = comment or []
         self.music = music or []
         self.moods = moods or {}
+        self.genres = genres or {}
         # similarities_for가 돌려줄 값 (record_id → 유사도). 없는 기록은 결과에서 빠진다.
         self.comment_similarity = comment_similarity or {}
         self.music_similarity = music_similarity or {}
         self.calls: list[tuple[str, int, int]] = []
         self.similarity_calls: list[tuple[int, list[int]]] = []
         self.mood_calls: list[int] = []
+        self.genre_calls: list[int] = []
 
     async def similar_by_comment(self, user_id, query_vector, limit):
         self.calls.append(("comment", user_id, limit))
@@ -85,6 +88,10 @@ class FakeVectorSearch:
         self.mood_calls.append(user_id)
         return dict(self.moods)
 
+    async def genres_by_record(self, user_id):
+        self.genre_calls.append(user_id)
+        return dict(self.genres)
+
 
 class FakeMemoryRecords:
     """백엔드 MySQL 대역 — 사용자별로 가진 자물쇠 ID만 확인해 준다 (user_id 조건과 같은 효과)."""
@@ -93,11 +100,16 @@ class FakeMemoryRecords:
         self,
         by_user: dict[int, dict[int, int]],
         rows_by_user: dict[int, list[ConditionRow]] | None = None,
+        names_by_user: dict[int, list[TrackName]] | None = None,
+        names_error: Exception | None = None,
     ):
         self.by_user = by_user
         self.rows_by_user = rows_by_user or {}
+        self.names_by_user = names_by_user or {}
         self.calls: list[tuple[int, list[int]]] = []
         self.row_calls: list[tuple[int, int]] = []
+        self.name_calls: list[tuple[int, int]] = []
+        self.names_error = names_error
 
     async def existing_ids(self, *, user_id, record_ids):
         self.calls.append((user_id, list(record_ids)))
@@ -107,6 +119,12 @@ class FakeMemoryRecords:
     async def list_condition_rows(self, *, user_id, limit):
         self.row_calls.append((user_id, limit))
         return list(self.rows_by_user.get(user_id, []))[:limit]
+
+    async def list_track_names(self, *, user_id, limit):
+        self.name_calls.append((user_id, limit))
+        if self.names_error:
+            raise self.names_error
+        return list(self.names_by_user.get(user_id, []))[:limit]
 
 
 class StubEmbedder:

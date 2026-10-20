@@ -12,9 +12,8 @@ null을 넘기면 저장이 깨지고, 커버 없는 곡은 대개 정식 발매
 
 확인 결과는 track_lookups에 저장해 두고 유효기간 안에는 Spotify를 다시 부르지 않는다.
 추천마다 8~10곡을 조회하다 하루 요청 한도를 넘겨 추천이 전부 멈춘 적이 있어서다
-(2026-10-02). 유효기간은 Spotify 약관(메타데이터 임시 캐시만 허용, 최신 상태 유지)에 맞춰
-찾은 곡 30일, 없는 곡 1일로 둔다. 없는 곡을 짧게 두는 건 발매 직후라 아직 검색이 안 되는
-경우를 다시 확인하기 위해서다.
+(2026-10-02). 찾은 곡은 기한 없이 계속 쓴다. 없는 곡은 1일만 둔다. 발매 직후라 아직 검색이
+안 되는 경우를 다시 확인하기 위해서다.
 """
 
 import asyncio
@@ -38,7 +37,7 @@ logger = logging.getLogger("muro.track_resolver")
 # 제목이 똑같은 버전을 우선 고른다. 일반 검색 보정도 노래방·커버가 섞여 같은 개수를 본다.
 SEARCH_LIMIT = 5
 
-FOUND_TTL = timedelta(days=30)
+FOUND_TTL: timedelta | None = None  # 찾은 곡은 기한 없음
 NOT_FOUND_TTL = timedelta(days=1)
 
 
@@ -85,6 +84,7 @@ class TrackResolver:
                     moods=song.moods,
                     album_image_url=track.album_image_url,
                     external_url=track.external_url,
+                    score=song.score,
                 )
             )
         return resolved
@@ -156,11 +156,7 @@ class TrackResolver:
             logger.exception("곡 확인 캐시 조회 실패 — Spotify로 직접 확인")
             return {}
         now = self._now()
-        return {
-            key: entry
-            for key, entry in entries.items()
-            if now - entry.verified_at < (FOUND_TTL if entry.track else NOT_FOUND_TTL)
-        }
+        return {key: entry for key, entry in entries.items() if _is_fresh(entry, now)}
 
     async def _save(self, entries: list[LookupEntry]) -> None:
         if self._store is None or not entries:
@@ -250,4 +246,10 @@ def _to_candidate(track: SpotifyTrack, song: SongCandidate) -> TrackCandidate:
         moods=song.moods,
         album_image_url=track.album_image_url,
         external_url=track.external_url,
+        score=song.score,
     )
+
+
+def _is_fresh(entry: LookupEntry, now: datetime) -> bool:
+    ttl = FOUND_TTL if entry.track else NOT_FOUND_TTL
+    return ttl is None or now - entry.verified_at < ttl

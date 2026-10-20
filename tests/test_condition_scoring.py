@@ -107,6 +107,103 @@ def test_weather_and_missing_weather():
     assert not _score(make_row(3, weather_condition=None), rain).matched
 
 
+def test_weather_value_is_compared_ignoring_case_and_surrounding_spaces():
+    cloudy = Condition("weather", "흐린 날", weather=frozenset({"CLOUDY", "OVERCAST"}))
+
+    for value in ("CLOUDY", "cloudy", " Cloudy ", "overcast", "OVERCAST\n"):
+        assert _score(make_row(1, weather_condition=value), cloudy).all_matched, value
+    assert not _score(make_row(2, weather_condition="CLOUDS"), cloudy).matched
+    assert not _score(make_row(3, weather_condition=""), cloudy).matched
+
+
+def test_month_and_day_matches_that_date_in_any_year():
+    cond = Condition("day", "10월 15일", month_days=frozenset({(10, 15)}))
+
+    assert _score(make_row(1, created_at=datetime(2026, 10, 15, 9)), cond).all_matched
+    assert _score(make_row(2, created_at=datetime(2025, 10, 15, 23, 59)), cond).all_matched
+    assert not _score(make_row(3, created_at=datetime(2026, 10, 16, 0, 0)), cond).matched
+    assert not _score(make_row(4, created_at=datetime(2026, 11, 15, 9)), cond).matched
+
+
+def test_artist_matches_any_of_the_tracks_artists_ignoring_case_and_spacing():
+    cond = Condition("artist", "가수 리센느", names=("리센느",))
+
+    assert _score(make_row(1, artist_name="RESCENE, 리센느"), cond).all_matched
+    assert _score(make_row(2, artist_name="아이유, 리센느"), cond).all_matched  # 여러 명 중 한 명
+    assert not _score(make_row(3, artist_name="아이유"), cond).matched
+    assert not _score(make_row(4, artist_name=None), cond).matched
+    english = Condition("artist", "가수 NewJeans", names=("NewJeans",))
+    assert _score(make_row(5, artist_name="new jeans"), english).all_matched
+
+
+def test_artist_must_be_the_whole_name_not_a_part_of_another_artist():
+    cond = Condition("artist", "가수 아이유", names=("아이유",))
+
+    assert not _score(make_row(1, artist_name="아이유팬클럽"), cond).matched
+
+
+def test_title_matches_the_full_title_or_the_title_without_brackets():
+    cond = Condition("title", "곡 밤편지", names=("밤편지",))
+
+    assert _score(make_row(1, track_title="밤편지"), cond).all_matched
+    assert _score(make_row(2, track_title="밤편지 (Lullaby)"), cond).all_matched
+    assert _score(make_row(3, track_title="밤편지 - Remastered"), cond).all_matched
+    assert not _score(make_row(4, track_title="밤하늘"), cond).matched
+    assert not _score(make_row(5, track_title=None), cond).matched
+
+
+def test_genre_uses_the_track_genre_tag_by_record():
+    cond = Condition("genre", "발라드 장르", names=("발라드",))
+    scores = score_rows(
+        [make_row(1), make_row(2), make_row(3)],
+        [cond],
+        moods={},
+        music_similarity={},
+        min_similarity=0.4,
+        weights=WEIGHTS,
+        genres={1: "발라드", 2: "재즈"},  # 3번은 장르 태그가 없다
+    )
+
+    assert scores[1].all_matched
+    assert not scores[2].matched and not scores[3].matched
+
+
+def test_genre_condition_without_genre_data_matches_nothing():
+    cond = Condition("genre", "발라드 장르", names=("발라드",))
+
+    assert not _score(make_row(1), cond).matched  # genres를 안 주면 모든 기록이 안 맞는다
+
+
+def test_time_of_day_uses_the_hour_with_exact_boundaries():
+    evening = Condition("time", "저녁 시간", hours=frozenset({17, 18, 19, 20}))
+
+    def at(hour, minute=0):
+        return _score(make_row(1, created_at=datetime(2026, 10, 3, hour, minute)), evening)
+
+    assert not at(16, 59).matched
+    assert at(17, 0).all_matched
+    assert at(20, 59).all_matched
+    assert not at(21, 0).matched
+
+
+def test_night_includes_after_midnight():
+    night = Condition("time", "밤 시간", hours=frozenset({21, 22, 23, 0, 1, 2, 3, 4}))
+
+    for hour in (21, 23, 0, 2, 4):
+        assert _score(make_row(1, created_at=datetime(2026, 10, 3, hour, 30)), night).all_matched
+    for hour in (5, 12, 20):
+        assert not _score(make_row(1, created_at=datetime(2026, 10, 3, hour, 30)), night).matched
+
+
+def test_weekday_condition_uses_the_day_of_week():
+    weekend = Condition("weekday", "주말", weekdays=frozenset({5, 6}))
+
+    assert _score(make_row(1, created_at=datetime(2026, 10, 10, 9)), weekend).all_matched  # 토
+    assert _score(make_row(2, created_at=datetime(2026, 10, 11, 9)), weekend).all_matched  # 일
+    assert not _score(make_row(3, created_at=datetime(2026, 10, 12, 9)), weekend).matched  # 월
+    assert not _score(make_row(4, created_at=datetime(2026, 10, 9, 23, 59)), weekend).matched  # 금
+
+
 def test_temperature_and_mood_ranges_include_bounds_and_skip_missing_values():
     cold = Condition("temperature", "추운 날", low=-50, high=5)
     sad = Condition("mood", "기분이 안 좋았던 때", low=-50, high=-20)

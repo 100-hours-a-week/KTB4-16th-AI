@@ -33,6 +33,8 @@ class SavedSong:
     moods: tuple[str, ...]
     # 분위기 문장의 벡터 — 상황 문장과 가까운 순으로 줄 세울 때 쓴다 (재임베딩 전엔 None)
     embedding: tuple[float, ...] | None = None
+    # 곡을 고를 때 받은 하이브리드 점수 (조회 직후엔 None)
+    score: float | None = None
 
 
 class SavedSongSearch(Protocol):

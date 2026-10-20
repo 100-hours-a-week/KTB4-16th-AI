@@ -80,8 +80,18 @@ async def test_spacing_difference_hits_same_cache_entry():
     assert spotify.queries == []
 
 
-async def test_expired_entry_is_checked_again():
-    store = InMemoryLookups([_entry(TRACK, timedelta(days=31))])
+async def test_found_song_is_kept_without_expiry():
+    store = InMemoryLookups([_entry(TRACK, timedelta(days=400))])
+    spotify = CountingSpotify({})
+
+    tracks = await TrackResolver(spotify, store, now=lambda: NOW).resolve([_song()])
+
+    assert spotify.queries == []
+    assert [t.external_track_id for t in tracks] == ["t1"]
+
+
+async def test_expired_not_found_entry_is_checked_again():
+    store = InMemoryLookups([_entry(None, timedelta(days=2))])
     spotify = CountingSpotify({_song().search_query: [_json()]})
 
     await TrackResolver(spotify, store, now=lambda: NOW).resolve([_song()])

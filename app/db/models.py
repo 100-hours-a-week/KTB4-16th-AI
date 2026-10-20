@@ -9,8 +9,10 @@ from sqlalchemy import (
     BigInteger,
     Date,
     DateTime,
+    Float,
     Index,
     Integer,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
@@ -56,6 +58,40 @@ class RecordEmbedding(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class RecordFact(Base):
+    """자물쇠 1건의 조건 검색용 값 — 백엔드 MySQL(records·places·music_tracks)에서 옮겨 온 사본.
+
+    기억 검색이 날짜·날씨·기온·기분·장소·곡명·가수를 질문마다 백엔드에서 읽지 않고 여기서 읽는다
+    (설정 MEMORY_RECORD_SOURCE, 기본 postgres). 원본은 백엔드 DB이고, 이 표는 자물쇠 동기화
+    (record_sync_worker)가 맞춘다.
+    recorded_at은 백엔드 created_at 그대로(한국시간)라 시간대 없는 칸이다.
+    comment_text는 설정 RECORD_FACTS_STORE_COMMENT(기본 저장)로 정한다(개인정보). 사전에 없는
+    장소를 코멘트 글자로 찾을 때 쓴다.
+    """
+
+    __tablename__ = "record_facts"
+    __table_args__ = (Index("ix_record_facts_user_recorded", "user_id", "recorded_at"),)
+
+    record_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=False))
+    weather_condition: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    temperature: Mapped[float | None] = mapped_column(Float(53), nullable=True)
+    mood_score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    dong_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    dong_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    latitude: Mapped[float | None] = mapped_column(Float(53), nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float(53), nullable=True)
+    comment_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    track_title: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    artist_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    # 백엔드 records 한 행의 모든 칸을 원문 그대로 (칸이 늘어도 받는다). NULL은 아직 안 채운 행
+    raw_record: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB(none_as_null=True), nullable=True
+    )
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class TrackMood(Base):
     """곡 단위 무드 묘사 캐시. 같은 곡은 LLM을 한 번만 부른다.
 
@@ -86,8 +122,8 @@ class TrackLookup(Base):
     멈춘 적이 있다(2026-10-02, 429 QUOTA_EXCEEDED). 같은 곡은 자주 다시 나오므로 한 번
     확인한 결과를 저장해 두고 재사용한다.
 
-    Spotify 개발자 약관은 메타데이터·커버의 "임시" 캐시만 허용하고 무기한 저장을 금지해서,
-    verified_at 기준으로 유효기간이 지나면 다시 확인한다(track_resolver의 TTL 참고).
+    찾은 곡은 기한 없이 쓰고, 없는 곡만 verified_at 기준으로 하루가 지나면 다시 확인한다
+    (track_resolver의 TTL 참고).
     external_track_id가 NULL이면 "Spotify에 없는 곡"(LLM이 지어낸 곡 등)이라는 기록이다.
     """
 
@@ -192,3 +228,37 @@ class VoteQuestion(Base):
     status: Mapped[str] = mapped_column(String(16), server_default="approved")
     model_version: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SyncState(Base):
+    """백엔드 DB에서 어디까지 읽었는지 기억하는 표 (기능4 자물쇠 동기화).
+
+    (updated_at, record_id) 쌍으로 기억해서, 같은 시각에 바뀐 자물쇠가 여러 개여도
+    빠뜨리거나 두 번 처리하지 않는다.
+    """
+
+    __tablename__ = "sync_state"
+
+    name: Mapped[str] = mapped_column(String(50), primary_key=True)
+    last_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_record_id: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ArtistAlias(Base):
+    """가수 이름의 다른 표기(영어↔한글) 목록. 기억 검색이 질문에서 가수를 찾을 때 함께 비교한다.
+
+    가수 이름은 공백·기호·대소문자를 뺀 글자(name_key)로 구분한다. aliases가 빈 목록이면
+    "LLM이 모른다고 답함"이라는 결과라서 같은 alias_version에서는 다시 묻지 않는다.
+    alias_version이 현재 설정(LLM·프롬프트)과 다르면 다시 만든다. 'manual'은 사람이 직접 넣은
+    행이라 다시 만들지 않는다.
+    """
+
+    __tablename__ = "artist_aliases"
+
+    name_key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    artist_name: Mapped[str] = mapped_column(String(200))
+    aliases: Mapped[list[str]] = mapped_column(ARRAY(String(100)), server_default="{}")
+    alias_version: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

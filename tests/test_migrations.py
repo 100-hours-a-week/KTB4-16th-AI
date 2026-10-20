@@ -101,3 +101,38 @@ def test_text_vector_indexes_are_rebuilt_after_the_type_changes():
 
     assert drops and all(i < min(retypes) for i in drops)
     assert creates and all(i > max(retypes) for i in creates)
+
+
+def test_record_facts_migration_follows_the_text_embedding_migration_and_only_adds_a_table():
+    revision = _script().get_revision("0011")
+
+    assert revision.down_revision == "0010"
+    sql = _offline_sql("0010:0011")
+    assert any("CREATE TABLE record_facts" in s for s in sql)
+    assert any("CREATE INDEX ix_record_facts_user_recorded" in s for s in sql)
+    # 기존 표는 건드리지 않는다 (값은 채우기 도구가 넣는다)
+    assert not any("ALTER TABLE" in s for s in sql)
+    down = _offline_sql("0011:0010")
+    assert any("DROP TABLE record_facts" in s for s in down)
+
+
+def test_sync_state_migration_follows_the_record_facts_migration():
+    revision = _script().get_revision("0012")
+
+    assert revision.down_revision == "0011"
+
+
+def test_record_facts_raw_migration_follows_the_sync_state_migration():
+    revision = _script().get_revision("0013")
+
+    assert revision.down_revision == "0012"
+
+
+def test_artist_aliases_migration_follows_the_record_facts_raw_migration_and_only_adds_a_table():
+    revision = _script().get_revision("0014")
+
+    assert revision.down_revision == "0013"
+    sql = _offline_sql("0013:0014")
+    assert any("CREATE TABLE artist_aliases" in s for s in sql)
+    assert not any("ALTER TABLE" in s for s in sql)  # 기존 표는 건드리지 않는다
+    assert any("DROP TABLE artist_aliases" in s for s in _offline_sql("0014:0013"))

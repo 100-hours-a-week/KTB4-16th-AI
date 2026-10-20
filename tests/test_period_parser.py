@@ -117,12 +117,27 @@ def test_several_periods_in_one_question():
     assert sorted(label for label, _, _ in found) == ["올해 여름", "작년"]
 
 
+def test_weekend_phrases_take_only_the_week_and_leave_the_weekend_to_the_weekday_rule():
+    # "지난 주말"은 지난주 범위만 기간으로 잡고 "주말"은 글자로 남긴다 (요일 규칙이 이어서 잡는다)
+    found, rest = _parse("지난 주말에 들은 노래", today=date(2026, 10, 12))  # 월요일
+
+    assert [(label, s, e) for label, s, e in found] == [
+        ("지난 주", date(2026, 10, 5), date(2026, 10, 11))
+    ]
+    assert "주말" in rest and "지난" not in rest
+
+    found, rest = _parse("이번 주말에 들은 노래", today=date(2026, 10, 12))
+    assert [(label, s, e) for label, s, e in found] == [
+        ("이번 주", date(2026, 10, 12), date(2026, 10, 18))
+    ]
+    assert "주말" in rest
+
+
 @pytest.mark.parametrize(
     "text",
     [
         "비 오던 날 들은 노래",
         "메시지를 전달받은 날 들은 노래",  # "전달"은 지난달이 아니다
-        "지난 주말에 들은 노래",  # 주말은 이번 단계에서 다루지 않는다
         "가을에 들은 노래",  # 연도 없는 계절은 계절 규칙이 처리한다
         "서울숲에서 들은 노래",
     ],

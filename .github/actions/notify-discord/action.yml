@@ -29,12 +29,12 @@ runs:
         PR_TITLE: ${{ github.event.pull_request.title }}
         PR_URL: ${{ github.event.pull_request.html_url }}
         PR_NUMBER: ${{ github.event.pull_request.number }}
-        HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+        HEAD_MESSAGE: ${{ github.event.workflow_run.head_commit.message || github.event.head_commit.message }}
         ACTOR: ${{ github.actor }}
-        BRANCH: ${{ github.head_ref || github.ref_name }}
+        BRANCH: ${{ github.event.workflow_run.head_branch || github.head_ref || github.ref_name }}
         BASE_BRANCH: ${{ github.base_ref }}
-        SHA: ${{ github.sha }}
-        COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+        SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha || github.sha }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
       run: |
         if [ -z "$WEBHOOK" ]; then

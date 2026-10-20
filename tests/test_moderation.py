@@ -89,3 +89,9 @@ def test_real_onnx_model():
     assert model is not None
     assert model.toxic_probability("국힙 듣는 애들 중에 정상없다") > 0.9
     assert model.toxic_probability("국힙 개좋아 이번 앨범 찢었다") < 0.1
+
+
+def test_default_threshold_is_0_9():
+    from app.config import get_settings
+
+    assert get_settings().moderation_threshold == 0.9

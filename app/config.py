@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     # 곡을 고를 때 질문 벡터에 내 취향 벡터를 섞는 비율 (0=끔, 0.3=상황 70% + 취향 30%).
     # 정답을 알 데이터가 아직 없어서 감으로 둔 초기값 — 같은 상황 세트로 비교해 정한다.
     personal_taste_weight: float = 0.3
+    # 지금과 같은 날씨에 저장한 기록이 이 수 이상이면, 전체 평균 대신 그 기록들로 취향 벡터를 만든다
+    situational_taste_min_records: int = 3
+    # 주변 사람들이 많이 담은 곡(곡 풀에 있는 곡)의 벡터를 질문 벡터에 섞는 비율 (0=끔). 초기값.
+    nearby_weight: float = 0.2
     memory_search_comment_weight: float = 0.5
     memory_search_music_weight: float = 0.5
     memory_search_candidates: int = 20  # 검색기마다 가져오는 후보 수
@@ -86,6 +90,17 @@ class Settings(BaseSettings):
     memory_search_location_weight: float = 2.0  # 조건 점수 안에서 장소·지역·동 조건의 가중치
     memory_search_other_condition_weight: float = 1.0  # 그 밖의 조건
     memory_search_scan_limit: int = 5000  # 조건 비교를 위해 읽는 자물쇠의 최대 개수 (최근순)
+    # 기억 검색(과 추천의 같은 날씨 취향)이 자물쇠 조건 값을 읽는 곳.
+    #   postgres: AI PostgreSQL의 record_facts에서 읽는다 (기본). 값은 자물쇠 동기화
+    #     (record_sync_enabled)가 채운다. 백엔드 DB 주소가 없어도 동작한다
+    #   mysql: 질문마다 백엔드 MySQL에서 읽는다. 동기화가 멈췄을 때 되돌리는 용도
+    memory_record_source: Literal["mysql", "postgres"] = "postgres"
+    # record_facts에 코멘트 원문(comment_text)을 저장할지. 기본은 저장한다 — 하이브리드 검색이
+    # 원문을 쓰고, 끄면 postgres로 읽을 때 "사전에 없는 장소를 코멘트 글자로 찾기"가 안 된다.
+    # 자물쇠가 삭제되면 record_facts 행도 함께 지워진다 (개인정보)
+    record_facts_store_comment: bool = True
+    # records 한 행의 모든 칸을 JSON 원문(record_facts.raw_record)으로도 저장할지 (기본 저장)
+    record_facts_store_raw: bool = True
     memory_search_condition_candidates: int = 50  # 조건으로만 후보가 되는 기록의 최대 개수
     # 프론트는 앞 5건을 먼저 보여주고 "더보기"에서 나머지를 보여준다. 모두 맞는 기록이 이 건수보다
     # 적을 때만 일부만 맞는 기록을 문장으로 제안한다 (요청 limit이 더 작으면 그 값)
@@ -111,12 +126,21 @@ class Settings(BaseSettings):
 
     # 기능1·3 추천 5곡 중 곡 풀에서 채울 곡 수. 0이면 예전처럼 LLM 곡만.
     # 곡 풀을 쓰면 LLM에게는 song_pool_llm_count곡만 받는다 (Spotify 탈락 대비 여유분 포함)
-    song_pool_count: int = 3
-    song_pool_llm_count: int = 4
+    # 5곡 중 4곡은 DB(저장된 곡 + TJ 곡 풀), Claude 곡은 1곡 — Claude가 매번 같은 곡
+    # (실측: 20개 상황에서 "적재 - 별 보러 가자"가 80곡 중 9번)을 내서 몫을 줄였다.
+    # Claude에게는 Spotify 탈락 몫까지 3곡을 받는다.
+    song_pool_count: int = 4
+    song_pool_llm_count: int = 3
     # 곡 풀 몫 중 몇 곡을 "사용자들이 저장한 곡"(track_moods)에서 가져올지. 나머지는 TJ 곡 풀.
     # 1로 둔 이유: 오픈 직후엔 저장된 곡이 적어서 다 거기서 뽑으면 같은 곡만 돌 수 있다.
     # 저장 곡이 쌓이면 올려 가며 실측한다. 0이면 TJ 곡 풀만 사용.
     song_pool_saved_count: int = 1
+    # 저장된 곡은 DB 몫 안에서 곡 풀과 같은 점수로 겨룬다 (db_picker). song_pool_saved_count는 최소
+    # 곡 수(하한), 이 값은 최대 곡 수(상한). 점수 = 태그 가중치·태그 점수 + 벡터 가중치·벡터 유사도.
+    # 가중치는 감으로 둔 초기값 — 같은 상황 세트로 비교해 정한다
+    song_pool_saved_max: int = 2
+    rerank_tag_weight: float = 0.5
+    rerank_vector_weight: float = 0.5
     # 곡 풀 파일 — Docker 빌드 때 비공개 HF 저장소에서 받아 둔다(공개 레포에 두지 않음).
     # 로컬에서 쓰려면 HF에서 받아 SONG_POOL_PATH로 지정
     song_pool_path: str = "/app/models/song_pool/song_pool.json"
@@ -124,7 +148,10 @@ class Settings(BaseSettings):
     # 기능6 모더레이션 모델 (KcELECTRA ONNX) — Docker 빌드 때 HF 비공개 저장소에서 받아 둔다
     moderation_model_dir: str = "/app/models/moderation"
     moderation_model_version: str = "kcelectra-v1-stage3"
-    moderation_threshold: float = 0.5
+    # 유해 확률이 이 값 이상이면 유해. 0.5였는데 정상 채팅이 막힌다는 이야기가 있어 0.9로 올렸다
+    # (2026-10-20). 지난 실험에서 올려도 오탐은 크게 안 줄고 놓침(욕 통과)만 늘었으니, 욕이 너무
+    # 통과하면 다시 내린다. 환경변수 MODERATION_THRESHOLD로도 바꿀 수 있다
+    moderation_threshold: float = 0.9
     moderation_threads: int = 2
 
     # 기능6 오늘의 질문 — 최근 며칠치 자물쇠로 장르별 통계를 낼지, 최대 몇 건까지 볼지
@@ -137,8 +164,35 @@ class Settings(BaseSettings):
     # 그룹 인원이 이보다 적은 장르의 사용자는 공통 그룹으로 (매칭할 사람이 모이지 않으므로).
     # 1:1 매칭이라 2명부터 그룹 유지(10/15 결정), 오픈 후 매칭 성공률을 보고 조정한다
     balance_min_group_size: int = 2
+    # V2까지는 모든 사용자를 공통 그룹으로 묶고 공통 질문만 만든다 (백엔드와 합의, 채팅을 먼저
+    # 열기 위해). 장르별 그룹으로 돌아가려면 False — 그때 balance_min_group_size가 쓰인다.
+    balance_common_only: bool = True
     # 그룹마다 미리 채워 둘 날짜 수 (배치가 하루 실패해도 질문이 비지 않게)
     balance_question_days_ahead: int = 2
+
+    # 기능4 자물쇠 동기화 — AI 워커가 백엔드 DB를 읽어 와서 임베딩 큐에 넣는다 (pull)
+    # 기본은 켜짐 (2026-10-20 결정: 자물쇠 전체를 AI DB에 원문으로 두고 벡터는 따로 만든다).
+    # BACKEND_MYSQL_URL이 없으면 건너뛴다. 백엔드가 POST /api/embeddings/generate로 보내 주는
+    # 동안에도 같은 recordId는 한 번만 처리돼서 겹쳐도 안전하다. 끄려면 false
+    record_sync_enabled: bool = True
+    record_sync_interval_minutes: int = 5
+    record_sync_batch_size: int = 500  # 한 번에 읽는 자물쇠 수 (처음 백필 때는 여러 번 반복)
+    # 자물쇠 사진이 저장된 백엔드 테이블·칸 (백엔드 스키마 record_photos.image_url 기준)
+    backend_photo_table: str = "record_photos"
+    backend_photo_record_column: str = "record_id"
+    backend_photo_key_column: str = "image_url"
+    # 사진 GCS 버킷. 비우면 사진 키를 그대로 URL로 쓴다 (키가 이미 https URL인 경우)
+    gcs_photo_bucket: str = ""
+    # 서명 URL 유효시간 — 임베딩 큐가 재시도해도 끝날 만큼 넉넉히
+    photo_signed_url_minutes: int = 120
+
+    # 가수 이름 별칭(영어↔한글) — 워커가 record_facts의 가수 이름을 LLM으로 다른 언어 표기로 바꿔
+    # artist_aliases에 쌓는다. 기억 검색이 "리센느"·"RESCENE"를 어느 쪽으로 저장됐든 찾게 한다.
+    # 아직 변환하지 않은 가수만 부르므로 비용은 가수 한 명당 한 번이다. 끄려면 false
+    artist_alias_enabled: bool = True
+    artist_alias_interval_minutes: int = 60
+    artist_alias_concurrency: int = 5
+    artist_alias_max_per_run: int = 100  # 한 번에 변환하는 가수 수 (남은 가수는 다음 주기에)
 
     # 외부 API 공통
     external_timeout_seconds: float = 20.0
@@ -147,6 +201,10 @@ class Settings(BaseSettings):
     # python -m app.main (전체 실행)이 띄우는 두 API 서버 포트
     gateway_port: int = 8000
     moderation_port: int = 8001
+    # 게이트웨이가 모더레이션(8001)으로 전달할 때 기다리는 시간. 처음엔 2초였는데, 호출하는
+    # 쪽의 제한 시간을 늘리기로 해서(2026-10-20) 같이 5초로 올렸다.
+    # 시간이 지나면 503 UPSTREAM_UNAVAILABLE을 돌려준다
+    moderation_proxy_timeout_seconds: float = 5.0
     embedding_port: int = 8002  # 컨테이너 안(127.0.0.1)에서만 열림
 
     # Prometheus 지표 (GET /metrics). 인증 없이 열리므로 외부에 노출되지 않는 내부망에서만

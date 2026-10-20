@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.clients.spotify_client import SpotifySearchClient
+from app.components.db_picker import DbPickConfig
 from app.components.embedder import Embedder
 from app.components.reranker import Reranker
 from app.components.saved_song_pool import SavedSongPool
@@ -8,9 +9,11 @@ from app.components.song_curator import SongCurator
 from app.components.song_pool import SongPool
 from app.components.vector_search import RecordSearch
 from app.config import get_settings
+from app.db.repositories.memory_record_repository import MemoryRecordSource
 from app.db.repositories.track_lookup_repository import TrackLookupStore
 from app.dependencies import (
     get_embedder,
+    get_memory_record_source,
     get_record_search,
     get_reranker,
     get_saved_song_pool,
@@ -36,6 +39,7 @@ async def context_recommend(
     track_lookups: TrackLookupStore = Depends(get_track_lookup_store),
     song_pool: SongPool | None = Depends(get_song_pool),
     saved_pool: SavedSongPool = Depends(get_saved_song_pool),
+    record_source: MemoryRecordSource = Depends(get_memory_record_source),
 ) -> ContextRecommendResponse:
     s = get_settings()
     service = ContextRecommendService(
@@ -52,5 +56,13 @@ async def context_recommend(
         saved_count=s.song_pool_saved_count,
         personal_similarity=s.personal_similarity,
         taste_weight=s.personal_taste_weight,
+        record_source=record_source,
+        situational_min_records=s.situational_taste_min_records,
+        nearby_weight=s.nearby_weight,
+        db_pick=DbPickConfig(
+            tag_weight=s.rerank_tag_weight,
+            vector_weight=s.rerank_vector_weight,
+            max_saved=s.song_pool_saved_max,
+        ),
     )
     return await service.recommend(req)

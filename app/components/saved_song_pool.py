@@ -34,6 +34,41 @@ class SavedSongPool:
         self._search = search
         self._rng = rng or random.Random()
 
+    async def ranked(
+        self,
+        situation_genres: tuple[str, ...],
+        situation_moods: tuple[str, ...],
+        exclude_ids: set[str] | None = None,
+        situation_vector: list[float] | None = None,
+    ) -> list[tuple[SavedSong, float, float | None]]:
+        """태그 기준(MIN_SCORE)을 넘는 저장된 곡을 (곡, 태그 점수, 벡터 유사도)로 돌려준다.
+
+        곡 풀의 ranked()와 같은 모양이라 db_picker가 두 출처를 같은 점수로 겨루게 한다.
+        DB 조회가 실패하면 빈 목록 — 곡 풀이 채운다.
+        """
+        try:
+            candidates = await self._search.search_by_tags(
+                list(situation_genres), list(situation_moods), SEARCH_LIMIT
+            )
+        except Exception:
+            logger.exception("저장된 곡 조회 실패 — 곡 풀만 사용")
+            return []
+        excluded = exclude_ids or set()
+        out: list[tuple[SavedSong, float, float | None]] = []
+        for song in candidates:
+            if song.external_track_id in excluded:
+                continue
+            tag = score_tags(situation_genres, situation_moods, (song.genre,), song.moods)
+            if tag < MIN_SCORE:
+                continue
+            sim = None
+            if situation_vector is not None and cosine_rank_usable(
+                situation_vector, song.embedding
+            ):
+                sim = cosine_similarity(situation_vector, song.embedding)
+            out.append((song, tag, sim))
+        return out
+
     async def pick(
         self,
         situation_genres: tuple[str, ...],

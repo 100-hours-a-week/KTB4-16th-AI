@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from app.components.music_tags import MOOD_VOCAB
+from app.components.music_tags import GENRE_VOCAB, MOOD_VOCAB
 from app.components.name_matcher import NOT_AFTER_HANGUL
 
 DEFAULT_RULES_PATH = Path(__file__).resolve().parent.parent / "question_rules.yaml"
@@ -34,6 +34,22 @@ class WeatherRule:
 
 
 @dataclass(frozen=True)
+class TimeRule:
+    """하루 중 시간대. hours는 맞는 시각(0~23시)을 풀어 둔 값이다."""
+
+    label: str
+    hours: frozenset[int]
+    patterns: tuple[re.Pattern[str], ...]
+
+
+@dataclass(frozen=True)
+class WeekdayRule:
+    label: str
+    days: frozenset[int]  # 월=0 … 일=6
+    patterns: tuple[re.Pattern[str], ...]
+
+
+@dataclass(frozen=True)
 class RangeRule:
     """기온·기분처럼 숫자 범위로 비교하는 규칙."""
 
@@ -50,12 +66,22 @@ class SongMoodRule:
 
 
 @dataclass(frozen=True)
+class GenreRule:
+    tag: str  # GENRE_VOCAB의 장르 이름
+    patterns: tuple[re.Pattern[str], ...]
+
+
+@dataclass(frozen=True)
 class QuestionRules:
     seasons: tuple[SeasonRule, ...]
     weather: tuple[WeatherRule, ...]
     temperature: tuple[RangeRule, ...]
     mood: tuple[RangeRule, ...]
     song_moods: tuple[SongMoodRule, ...]
+    # 시간대·요일은 선택이다 (규칙 파일에 없으면 그 조건은 해석하지 않는다)
+    times: tuple[TimeRule, ...] = ()
+    weekdays: tuple[WeekdayRule, ...] = ()
+    genres: tuple[GenreRule, ...] = ()
 
     @property
     def season_months(self) -> dict[str, frozenset[int]]:
@@ -71,6 +97,9 @@ class QuestionRules:
             temperature=tuple(_ranges(data.get("temperature"), "temperature", path)),
             mood=tuple(_ranges(data.get("mood"), "mood", path)),
             song_moods=tuple(_song_moods(data.get("song_moods"), path)),
+            times=tuple(_times(data.get("time_of_day"), path)),
+            weekdays=tuple(_weekdays(data.get("weekday"), path)),
+            genres=tuple(_genres(data.get("genre"), path)),
         )
 
 
@@ -79,7 +108,7 @@ def rule_pattern(word: str) -> re.Pattern[str]:
     chars = [re.escape(c) for c in word if not c.isspace()]
     if not chars:
         raise ValueError("규칙 단어가 비어 있어요.")
-    return re.compile(NOT_AFTER_HANGUL + r"\s*".join(chars))
+    return re.compile(NOT_AFTER_HANGUL + r"\s*".join(chars), re.IGNORECASE)
 
 
 def _patterns(words: object, where: str, path: Path) -> tuple[re.Pattern[str], ...]:
@@ -117,6 +146,56 @@ def _weather(raw: object, path: Path) -> list[WeatherRule]:
     return rules
 
 
+def hours_between(start: int, end: int) -> frozenset[int]:
+    """start시 이상 end시 미만의 시각들. start가 end보다 크면 자정을 넘긴다.
+
+    예: [21, 5] → 21~23시와 0~4시.
+    """
+    if start < end:
+        return frozenset(range(start, end))
+    return frozenset([*range(start, 24), *range(0, end)])
+
+
+def _times(raw: object, path: Path) -> list[TimeRule]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or not raw:
+        raise ValueError(f"{path}: time_of_day가 비어 있어요.")
+    rules = []
+    for body in raw:
+        label = str(body.get("label", "")).strip()
+        bounds = body.get("hours")
+        if not label or not (isinstance(bounds, list) and len(bounds) == 2):
+            raise ValueError(
+                f"{path}: time_of_day 규칙 '{label}'에 label과 hours [시작, 끝]이 필요해요."
+            )
+        start, end = int(bounds[0]), int(bounds[1])
+        if not (0 <= start <= 23 and 1 <= end <= 24 and start != end):
+            raise ValueError(
+                f"{path}: time_of_day 규칙 '{label}'의 hours는 시작 0~23, 끝 1~24이고 "
+                "서로 달라야 해요."
+            )
+        rules.append(
+            TimeRule(label, hours_between(start, end), _patterns(body.get("words"), label, path))
+        )
+    return rules
+
+
+def _weekdays(raw: object, path: Path) -> list[WeekdayRule]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list) or not raw:
+        raise ValueError(f"{path}: weekday가 비어 있어요.")
+    rules = []
+    for body in raw:
+        label = str(body.get("label", "")).strip()
+        days = frozenset(int(d) for d in body.get("days") or [])
+        if not label or not days or not all(0 <= d <= 6 for d in days):
+            raise ValueError(f"{path}: weekday 규칙 '{label}'의 days는 0(월)~6(일) 값이어야 해요.")
+        rules.append(WeekdayRule(label, days, _patterns(body.get("words"), label, path)))
+    return rules
+
+
 def _ranges(raw: object, section: str, path: Path) -> list[RangeRule]:
     if not isinstance(raw, list) or not raw:
         raise ValueError(f"{path}: {section}가 없어요.")
@@ -135,6 +214,19 @@ def _ranges(raw: object, section: str, path: Path) -> list[RangeRule]:
             )
         rules.append(RangeRule(label, low, high, _patterns(body.get("words"), label, path)))
     return rules
+
+
+def _genres(raw: object, path: Path) -> list[GenreRule]:
+    if raw is None:
+        return []
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError(f"{path}: genre가 비어 있어요.")
+    unknown = set(raw) - set(GENRE_VOCAB)
+    if unknown:
+        raise ValueError(f"{path}: 곡 장르 목록에 없는 이름이에요: {sorted(unknown)}")
+    return [
+        GenreRule(str(tag), _patterns(words, f"장르 {tag}", path)) for tag, words in raw.items()
+    ]
 
 
 def _song_moods(raw: object, path: Path) -> list[SongMoodRule]:
