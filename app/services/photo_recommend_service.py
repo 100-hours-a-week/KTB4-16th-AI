@@ -17,6 +17,11 @@ song_curator.py, reranker.py). 그래서 지금은 song_curator가 곡 추천과
 곡 풀은 LLM이 준 "상황 장르·무드"로 고르므로 LLM 호출은 늘지 않고, LLM 출력과 Spotify
 검색은 오히려 줄어든다. 곡 풀이 없거나 맞는 곡이 모자라면 LLM 곡으로 채운다.
 
+2026-10-20: Claude가 같은 호출에서 쓴 "분위기 문장"(사진에서 뽑은 모든 정보를 녹인 문장)을 벡터로
+바꿔서, 곡 풀·저장된 곡을 장르·무드로 거른 뒤 그 벡터와 가까운 순으로 정렬한다 (기능1과 같은
+방식). 사진 정보가 장르 2~3개·무드 2~3개로 줄어들면서 사라지는 것을 벡터가 보태 준다. 기능3은
+사용자 ID를 받지 않아서 취향 섞기는 없다. 임베딩이 실패해도 예전 태그 점수 순으로 계속한다.
+
 2026-10-16: 곡 풀 몫 중 일부(기본 1곡)는 사용자들이 자물쇠에 저장한 곡(track_moods)에서
 가져온다 — 곡 풀이 TJ 고정 목록과 저장 곡 두 개로 흩어지지 않게 같은 점수 기준으로 묶어
 한 풀처럼 쓴다(saved_song_pool.py).
@@ -32,6 +37,7 @@ import logging
 
 from app.clients.spotify_client import SpotifySearchClient
 from app.components.clip_tagger import ClipTagger
+from app.components.embedder import Embedder
 from app.components.reranker import Reranker, TrackCandidate
 from app.components.saved_song_pool import SavedSongPool
 from app.components.song_curator import CANDIDATE_COUNT, CurationResult, SongCandidate, SongCurator
@@ -62,7 +68,9 @@ class PhotoRecommendService:
         llm_count: int = CANDIDATE_COUNT,
         saved_pool: SavedSongPool | None = None,
         saved_count: int = 0,
+        embedder: Embedder | None = None,
     ):
+        self._embedder = embedder
         self._saved_pool = saved_pool
         self._saved_count = saved_count if saved_pool is not None else 0
         self._clip_tagger = clip_tagger
@@ -95,8 +103,11 @@ class PhotoRecommendService:
             logger.warning("곡 추천 실패, 폴백: %s", e)
             return self._fallback(tags=tags)
 
-        saved_songs = await self._pick_saved(curation)
-        pool_songs = self._pick_from_pool(curation, self._pool_count - len(saved_songs))
+        situation_vector = await self._mood_vector(curation.mood_sentence)
+        saved_songs = await self._pick_saved(curation, situation_vector)
+        pool_songs = self._pick_from_pool(
+            curation, self._pool_count - len(saved_songs), situation_vector
+        )
         if not curation.songs and not pool_songs and not saved_songs:
             # 형식이 깨져 한 줄도 못 건졌다 — 추천 자체가 실패한 것으로 본다
             logger.warning("곡 추천 결과를 파싱하지 못함, 폴백")
@@ -148,7 +159,23 @@ class PhotoRecommendService:
         seen = {c.external_track_id for c in candidates}
         return candidates + [c for c in more if c.external_track_id not in seen]
 
-    def _pick_from_pool(self, curation: CurationResult, count: int) -> list[SongCandidate]:
+    async def _mood_vector(self, sentence: str) -> list[float] | None:
+        """Claude가 쓴 분위기 문장을 벡터로. 실패해도 태그 점수로 고르면 되니 추천은 계속한다."""
+        if (
+            self._embedder is None
+            or not sentence
+            or (self._pool is None and self._saved_pool is None)
+        ):
+            return None
+        try:
+            return await self._embedder.embed(sentence)
+        except Exception:
+            logger.warning("분위기 문장 임베딩 실패 — 태그 점수로만 고름", exc_info=True)
+            return None
+
+    def _pick_from_pool(
+        self, curation: CurationResult, count: int, situation_vector: list[float] | None = None
+    ) -> list[SongCandidate]:
         if self._pool is None:
             return []
         try:
@@ -157,17 +184,23 @@ class PhotoRecommendService:
                 curation.situation_moods,
                 count,
                 exclude=curation.songs,
+                situation_vector=situation_vector,
             )
         except Exception:
             logger.exception("곡 풀에서 고르기 실패 — LLM 곡만 사용")
             return []
 
-    async def _pick_saved(self, curation: CurationResult) -> list[SavedSong]:
+    async def _pick_saved(
+        self, curation: CurationResult, situation_vector: list[float] | None = None
+    ) -> list[SavedSong]:
         """사용자들이 저장한 곡에서 먼저 채운다. 모자라면 그만큼 곡 풀이 채운다."""
         if self._saved_pool is None:
             return []
         return await self._saved_pool.pick(
-            curation.situation_genres, curation.situation_moods, self._saved_count
+            curation.situation_genres,
+            curation.situation_moods,
+            self._saved_count,
+            situation_vector=situation_vector,
         )
 
     def _mix(
