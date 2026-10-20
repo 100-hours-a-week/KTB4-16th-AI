@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from app.config import get_settings
 from app.db.postgres import get_engine, get_sessionmaker
 from app.db.repositories.job_repository import ClaimedJob, JobRepository
-from app.workers import balance_daily_worker, embedding_worker, report_worker
+from app.workers import balance_daily_worker, embedding_worker, record_sync_worker, report_worker
 from app.workers.types import JobFinishedHook, JobHandler
 
 logger = logging.getLogger("muro.worker")
@@ -21,6 +21,7 @@ HANDLERS: dict[str, JobHandler] = {
     report_worker.JOB_TYPE: report_worker.handle,
     report_worker.BATCH_NOTIFY_JOB_TYPE: report_worker.handle_batch_notify,
     balance_daily_worker.JOB_TYPE: balance_daily_worker.handle,
+    record_sync_worker.JOB_TYPE: record_sync_worker.handle,
 }
 
 # 성공이든 최종 실패든 job이 끝나면 부른다. 핸들러 안(성공 경로)에만 두면 실패로
@@ -81,6 +82,22 @@ async def _on_finished(job: ClaimedJob) -> None:
 
 
 _scheduled: set = set()
+_sync_slots: set = set()
+
+
+async def schedule_record_sync(now: datetime) -> None:
+    """5분 칸마다 자물쇠 동기화를 한 번 넣는다 (같은 칸은 메모리로 한 번 거름)."""
+    if not get_settings().record_sync_enabled:
+        return
+    slot = record_sync_worker.slot_key(now)
+    if slot in _sync_slots:
+        return
+    try:
+        await record_sync_worker.schedule(now)
+        _sync_slots.clear()
+        _sync_slots.add(slot)
+    except Exception:
+        logger.exception("자물쇠 동기화 예약 실패 — 다음 루프에서 다시 시도")
 
 
 async def schedule_daily(now: datetime) -> None:
@@ -112,7 +129,9 @@ async def main() -> None:
     except Exception:
         logger.exception("기능6 catch-up 확인 실패 — 23시 배치에 맡김")
     while not stop.is_set():
-        await schedule_daily(datetime.now(UTC))
+        now = datetime.now(UTC)
+        await schedule_daily(now)
+        await schedule_record_sync(now)
         try:
             processed = await run_once()
         except Exception:

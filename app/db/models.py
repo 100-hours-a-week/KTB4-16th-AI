@@ -222,3 +222,18 @@ class VoteQuestion(Base):
     status: Mapped[str] = mapped_column(String(16), server_default="approved")
     model_version: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SyncState(Base):
+    """백엔드 DB에서 어디까지 읽었는지 기억하는 표 (기능4 자물쇠 동기화).
+
+    (updated_at, record_id) 쌍으로 기억해서, 같은 시각에 바뀐 자물쇠가 여러 개여도
+    빠뜨리거나 두 번 처리하지 않는다.
+    """
+
+    __tablename__ = "sync_state"
+
+    name: Mapped[str] = mapped_column(String(50), primary_key=True)
+    last_updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_record_id: Mapped[int] = mapped_column(BigInteger, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
