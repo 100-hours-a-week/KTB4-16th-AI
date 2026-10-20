@@ -62,9 +62,11 @@ class RecordFact(Base):
     """자물쇠 1건의 조건 검색용 값 — 백엔드 MySQL(records·places·music_tracks)에서 옮겨 온 사본.
 
     기억 검색이 날짜·날씨·기온·기분·장소·곡명·가수를 질문마다 백엔드에서 읽지 않고 여기서 읽는다
-    (설정 MEMORY_RECORD_SOURCE=postgres). 원본은 백엔드 DB이고, 이 표는 채우기 도구가 맞춘다.
+    (설정 MEMORY_RECORD_SOURCE, 기본 postgres). 원본은 백엔드 DB이고, 이 표는 자물쇠 동기화
+    (record_sync_worker)가 맞춘다.
     recorded_at은 백엔드 created_at 그대로(한국시간)라 시간대 없는 칸이다.
-    comment_text는 기본으로 비워 둔다(개인정보). 사전에 없는 장소를 코멘트 글자로 찾을 때만 쓴다.
+    comment_text는 설정 RECORD_FACTS_STORE_COMMENT(기본 저장)로 정한다(개인정보). 사전에 없는
+    장소를 코멘트 글자로 찾을 때 쓴다.
     """
 
     __tablename__ = "record_facts"

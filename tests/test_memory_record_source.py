@@ -15,7 +15,15 @@ def _settings(monkeypatch, **values):
     monkeypatch.setattr(deps, "get_settings", lambda: SimpleNamespace(**base))
 
 
-def test_default_reads_the_backend_mysql(monkeypatch):
+def test_default_setting_reads_record_facts_in_the_ai_postgres(monkeypatch):
+    from app.config import Settings
+
+    monkeypatch.delenv("MEMORY_RECORD_SOURCE", raising=False)
+
+    assert Settings(_env_file=None).memory_record_source == "postgres"
+
+
+def test_mysql_source_reads_the_backend_mysql(monkeypatch):
     _settings(monkeypatch, backend_mysql_url="mysql+aiomysql://x")
 
     assert isinstance(deps.get_memory_record_source(), deps._DbMemoryRecords)
