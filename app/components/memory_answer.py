@@ -16,6 +16,8 @@
 
 from collections.abc import Sequence
 
+from app.components.query_conditions import Condition
+
 NO_RESULT_TEXT = "찾으시는 자물쇠가 없어요. 다른 말로 다시 물어봐 주세요."
 UNKNOWN_PLACE_HINT = "동이나 구 이름(예: 성수동, 성동구)으로 물어보시면 더 정확하게 찾을 수 있어요."
 
@@ -73,6 +75,17 @@ def unknown_place_notices(found: Sequence[str], missing: Sequence[str]) -> list[
             f"위치 조건은 적용하지 못했어요. {UNKNOWN_PLACE_HINT}"
         )
     return notices
+
+
+def corrected_name_notices(conditions: Sequence[Condition]) -> list[str]:
+    """오타를 고쳐 찾은 가수·곡명 안내 ("'뉴진즈'는 '뉴진스'의 오타로 보고 찾았어요.").
+
+    영어 이름 뒤에 붙일 조사(로·으로)는 글자로 정할 수 없어서 "의"로 잇는다."""
+    fixes = [pair for cond in conditions for pair in cond.corrections]
+    if not fixes:
+        return []
+    said = ", ".join(f"'{typed}'{_topic(typed)} '{name}'의" for typed, name in fixes)
+    return [f"{said} 오타로 보고 찾았어요."]
 
 
 def _quoted(words: Sequence[str]) -> str:

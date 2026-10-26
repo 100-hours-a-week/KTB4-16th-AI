@@ -579,3 +579,24 @@ def test_invalid_genre_rules_are_rejected(tmp_path, old, new, message):
 
     with pytest.raises(ValueError, match=message):
         QuestionRules.load(_rules(tmp_path, body))
+
+
+def test_typo_of_a_saved_name_becomes_that_name_with_the_correction_kept(parser):
+    conditions = parser.parse("아이우 노래 들은 날", TODAY, _NAMES)
+
+    assert [(c.kind, c.label, c.names, c.corrections) for c in conditions] == [
+        ("artist", "가수 아이유", ("아이유",), (("아이우", "아이유"),))
+    ]
+
+
+def test_typos_are_not_looked_for_when_an_exact_name_is_there(parser):
+    conditions = parser.parse("아이유랑 하입보이 들은 날", TODAY, _NAMES)
+
+    assert [(c.kind, c.names, c.corrections) for c in conditions] == [("artist", ("아이유",), ())]
+
+
+def test_rules_take_their_words_before_typos_are_looked_for(parser):
+    # "소나긔"를 곡명(소나기)으로 고치지 않는다 — 날씨 말이 아닌 남은 글자만 고쳐 본다
+    kinds = _kinds_with(parser, "비 오는 날 아이우 노래", _NAMES)
+
+    assert kinds == ["weather", "artist"]
