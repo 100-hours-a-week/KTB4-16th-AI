@@ -42,6 +42,7 @@ from app.components.condition_scoring import (
 from app.components.embedder import Embedder
 from app.components.memory_answer import (
     compose_answer,
+    corrected_name_notices,
     template_headline,
     unknown_place_notices,
 )
@@ -140,9 +141,13 @@ class MemorySearchService:
             # 걸러지고 남은 조건이 없으면 일반 검색
             asked = conditions
             conditions = resolve_conditions(asked, rows)
-            notices = unknown_place_notices(
-                found=kept_place_words(conditions), missing=dropped_place_words(asked, conditions)
-            )
+            notices = [
+                *corrected_name_notices(conditions),
+                *unknown_place_notices(
+                    found=kept_place_words(conditions),
+                    missing=dropped_place_words(asked, conditions),
+                ),
+            ]
             if conditions:
                 return await self._search_with_conditions(
                     req, conditions, rows, query_vector, comment_hits, music_hits, notices

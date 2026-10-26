@@ -257,17 +257,30 @@ class QuestionParser:
         """남은 글자에서 이 사용자가 저장한 곡의 가수·곡명을 더 찾는다 (가수가 곡명보다 먼저).
 
         artists·titles는 규칙보다 먼저 가져간 이름들이다. 같은 종류끼리 한 조건으로 합친다.
+        정확히 맞는 이름이 하나도 없을 때만 오타를 고쳐 찾고, 고친 내역을 조건에 남긴다.
         """
         found, text = lexicon.find_artists(text)
         artists = [*artists, *(n for n in found if n not in artists)]
-        if artists:
-            label = f"가수 {'·'.join(artists)}"
-            conditions.append(Condition("artist", label, names=tuple(artists)))
         found, text = lexicon.find_titles(text)
         titles = [*titles, *(n for n in found if n not in titles)]
-        if titles:
-            label = f"곡 {'·'.join(titles)}"
-            conditions.append(Condition("title", label, names=tuple(titles)))
+        corrections: list[tuple[str, str, str]] = []  # (종류, 친 글자, 찾은 이름)
+        if not artists and not titles:
+            fixed, text = lexicon.find_fuzzy(text)
+            for name in fixed:
+                bucket = artists if name.kind == "artist" else titles
+                if name.name not in bucket:
+                    bucket.append(name.name)
+                corrections.append((name.kind, name.typed, name.name))
+        for kind, names, prefix in (("artist", artists, "가수"), ("title", titles, "곡")):
+            if names:
+                conditions.append(
+                    Condition(
+                        kind,
+                        f"{prefix} {'·'.join(names)}",
+                        names=tuple(names),
+                        corrections=tuple((t, n) for k, t, n in corrections if k == kind),
+                    )
+                )
         return text
 
     def _add_song_moods(self, text: str, conditions: list[Condition]) -> str:

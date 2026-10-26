@@ -197,3 +197,69 @@ def test_artist_name_keys_split_columns_and_skip_empty_ones():
     ]
 
     assert artist_name_keys(tracks) == {"rescene", "리센느", "hypeboy"}
+
+
+# ---- 오타 고쳐 찾기 -----------------------------------------------------------
+
+_SAVED = TrackLexicon.build(
+    [
+        TrackName("Hype Boy", "NewJeans"),
+        TrackName("밤편지 (Lullaby)", "아이유"),
+        TrackName("주저하는 연인들을 위해", "잔나비"),
+        TrackName("여행", "볼빨간사춘기"),
+        TrackName("선물", "멜로망스"),
+        TrackName("봄", "태연"),
+    ],
+    {"newjeans": ["뉴진스"]},
+)
+
+
+def _fixed(text: str, lexicon: TrackLexicon = _SAVED) -> list[tuple[str, str, str]]:
+    found, _ = lexicon.find_fuzzy(text)
+    return [(f.kind, f.name, f.typed) for f in found]
+
+
+@pytest.mark.parametrize(
+    "question, expected",
+    [
+        ("뉴진즈 노래", ("artist", "NewJeans", "뉴진즈")),  # 별칭(뉴진스)과 자모 1개 차이
+        ("뉴진즈가 부른 노래", ("artist", "NewJeans", "뉴진즈")),  # 조사는 떼고 비교
+        ("아이우 노래", ("artist", "아이유", "아이우")),  # 모음 하나
+        ("잔나빈 노래", ("artist", "잔나비", "잔나빈")),  # 받침 하나
+        ("멜로망쓰 노래", ("artist", "멜로망스", "멜로망쓰")),
+        ("newjens 들은 날", ("artist", "NewJeans", "newjens")),  # 영어는 글자 단위
+        (
+            "주저하는 연인들을 위헤",  # 띄어 쓴 긴 곡명은 오타 2개까지
+            ("title", "주저하는 연인들을 위해", "주저하는 연인들을 위헤"),
+        ),
+    ],
+)
+def test_typos_find_the_saved_name(question, expected):
+    assert _fixed(question) == [expected]
+
+
+def test_found_typo_is_blanked_out_of_the_question():
+    _, rest = _SAVED.find_fuzzy("뉴진즈 노래 들은 날")
+
+    assert "뉴진즈" not in rest and "들은 날" in rest
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "태영 노래",  # 두 글자 이름(태연)은 고치지 않는다
+        "기분 좋았던 날 노래 찾아줘",
+        "친구랑 놀러 간 날",
+        "혼자 걷던 날 듣던 노래",
+        "퇴근길에 들은 노래",
+        "카페에서 들은 노래",
+    ],
+)
+def test_ordinary_words_are_not_turned_into_names(question):
+    assert _fixed(question) == []
+
+
+def test_two_equally_close_names_are_left_alone():
+    lexicon = _lexicon(("곡1", "아이유"), ("곡2", "아이요"))
+
+    assert _fixed("아이우 노래", lexicon) == []  # 아이유·아이요 둘 다 1개 차이
