@@ -23,7 +23,7 @@ class EmbeddingService:
         self,
         clip_tagger: ClipTagger,
         embedder: Embedder,
-        track_moods: TrackMoodResolver,
+        track_moods: TrackMoodResolver | None,
         store: EmbeddingStore,
         tag_version: str | None = None,
     ):
@@ -52,7 +52,11 @@ class EmbeddingService:
                 model_versions={
                     "image": self._clip.model,
                     "text": self._embedder.model,
-                    "moodVersion": self._track_moods.mood_version,
+                    **(
+                        {"moodVersion": self._track_moods.mood_version}
+                        if self._track_moods is not None
+                        else {}
+                    ),
                     **({"tagVersion": self._tag_version} if self._tag_version else {}),
                 },
                 photo_tags=photo_tags,
@@ -73,8 +77,13 @@ class EmbeddingService:
             return None
         return build_photo_tags(scene, axes)
 
-    async def _embed_music(self, track: EmbeddingTrack) -> tuple[str, list[float]]:
-        """같은 곡은 무드를 한 번만 만든다 — 스포티파이 곡 ID로 캐시를 먼저 찾는다."""
+    async def _embed_music(self, track: EmbeddingTrack) -> tuple[str, list[float] | None]:
+        """같은 곡은 무드를 한 번만 만든다 — 스포티파이 곡 ID로 캐시를 먼저 찾는다.
+
+        곡 설명을 끄면 빈 글과 벡터 없음으로 저장한다 (읽는 쪽은 벡터가 없는 행을 건너뛴다).
+        """
+        if self._track_moods is None:
+            return "", None
         mood = await self._track_moods.resolve(
             title=track.title,
             artist_name=track.artist_name,

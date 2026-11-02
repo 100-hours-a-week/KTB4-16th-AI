@@ -135,8 +135,8 @@ class ContextRecommendService:
         self._personal_similarity = personal_similarity
         self._pool = song_pool if song_pool is not None and pool_count > 0 else None
         self._pool_count = pool_count if self._pool is not None else 0
-        # 곡 풀을 안 쓰면 예전처럼 LLM에게 넉넉히 받는다
-        self._llm_count = llm_count if self._pool is not None else CANDIDATE_COUNT
+        # 곡 풀을 안 쓰면 예전처럼 LLM에게 넉넉히 받는다 (LLM 곡을 끈 경우는 그대로 0)
+        self._llm_count = CANDIDATE_COUNT if self._pool is None and llm_count > 0 else llm_count
         self._embedder = embedder
         self._records = record_search
         self._song_curator = song_curator
@@ -180,7 +180,7 @@ class ContextRecommendService:
         limit = min(req.limit, MAX_TRACKS)
         kept = self._mix(curation, llm_found, pool_found, limit)
 
-        if len(kept) < limit:
+        if len(kept) < limit and self._llm_count > 0:
             # Spotify 탈락·점수 미달로 모자라면 이미 나온 곡을 빼고 LLM에게 한 번만 더 받는다.
             # 보충은 있으면 좋은 것이라 실패해도 지금 있는 곡으로 응답한다.
             try:
@@ -263,6 +263,9 @@ class ContextRecommendService:
         total = self._pool_count if self._pool is not None else self._saved_count
         if total <= 0:
             return [], []
+        # 곡 풀 곡은 Spotify ID를 확인 뒤에야 알아서 재추천 때 뺄 곡이 후보에 섞인다 — 그만큼 더
+        # 뽑아 둔다. 이미 보여 준 곡은 track_lookups에 있어 Spotify 호출은 늘지 않는다
+        total += len(excluded)
         heard = [SongCandidate(_first_artist(r.artist), r.title, "", ()) for r in references]
         pool_ranked = []
         if self._pool is not None:

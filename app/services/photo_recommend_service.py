@@ -83,8 +83,8 @@ class PhotoRecommendService:
         self._resolver = TrackResolver(spotify_search, track_lookups)
         self._pool = song_pool if song_pool is not None and pool_count > 0 else None
         self._pool_count = pool_count if self._pool is not None else 0
-        # 곡 풀을 안 쓰면 예전처럼 LLM에게 넉넉히 받는다
-        self._llm_count = llm_count if self._pool is not None else CANDIDATE_COUNT
+        # 곡 풀을 안 쓰면 예전처럼 LLM에게 넉넉히 받는다 (LLM 곡을 끈 경우는 그대로 0)
+        self._llm_count = CANDIDATE_COUNT if self._pool is None and llm_count > 0 else llm_count
 
     async def recommend(self, req: PhotoRecommendRequest) -> PhotoRecommendResponse:
         try:
@@ -123,7 +123,7 @@ class PhotoRecommendService:
             raise ExternalApiFailedError("Spotify 곡 확인에 실패했어요.") from e
         candidates = self._mix(curation, llm_found, pool_found)
 
-        if len(candidates) < RESULT_COUNT:
+        if len(candidates) < RESULT_COUNT and self._llm_count > 0:
             candidates = await self._top_up(tags, axes, curation, candidates)
 
         if not candidates:

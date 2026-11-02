@@ -678,3 +678,23 @@ async def test_photo_db_songs_are_ordered_by_hybrid_score_and_the_claude_song_co
     res = await service.recommend(_req())
 
     assert [t.title for t in res.tracks] == ["가까운곡", "먼곡", "클로드곡"]
+
+
+async def test_pool_only_answers_without_llm_songs_or_top_up():
+    pool = [("P1", "x"), ("P2", "y")]
+    curator = StubSongCurator(curation=_curation(songs=[]))
+    service = PhotoRecommendService(
+        clip_tagger=StubClipTagger(tags=["파티"]),
+        song_curator=curator,
+        reranker=Reranker(),
+        spotify_search=StubSpotifySearch(_results_for(*pool)),
+        song_pool=_pool_of(*pool),
+        pool_count=5,
+        llm_count=0,
+    )
+
+    res = await service.recommend(_req())
+
+    assert {t.artist_name for t in res.tracks} == {"P1", "P2"}
+    assert curator.counts == [0]
+    assert curator.excludes == []

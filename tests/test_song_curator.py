@@ -193,3 +193,13 @@ async def test_curate_without_mood_sentence_or_with_copied_template_gives_empty(
     template = await SongCurator(ScriptedLLM(copied)).curate_from_tags(["카페"])
 
     assert plain.mood_sentence == "" and template.mood_sentence == ""
+
+
+def test_situation_only_prompt_does_not_ask_for_songs():
+    from app.components.song_curator import system_prompt
+
+    prompt = system_prompt(0)
+
+    assert "곡을 추천하지 않는다" in prompt
+    assert "곡:" not in prompt
+    assert "상황: 장르=" in prompt and "분위기:" in prompt
