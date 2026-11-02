@@ -268,3 +268,27 @@ async def test_service_without_tag_version_leaves_model_versions_as_before(recor
     await build_service(store).generate(EmbeddingGenerateRequest.model_validate(record_payload))
 
     assert "tagVersion" not in store.rows[1029].model_versions
+
+
+async def test_song_description_off_saves_without_music_vector_or_llm(record_payload):
+    from app.services.embedding_service import EmbeddingService
+
+    store = InMemoryStore()
+    service = EmbeddingService(
+        clip_tagger=ClipTagger(
+            FakeClipClient(dim=CLIP_DIM),
+            CategoryVectors(FakeClipClient(dim=CLIP_DIM)),
+            AxisVectors(FakeClipClient(dim=CLIP_DIM)),
+        ),
+        embedder=Embedder(FakeEmbeddingClient(dim=TEXT_DIM)),
+        track_moods=None,
+        store=store,
+    )
+
+    await service.generate(EmbeddingGenerateRequest.model_validate(record_payload))
+
+    row = store.rows[1029]
+    assert row.music_embedding is None
+    assert row.music_mood_text == ""
+    assert "moodVersion" not in row.model_versions
+    assert len(row.image_embedding) == CLIP_DIM

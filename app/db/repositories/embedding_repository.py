@@ -16,7 +16,7 @@ class RecordEmbeddingData:
     user_id: int
     external_track_id: str
     image_embedding: list[float]
-    music_embedding: list[float]
+    music_embedding: list[float] | None
     comment_embedding: list[float] | None
     music_mood_text: str
     model_versions: dict[str, Any]

@@ -6,6 +6,7 @@ from app.components.clip_tagger import ClipTagger
 from app.components.embedder import Embedder
 from app.components.music_mood_tagger import MusicMoodTagger
 from app.components.track_mood_resolver import TrackMoodResolver
+from app.config import get_settings
 from app.db.postgres import get_sessionmaker
 from app.db.repositories.embedding_repository import EmbeddingRepository
 from app.db.repositories.track_mood_repository import TrackMoodRepository
@@ -32,7 +33,9 @@ async def handle(payload: dict[str, Any]) -> None:
                 mood_tagger=MusicMoodTagger(clients.llm_knowledge),
                 embedder=Embedder(clients.embedding),
                 store=TrackMoodRepository(session),
-            ),
+            )
+            if get_settings().song_description_enabled
+            else None,
             store=EmbeddingRepository(session),
             tag_version=get_tag_version(),
         )

@@ -822,3 +822,62 @@ def _saved_pool_with(*songs):
             return list(songs)
 
     return SavedSongPool(_Search(), rng=random.Random(0))
+
+
+# ── 곡 풀 단독 (Claude 곡 없음) ─────────────────────────────────
+
+
+def _pool_only_service(pool, search):
+    curator = StubSongCurator(_curation([]))
+    service = ContextRecommendService(
+        embedder=StubEmbedder(),
+        record_search=StubRecordSearch(),
+        song_curator=curator,
+        reranker=Reranker(),
+        spotify_search=StubSpotify(search),
+        song_pool=_pool_of(*pool),
+        pool_count=5,
+        llm_count=0,
+    )
+    return service, curator
+
+
+async def test_pool_only_fills_five_songs_without_asking_llm_for_songs():
+    pool = [(f"P{i}", "x") for i in range(6)]
+    service, curator = _pool_only_service(pool, _search_for(*pool))
+
+    res = await service.recommend(_req(limit=5))
+
+    assert len(res.tracks) == 5
+    assert curator.counts == [0]
+
+
+async def test_pool_only_does_not_call_llm_again_when_songs_run_short():
+    pool = [("P1", "x"), ("P2", "y")]
+    service, curator = _pool_only_service(pool, _search_for(*pool))
+
+    res = await service.recommend(_req(limit=5))
+
+    assert len(res.tracks) == 2
+    assert curator.counts == [0]
+    assert curator.excludes == []
+
+
+async def test_pool_only_replaces_excluded_songs_on_re_recommend():
+    pool = [(f"P{i}", "x") for i in range(10)]
+    service, _ = _pool_only_service(pool, _search_for(*pool))
+    shown = [f"id-P{i}-x" for i in range(5)]
+
+    res = await service.recommend(_req(limit=5, excludeTrackIds=shown))
+
+    assert len(res.tracks) == 5
+    assert not {t.external_track_id for t in res.tracks} & set(shown)
+
+
+async def test_missing_pool_does_not_bring_llm_songs_back_when_llm_is_off():
+    curator = StubSongCurator(_curation([]))
+    service = _service(curator=curator, llm_count=0, pool_count=5)
+
+    await service.recommend(_req(limit=5))
+
+    assert curator.counts == [0]

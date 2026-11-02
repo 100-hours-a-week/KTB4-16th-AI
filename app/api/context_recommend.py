@@ -52,7 +52,7 @@ async def context_recommend(
         song_pool=song_pool,
         pool_count=s.song_pool_count,
         llm_count=s.song_pool_llm_count,
-        saved_pool=saved_pool,
+        saved_pool=saved_pool if s.song_pool_saved_max > 0 else None,
         saved_count=s.song_pool_saved_count,
         personal_similarity=s.personal_similarity,
         taste_weight=s.personal_taste_weight,

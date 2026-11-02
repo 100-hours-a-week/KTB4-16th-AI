@@ -194,6 +194,12 @@ def _song_key(artist: str, title: str) -> tuple[str, str]:
     return _norm(artist), _norm(title)
 
 
+def _embedding(song: dict) -> tuple[float, ...] | None:
+    """곡 풀 버전마다 다른 벡터 칸을 읽는다. 없으면 None."""
+    vector = song.get("lyric_embedding") or song.get("description_embedding")
+    return tuple(vector) if vector else None
+
+
 def load_song_pool(path: Path) -> SongPool | None:
     """곡 풀 파일을 읽는다. 없거나 깨졌으면 None — 그때는 LLM 곡만으로 추천한다."""
     try:
@@ -203,14 +209,12 @@ def load_song_pool(path: Path) -> SongPool | None:
                 artist=s["artist"],
                 title=s["title"],
                 genres=tuple(s["genres"]),
-                moods=tuple(s["moods"]),
+                moods=tuple(s.get("moods", ())),
                 popularity=int(s.get("popularity", 0)),
-                embedding=tuple(s["description_embedding"])
-                if s.get("description_embedding")
-                else None,
+                embedding=_embedding(s),
             )
             for s in data["songs"]
-            if s["genres"] and s["moods"]
+            if s["genres"]
         ]
     except (OSError, ValueError, KeyError, TypeError):
         logger.warning("곡 풀 파일(%s)이 없거나 깨져 있어요. LLM 곡만으로 추천해요.", path)

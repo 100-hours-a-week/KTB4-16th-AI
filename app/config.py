@@ -125,22 +125,23 @@ class Settings(BaseSettings):
     spotify_service_refresh_token: str = ""
 
     # 기능1·3 추천 5곡 중 곡 풀에서 채울 곡 수. 0이면 예전처럼 LLM 곡만.
-    # 곡 풀을 쓰면 LLM에게는 song_pool_llm_count곡만 받는다 (Spotify 탈락 대비 여유분 포함)
-    # 5곡 중 4곡은 DB(저장된 곡 + TJ 곡 풀), Claude 곡은 1곡 — Claude가 매번 같은 곡
-    # (실측: 20개 상황에서 "적재 - 별 보러 가자"가 80곡 중 9번)을 내서 몫을 줄였다.
-    # Claude에게는 Spotify 탈락 몫까지 3곡을 받는다.
-    song_pool_count: int = 4
-    song_pool_llm_count: int = 3
-    # 곡 풀 몫 중 몇 곡을 "사용자들이 저장한 곡"(track_moods)에서 가져올지. 나머지는 TJ 곡 풀.
-    # 1로 둔 이유: 오픈 직후엔 저장된 곡이 적어서 다 거기서 뽑으면 같은 곡만 돌 수 있다.
-    # 저장 곡이 쌓이면 올려 가며 실측한다. 0이면 TJ 곡 풀만 사용.
-    song_pool_saved_count: int = 1
+    # 5곡 모두 곡 풀에서 고른다 — Claude가 매번 같은 곡
+    # (실측: 20개 상황에서 "적재 - 별 보러 가자"가 80곡 중 9번)을 내서 곡 추천에서 뺐다.
+    # Claude는 상황 장르·무드·분위기 문장만 쓴다. song_pool_llm_count를 올리면 곡도 받는다.
+    song_pool_count: int = 5
+    song_pool_llm_count: int = 0
+    # 곡 풀 몫 중 몇 곡을 "사용자들이 저장한 곡"(track_moods)에서 가져올지 (하한).
+    # 저장된 곡은 설명을 만들지 않으므로 끈다. song_pool_saved_max까지 0이어야 후보에서 빠진다.
+    song_pool_saved_count: int = 0
     # 저장된 곡은 DB 몫 안에서 곡 풀과 같은 점수로 겨룬다 (db_picker). song_pool_saved_count는 최소
     # 곡 수(하한), 이 값은 최대 곡 수(상한). 점수 = 태그 가중치·태그 점수 + 벡터 가중치·벡터 유사도.
     # 가중치는 감으로 둔 초기값 — 같은 상황 세트로 비교해 정한다
-    song_pool_saved_max: int = 2
+    song_pool_saved_max: int = 0
     rerank_tag_weight: float = 0.5
     rerank_vector_weight: float = 0.5
+    # 자물쇠 저장 때 Claude로 곡 설명·장르·무드를 만들지. 끄면 새 곡은 track_moods에 안 쌓이고
+    # 곡 벡터 없이 저장된다 (취향 벡터·기능5 곡 검색·장르 통계에서 그 곡이 빠진다)
+    song_description_enabled: bool = False
     # 곡 풀 파일 — Docker 빌드 때 비공개 HF 저장소에서 받아 둔다(공개 레포에 두지 않음).
     # 로컬에서 쓰려면 HF에서 받아 SONG_POOL_PATH로 지정
     song_pool_path: str = "/app/models/song_pool/song_pool.json"
