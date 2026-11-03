@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 토큰은 빌드 시크릿으로만 넘겨서 이미지 레이어에 남지 않는다 (--secret id=hf_token).
 # 토큰이 없으면 모델 없이 빌드되고, 서버는 뜨지만 모더레이션 판정만 503을 낸다.
 ARG MODERATION_MODEL_REPO=dionypark/mulo-moderation-kcelectra
-ARG MODERATION_MODEL_REVISION=v1-stage3
+ARG MODERATION_MODEL_REVISION=v2-stage7
 RUN --mount=type=secret,id=hf_token \
     mkdir -p /models/moderation && \
     if [ -s /run/secrets/hf_token ]; then \
