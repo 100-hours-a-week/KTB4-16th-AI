@@ -8,6 +8,7 @@ SQL로 "날씨=비 AND 시간대=저녁"처럼 정확히 일치하는 기록만 
 from dataclasses import dataclass
 from typing import Protocol
 
+from langsmith import traceable
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -57,6 +58,7 @@ class VectorSearch:
     def __init__(self, session: AsyncSession):
         self._session = session
 
+    @traceable(name="search_by_comment", run_type="retriever")
     async def similar_by_comment(
         self, user_id: int, query_vector: list[float], limit: int
     ) -> list[SimilarRecord]:
@@ -102,6 +104,7 @@ class VectorSearch:
         )
         return [list(row.music_embedding) for row in rows]
 
+    @traceable(name="search_by_music", run_type="retriever")
     async def music_vectors_for_records(
         self, user_id: int, record_ids: list[int]
     ) -> list[list[float]]:
