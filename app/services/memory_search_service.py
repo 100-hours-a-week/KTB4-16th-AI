@@ -30,6 +30,8 @@ import logging
 from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta, timezone
 
+from langsmith import traceable
+
 from app.components.answer_headline import HeadlineWriter
 from app.components.condition_scoring import (
     ConditionWeights,
@@ -117,6 +119,7 @@ class MemorySearchService:
         self._today = today
         self._aliases = aliases  # 없으면 저장된 이름 그대로만 가수를 찾는다
 
+    @traceable(name="memory_search", run_type="chain")
     async def search(self, req: MemorySearchRequest) -> MemorySearchResponse:
         conditions = (
             self._parser.parse(req.query_text, self._today(), await self._lexicon(req.user_id))
