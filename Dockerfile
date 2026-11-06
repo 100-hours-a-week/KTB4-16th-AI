@@ -34,7 +34,7 @@ RUN --mount=type=secret,id=hf_token \
 # 없으면 곡 풀 없이 빌드되고, 사진 추천은 LLM 곡만으로 동작한다.
 ARG SONG_POOL_REPO=dionypark/mulo-melon-pool
 ARG SONG_POOL_REVISION=main
-ARG SONG_POOL_FILE=melon_pool.json
+ARG SONG_POOL_FILE=melon_pool_desc.json
 RUN --mount=type=secret,id=hf_token \
     mkdir -p /models/song_pool && \
     if [ -s /run/secrets/hf_token ]; then \

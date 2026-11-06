@@ -1,21 +1,16 @@
 from fastapi import APIRouter, Depends
 
+from app.clients.image_fetcher import ImageFetcher
 from app.clients.spotify_client import SpotifySearchClient
-from app.components.clip_tagger import ClipTagger
-from app.components.db_picker import DbPickConfig
 from app.components.embedder import Embedder
-from app.components.reranker import Reranker
-from app.components.saved_song_pool import SavedSongPool
-from app.components.song_curator import SongCurator
+from app.components.scene_curator import SceneCurator
 from app.components.song_pool import SongPool
 from app.config import get_settings
 from app.db.repositories.track_lookup_repository import TrackLookupStore
 from app.dependencies import (
-    get_clip_tagger,
     get_embedder,
-    get_reranker,
-    get_saved_song_pool,
-    get_song_curator,
+    get_image_fetcher,
+    get_scene_curator,
     get_song_pool,
     get_spotify_search_client,
     get_track_lookup_store,
@@ -29,32 +24,20 @@ router = APIRouter(prefix="/api", tags=["기능3 사진 기반 추천"])
 @router.post("/photo-recommend", response_model=PhotoRecommendResponse)
 async def photo_recommend(
     req: PhotoRecommendRequest,
-    clip_tagger: ClipTagger = Depends(get_clip_tagger),
-    song_curator: SongCurator = Depends(get_song_curator),
-    reranker: Reranker = Depends(get_reranker),
+    scene_curator: SceneCurator = Depends(get_scene_curator),
     spotify_search: SpotifySearchClient = Depends(get_spotify_search_client),
     track_lookups: TrackLookupStore = Depends(get_track_lookup_store),
     song_pool: SongPool | None = Depends(get_song_pool),
-    saved_pool: SavedSongPool = Depends(get_saved_song_pool),
     embedder: Embedder = Depends(get_embedder),
+    image_fetcher: ImageFetcher = Depends(get_image_fetcher),
 ) -> PhotoRecommendResponse:
-    s = get_settings()
     service = PhotoRecommendService(
-        clip_tagger,
-        song_curator,
-        reranker,
+        scene_curator,
         spotify_search,
+        embedder,
+        image_fetcher,
         track_lookups,
         song_pool=song_pool,
-        pool_count=s.song_pool_count,
-        llm_count=s.song_pool_llm_count,
-        saved_pool=saved_pool if s.song_pool_saved_max > 0 else None,
-        saved_count=s.song_pool_saved_count,
-        embedder=embedder,
-        db_pick=DbPickConfig(
-            tag_weight=s.rerank_tag_weight,
-            vector_weight=s.rerank_vector_weight,
-            max_saved=s.song_pool_saved_max,
-        ),
+        hub_weight=get_settings().hub_weight,
     )
     return await service.recommend(req)
