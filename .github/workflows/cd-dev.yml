@@ -74,9 +74,6 @@ jobs:
           AI_CLIENT_MODE=${{ secrets.AI_CLIENT_MODE }}
           ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
           LLM_MODEL=${{ secrets.LLM_MODEL }}
-          LOCAL_LLM_URL=${{ secrets.LOCAL_LLM_URL }}
-          LOCAL_LLM_MODEL=${{ secrets.LOCAL_LLM_MODEL }}
-          LOCAL_LLM_API_KEY=${{ secrets.LOCAL_LLM_API_KEY }}
           OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
           TEXT_EMBEDDING_MODEL=${{ secrets.TEXT_EMBEDDING_MODEL }}
           TEXT_EMBEDDING_DIM=${{ secrets.TEXT_EMBEDDING_DIM }}
