@@ -46,6 +46,8 @@ class ContextRecommendResponse(CamelModel):
     recommendation_basis: Literal["PERSONAL", "REGIONAL", "GENERIC"]
     tracks: list[RankedTrack]
     degraded: bool = False
+    # 곡을 고를 때 쓴 장면 문장 하나 — 백엔드가 그대로 화면에 보여 준다 (비면 null)
+    recommend_reason: str | None = None
 
 
 class PlaylistSaveRequest(CamelModel):

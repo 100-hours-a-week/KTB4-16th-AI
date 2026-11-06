@@ -19,3 +19,5 @@ class PhotoRecommendResponse(CamelModel):
     degraded: bool = False
     # 검색어 완화 재시도가 사라져 항상 0. 위 rewritten_query와 같은 이유로 남겨둔 필드.
     retry_count: int = 0
+    # 곡을 고를 때 쓴 장면 문장 하나 — 백엔드가 그대로 화면에 보여 준다 (비면 null)
+    recommend_reason: str | None = None

@@ -23,6 +23,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
+
 from app.components.song_curator import SongCandidate
 
 logger = logging.getLogger("muro.song_pool")
@@ -44,6 +46,14 @@ class PoolSong:
     popularity: int = 0  # 0~100, 차트에 오른 개월 수 기준
     # 설명 문장의 KURE 벡터(길이 1) — 없으면 태그 점수로만 고른다 (pool-v2 이하 파일)
     embedding: tuple[float, ...] | None = None
+    # 장면 문장으로 고르는 방식(rank_scenes)에서 쓰는 두 벡터. 가사 벡터와 곡 설명 벡터 모두 KURE,
+    # 파일에 없으면 None. embedding은 이 중 가사 → 설명 순으로 먼저 있는 값이다 (예전 방식용)
+    lyric_embedding: "np.ndarray | None" = None
+    description_embedding: "np.ndarray | None" = None
+    song_id: str = ""
+    # 허브 값 — 여러 상황의 장면 문장(곡풀 만들 때 쓴 300개)과 비교한 이 곡의 평균 점수.
+    # 어느 상황에나 점수가 높게 나오는 곡은 이 값이 커서, 점수에서 일부를 빼 준다 (rank_scenes)
+    hub: float = 0.0
 
     def to_candidate(self) -> SongCandidate:
         return SongCandidate(
@@ -51,10 +61,109 @@ class PoolSong:
         )
 
 
+@dataclass(frozen=True)
+class ScoredSong:
+    """장면 문장으로 매긴 곡 점수. scene_index는 이 곡이 가장 잘 맞은 장면(0부터)."""
+
+    song: PoolSong
+    score: float
+    scene_index: int
+
+
 class SongPool:
     def __init__(self, songs: list[PoolSong], rng: random.Random | None = None):
         self._songs = songs
         self._rng = rng or random.Random()
+        self._matrices: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None
+
+    def _vector_matrices(self) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """(가사 행렬, 가사 있음, 설명 행렬, 설명 있음) — 처음 한 번만 만든다."""
+        if self._matrices is None:
+            dim = next(
+                (
+                    len(v)
+                    for s in self._songs
+                    for v in (s.lyric_embedding, s.description_embedding)
+                    if v is not None
+                ),
+                0,
+            )
+
+            def build(attr: str) -> tuple[np.ndarray, np.ndarray]:
+                matrix = np.zeros((len(self._songs), dim), dtype=np.float32)
+                has = np.zeros(len(self._songs), dtype=bool)
+                for i, song in enumerate(self._songs):
+                    vector = getattr(song, attr)
+                    if vector is not None and len(vector) == dim:
+                        matrix[i] = vector
+                        has[i] = True
+                return matrix, has
+
+            lyric, has_lyric = build("lyric_embedding")
+            desc, has_desc = build("description_embedding")
+            self._matrices = (lyric, has_lyric, desc, has_desc)
+        return self._matrices
+
+    def rank_scenes(
+        self,
+        lyric_queries: list[list[float]],
+        description_queries: list[list[float]],
+        exclude: list[SongCandidate] | None = None,
+        lyric_weight: float = 0.5,
+        hub_weight: float = 0.0,
+    ) -> list[ScoredSong]:
+        """장면마다 (가사 문체 문장 ↔ 가사 벡터, 설명 문체 문장 ↔ 설명 벡터) 점수를 각각 z점수로
+        바꿔 lyric_weight : (1 - lyric_weight)로 합치고, 장면 3개의 평균으로 곡 점수를 매긴다.
+
+        z점수는 장면마다 곡 전체에서 따로 낸다 — 벡터 종류마다 점수 분포가 달라서 그냥 더하면 한쪽이
+        묻힌다. 곡 점수에서 hub_weight × (그 곡의 허브 값)을 뺀다 — 어느 상황에나 높게 나오는 곡이
+        매번 1등이 되는 것을 줄인다 (50개 상황 실측: 0.5에서 점수 그대로, 곡 종류 86→140).
+        한 벡터만 있는 곡은 그 벡터 점수를 양쪽에 쓴다. 질문 벡터 길이가 곡 벡터와 다르면
+        (임베딩 모델이 바뀐 경우) 빈 목록 — 서비스가 폴백한다. 점수 높은 순으로 돌려준다.
+        """
+        lyric, has_lyric, desc, has_desc = self._vector_matrices()
+        if not len(self._songs) or lyric.shape[1] == 0:
+            return []
+        queries_l = np.asarray(lyric_queries, dtype=np.float32)
+        queries_d = np.asarray(description_queries, dtype=np.float32)
+        if (
+            queries_l.ndim != 2
+            or queries_d.ndim != 2
+            or not len(queries_l)
+            or len(queries_l) != len(queries_d)
+            or queries_l.shape[1] != lyric.shape[1]
+            or queries_d.shape[1] != lyric.shape[1]
+        ):
+            return []
+
+        def z(raw: np.ndarray, has: np.ndarray) -> np.ndarray:
+            out = np.zeros_like(raw)
+            if has.any():
+                part = raw[has]
+                out[has] = (part - part.mean(axis=0)) / (part.std(axis=0) + 1e-9)
+            return out
+
+        z_l = z(lyric @ queries_l.T, has_lyric)
+        z_d = z(desc @ queries_d.T, has_desc)
+        z_l = np.where(has_lyric[:, None], z_l, z_d)
+        z_d = np.where(has_desc[:, None], z_d, z_l)
+        per_scene = lyric_weight * z_l + (1 - lyric_weight) * z_d
+        score = per_scene.mean(axis=1)
+        if hub_weight:
+            score = score - hub_weight * np.array(
+                [song.hub for song in self._songs], dtype=np.float32
+            )
+        best = per_scene.argmax(axis=1)
+
+        excluded = {_song_key(s.artist, s.title) for s in exclude or []}
+        usable = has_lyric | has_desc
+        out_list = [
+            ScoredSong(song, float(score[i]), int(best[i]))
+            for i, song in enumerate(self._songs)
+            if usable[i] and _song_key(song.artist, song.title) not in excluded
+        ]
+        out_list.sort(key=lambda r: r.score, reverse=True)
+        return out_list
 
     def __len__(self) -> int:
         return len(self._songs)
@@ -138,7 +247,11 @@ class SongPool:
         가수·제목으로만 찾는다 — 주변 인기곡은 Spotify ID 없이 제목·가수만 온다.
         곡 풀에 없는 곡은 빠진다.
         """
-        by_key = {_song_key(s.artist, s.title): s.embedding for s in self._songs if s.embedding}
+        by_key = {
+            _song_key(s.artist, s.title): s.embedding
+            for s in self._songs
+            if s.embedding is not None
+        }
         found = []
         for i, (artist, title) in enumerate(tracks):
             embedding = by_key.get(_song_key(artist, title))
@@ -194,28 +307,37 @@ def _song_key(artist: str, title: str) -> tuple[str, str]:
     return _norm(artist), _norm(title)
 
 
-def _embedding(song: dict) -> tuple[float, ...] | None:
-    """곡 풀 버전마다 다른 벡터 칸을 읽는다. 없으면 None."""
-    vector = song.get("lyric_embedding") or song.get("description_embedding")
-    return tuple(vector) if vector else None
+def _vector(song: dict, key: str) -> np.ndarray | None:
+    """벡터 칸을 float32 배열로. 곡 4천 개 × 벡터 2개를 파이썬 float 튜플로 들면 메모리가 크다."""
+    vector = song.get(key)
+    return np.asarray(vector, dtype=np.float32) if vector else None
 
 
 def load_song_pool(path: Path) -> SongPool | None:
     """곡 풀 파일을 읽는다. 없거나 깨졌으면 None — 그때는 LLM 곡만으로 추천한다."""
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        songs = [
-            PoolSong(
-                artist=s["artist"],
-                title=s["title"],
-                genres=tuple(s["genres"]),
-                moods=tuple(s.get("moods", ())),
-                popularity=int(s.get("popularity", 0)),
-                embedding=_embedding(s),
+        songs = []
+        for s in data["songs"]:
+            if not s["genres"]:
+                continue
+            lyric = _vector(s, "lyric_embedding")
+            description = _vector(s, "description_embedding")
+            songs.append(
+                PoolSong(
+                    artist=s["artist"],
+                    title=s["title"],
+                    genres=tuple(s["genres"]),
+                    moods=tuple(s.get("moods", ())),
+                    popularity=int(s.get("popularity", 0)),
+                    # 예전 방식(vectors_for 등)은 가사 벡터 → 설명 벡터 순으로 있는 것을 쓴다
+                    embedding=lyric if lyric is not None else description,
+                    lyric_embedding=lyric,
+                    description_embedding=description,
+                    song_id=str(s.get("song_id") or ""),
+                    hub=float(s.get("hub") or 0.0),
+                )
             )
-            for s in data["songs"]
-            if s["genres"]
-        ]
     except (OSError, ValueError, KeyError, TypeError):
         logger.warning("곡 풀 파일(%s)이 없거나 깨져 있어요. LLM 곡만으로 추천해요.", path)
         return None

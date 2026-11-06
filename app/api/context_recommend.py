@@ -1,23 +1,18 @@
 from fastapi import APIRouter, Depends
 
 from app.clients.spotify_client import SpotifySearchClient
-from app.components.db_picker import DbPickConfig
 from app.components.embedder import Embedder
-from app.components.reranker import Reranker
-from app.components.saved_song_pool import SavedSongPool
-from app.components.song_curator import SongCurator
+from app.components.scene_curator import SceneCurator
 from app.components.song_pool import SongPool
+from app.components.taste_genres import OnboardingReader
 from app.components.vector_search import RecordSearch
 from app.config import get_settings
-from app.db.repositories.memory_record_repository import MemoryRecordSource
 from app.db.repositories.track_lookup_repository import TrackLookupStore
 from app.dependencies import (
     get_embedder,
-    get_memory_record_source,
+    get_onboarding_reader,
     get_record_search,
-    get_reranker,
-    get_saved_song_pool,
-    get_song_curator,
+    get_scene_curator,
     get_song_pool,
     get_spotify_search_client,
     get_track_lookup_store,
@@ -33,36 +28,23 @@ async def context_recommend(
     req: ContextRecommendRequest,
     embedder: Embedder = Depends(get_embedder),
     record_search: RecordSearch = Depends(get_record_search),
-    song_curator: SongCurator = Depends(get_song_curator),
-    reranker: Reranker = Depends(get_reranker),
+    scene_curator: SceneCurator = Depends(get_scene_curator),
     spotify_search: SpotifySearchClient = Depends(get_spotify_search_client),
     track_lookups: TrackLookupStore = Depends(get_track_lookup_store),
     song_pool: SongPool | None = Depends(get_song_pool),
-    saved_pool: SavedSongPool = Depends(get_saved_song_pool),
-    record_source: MemoryRecordSource = Depends(get_memory_record_source),
+    onboarding: OnboardingReader = Depends(get_onboarding_reader),
 ) -> ContextRecommendResponse:
     s = get_settings()
     service = ContextRecommendService(
         embedder,
         record_search,
-        song_curator,
-        reranker,
+        scene_curator,
         spotify_search,
         track_lookups,
         song_pool=song_pool,
-        pool_count=s.song_pool_count,
-        llm_count=s.song_pool_llm_count,
-        saved_pool=saved_pool if s.song_pool_saved_max > 0 else None,
-        saved_count=s.song_pool_saved_count,
         personal_similarity=s.personal_similarity,
-        taste_weight=s.personal_taste_weight,
-        record_source=record_source,
-        situational_min_records=s.situational_taste_min_records,
         nearby_weight=s.nearby_weight,
-        db_pick=DbPickConfig(
-            tag_weight=s.rerank_tag_weight,
-            vector_weight=s.rerank_vector_weight,
-            max_saved=s.song_pool_saved_max,
-        ),
+        hub_weight=s.hub_weight,
+        onboarding=onboarding,
     )
     return await service.recommend(req)

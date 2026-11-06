@@ -211,7 +211,9 @@ def test_load_reads_lyric_embedding(tmp_path):
 
     pool = load_song_pool(path)
 
-    assert pool is not None and pool.by_genre("발라드")[0].embedding == (0.6, 0.8)
+    assert pool is not None and pool.by_genre("발라드")[0].embedding.tolist() == pytest.approx(
+        [0.6, 0.8]
+    )
 
 
 def test_load_reads_description_embedding_when_present(tmp_path):
@@ -237,4 +239,7 @@ def test_load_reads_description_embedding_when_present(tmp_path):
     pool = load_song_pool(path)
 
     assert pool is not None
-    assert [s.embedding for s in pool._songs] == [(0.5, 0.5), None]
+    assert [None if s.embedding is None else s.embedding.tolist() for s in pool._songs] == [
+        [0.5, 0.5],
+        None,
+    ]

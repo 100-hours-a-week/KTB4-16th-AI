@@ -1,19 +1,22 @@
 """/api/photo-recommend 엔드포인트 배선(DI) 통합 테스트.
 
-fake 모드의 FakeClipClient·FakeLLMClient·FakeSpotifySearchClient를 그대로 태워
-get_clip_tagger·get_song_curator·get_reranker·get_spotify_search_client 등 실제
-의존성 그래프가 안 깨졌는지 확인한다. Reranker가 태그 겹침만 계산하는 순수
-함수로 바뀌면서(2026-09-26) DB 세션이 필요 없어져, 더 이상 오버라이드가
-필요 없다 — 실제 의존성 그대로 통합 테스트가 가능해졌다.
+fake 모드의 FakeLLMClient·FakeSpotifySearchClient를 그대로 태워 get_scene_curator·
+get_image_fetcher·get_spotify_search_client 등 실제 의존성 그래프가 안 깨졌는지 확인한다.
 """
 
 from fastapi.testclient import TestClient
 
 from app.clients.spotify_client import SpotifyError
-from app.components.song_curator import CurationResult, SongCandidate
-from app.dependencies import get_song_curator, get_spotify_search_client, get_track_lookup_store
+from app.dependencies import (
+    get_embedder,
+    get_image_fetcher,
+    get_song_pool,
+    get_spotify_search_client,
+    get_track_lookup_store,
+)
 from app.main import create_app
 from tests.conftest import AUTH, InMemoryLookups
+from tests.scene_fakes import StubEmbedder, StubImages, pool_of, song
 
 
 def _app():
@@ -72,17 +75,6 @@ def test_validation_failure_is_logged_without_values(caplog):
     assert "secret" not in caplog.text
 
 
-class _OneSongCurator:
-    async def curate_from_tags(self, tags, exclude=None, axes=None, count=10):
-        return CurationResult(
-            situation_genres=("발라드",),
-            situation_moods=("잔잔한",),
-            songs=[
-                SongCandidate(artist="아이유", title="밤편지", genre="발라드", moods=("잔잔한",))
-            ],
-        )
-
-
 class _DownSpotify:
     async def search_tracks(self, query, limit=10):
         raise SpotifyError("Spotify API 오류 (status 429)")
@@ -94,7 +86,10 @@ class _DownSpotify:
 def test_spotify_down_returns_502():
     """Spotify가 전부 실패하면 빈 200이 아니라 502 — 백엔드가 장애를 구분할 수 있게."""
     app = _app()
-    app.dependency_overrides[get_song_curator] = lambda: _OneSongCurator()
+    # 로컬 Gemma 없이 fake 장면 문장(FakeLLMClient)이 곡풀 곡을 고르게 하고, Spotify만 죽인다
+    app.dependency_overrides[get_song_pool] = lambda: pool_of([song("아이유", "밤편지")])
+    app.dependency_overrides[get_embedder] = lambda: StubEmbedder()
+    app.dependency_overrides[get_image_fetcher] = lambda: StubImages()
     app.dependency_overrides[get_spotify_search_client] = lambda: _DownSpotify()
 
     res = TestClient(app).post(

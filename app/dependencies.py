@@ -8,6 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from fastapi import Depends, Header
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,6 +21,7 @@ from app.clients.embedding_client import (
     LocalEmbeddingClient,
     OpenAIEmbeddingClient,
 )
+from app.clients.image_fetcher import ImageFetcher
 from app.clients.llm_client import FakeLLMClient, LLMClient, LocalLLMClient
 from app.clients.spotify_client import (
     FakeSpotifyPlaylistClient,
@@ -41,15 +43,17 @@ from app.components.moderation_model import (
     ModerationModel,
     load_onnx_model,
 )
+from app.components.music_genre_assigner import parse_preferred
 from app.components.query_rewriter import QueryRewriter
 from app.components.question_generator import QuestionGenerator
 from app.components.question_parser import QuestionParser
 from app.components.reranker import Reranker
 from app.components.saved_song_pool import SavedSongPool
-from app.components.song_curator import SongCurator
+from app.components.scene_curator import SceneCurator
 from app.components.song_pool import SongPool, load_song_pool
 from app.components.tag_vector_file import PrecomputedVectors, read_vectors_file
 from app.components.tag_version import compute_tag_version
+from app.components.taste_genres import OnboardingReader, no_onboarding
 from app.components.vector_search import MemoryVectorSearch, RecordSearch, VectorSearch
 from app.config import Settings, get_settings
 from app.db import mysql, postgres
@@ -93,6 +97,8 @@ class Clients:
     llm_knowledge: LLMClient
     # 언어 변환만 필요한 작업 (리라이팅, 요약, 답변, 클러스터 이름)
     llm_general: LLMClient
+    # 기능1·3 상황·사진 → 장면 문장 (곡은 곡풀에서 고르니 곡 지식이 필요 없다) — 로컬 Gemma
+    llm_scene: LLMClient
     embedding: EmbeddingClient
     clip: ClipClient
     backend: ReportBackendClient
@@ -125,6 +131,7 @@ def get_clients() -> Clients:
         return Clients(
             llm_knowledge=FakeLLMClient(),
             llm_general=FakeLLMClient(),
+            llm_scene=FakeLLMClient(),
             embedding=FakeEmbeddingClient(dim=s.text_vector_dim),
             clip=FakeClipClient(dim=s.clip_embedding_dim),
             backend=FakeBackendClient(),
@@ -134,6 +141,7 @@ def get_clients() -> Clients:
     return Clients(
         llm_knowledge=_build_llm(s.llm_knowledge_provider),
         llm_general=_build_llm(s.llm_general_provider),
+        llm_scene=_build_llm(s.llm_scene_provider),
         embedding=_build_embedding_client(s),
         clip=ReplicateClipClient(
             api_token=s.replicate_api_token,
@@ -164,7 +172,12 @@ def get_clients() -> Clients:
 def _build_llm(provider: str) -> LLMClient:
     s = get_settings()
     if provider == "local":
-        return LocalLLMClient(url=s.local_llm_url, model=s.local_llm_model)
+        return LocalLLMClient(
+            url=s.local_llm_url,
+            model=s.local_llm_model,
+            api_key=s.local_llm_api_key,
+            timeout=s.local_llm_timeout_seconds,
+        )
     return AnthropicClient(
         api_key=s.anthropic_api_key,
         model=s.llm_model,
@@ -270,9 +283,34 @@ def get_query_rewriter() -> QueryRewriter:
     return QueryRewriter(get_clients().llm_general)
 
 
-def get_song_curator() -> SongCurator:
-    # 실제 존재하는 곡·가수를 지목해야 하므로 곡 지식이 있는 LLM을 쓴다
-    return SongCurator(get_clients().llm_knowledge)
+def get_image_fetcher() -> ImageFetcher:
+    return ImageFetcher()
+
+
+def get_scene_curator() -> SceneCurator:
+    # 곡은 곡풀에서 벡터로 고르므로 곡 지식이 필요 없다 — 로컬 Gemma가 장면 문장만 쓴다
+    return SceneCurator(get_clients().llm_scene)
+
+
+class _DbOnboardingGenres:
+    """백엔드 MySQL(읽기 전용)의 users.preferred_genres — 한 사용자의 온보딩 선호 장르."""
+
+    async def __call__(self, user_id: int) -> list[str]:
+        async with mysql.get_sessionmaker()() as mysql_session:
+            row = (
+                await mysql_session.execute(
+                    text("SELECT preferred_genres FROM users WHERE user_id = :user_id"),
+                    {"user_id": user_id},
+                )
+            ).first()
+        return parse_preferred(row.preferred_genres) if row else []
+
+
+def get_onboarding_reader() -> OnboardingReader:
+    s = get_settings()
+    if s.ai_client_mode == "fake" or not s.backend_mysql_url:
+        return no_onboarding
+    return _DbOnboardingGenres()
 
 
 def get_reranker() -> Reranker:

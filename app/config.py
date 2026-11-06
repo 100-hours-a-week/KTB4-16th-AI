@@ -46,9 +46,18 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-5"
 
-    # 로컬 LLM (V2, RunPod) — 구현 예정
+    # 로컬 LLM (RunPod에서 직접 서빙하는 Gemma-3-12B, OpenAI 호환 API)
+    #   url은 /v1/chat/completions까지 포함한 전체 주소 (LOCAL_LLM_URL)
     local_llm_url: str = ""
     local_llm_model: str = ""
+    local_llm_api_key: str = ""
+    local_llm_timeout_seconds: float = 60.0
+    # 기능1·3 장면 문장을 쓰는 LLM. 상용 LLM 없이 가는 것이 목표라 기본은 로컬이다.
+    # "anthropic"으로 두면 Claude가 같은 일을 한다 (되돌리기용)
+    llm_scene_provider: Literal["anthropic", "local"] = "local"
+    # 곡 점수에서 (곡의 허브 값 × 이 값)을 뺀다. 0이면 허브 보정 없음.
+    # 곡풀 파일의 곡마다 hub 칸이 있어야 효과가 있다
+    hub_weight: float = 0.5
 
     # 텍스트 임베딩 (코멘트·음악 무드 텍스트·검색 질문). V2부터 KURE-v1(자체 서빙)이 기본이다.
     # "openai"는 예전 방식(1536차원)이라, 벡터 칸이 1024차원인 지금은 되돌리기용으로만 남겨 둔다
