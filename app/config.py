@@ -158,9 +158,11 @@ class Settings(BaseSettings):
     # 기능6 모더레이션 모델 (KcELECTRA ONNX) — Docker 빌드 때 HF 비공개 저장소에서 받아 둔다
     moderation_model_dir: str = "/app/models/moderation"
     moderation_model_version: str = "kcelectra-v2-stage7"
-    # 유해 확률이 이 값 이상이면 유해. 0.5 → 0.9(2026-10-20)로 올렸다가, 짧은 말·변형 데이터로 다시 학습한
-    # stage7 모델(서비스용 검증셋 기준 0.55~0.6이 최적, 오탐률 3% 이하)로 바꾸면서 0.6으로 내렸다
-    # (2026-11-03). 욕이 너무 통과하면 내리고 정상 채팅이 막히면 올린다. 환경변수 MODERATION_THRESHOLD로도 바꿀 수 있다
+    # 유해 확률이 이 값 이상이면 유해. 0.5 → 0.9(2026-10-20)로 올렸다가,
+    # 짧은 말·변형 데이터로 다시 학습한 stage7 모델(서비스용 검증셋 기준 0.55~0.6이 최적,
+    # 오탐률 3% 이하)로 바꾸면서 0.6으로 내렸다 (2026-11-03).
+    # 욕이 너무 통과하면 내리고 정상 채팅이 막히면 올린다.
+    # 환경변수 MODERATION_THRESHOLD로도 바꿀 수 있다
     moderation_threshold: float = 0.6
     moderation_threads: int = 2
 
