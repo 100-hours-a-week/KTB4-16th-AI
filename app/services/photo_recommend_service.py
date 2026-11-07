@@ -44,6 +44,8 @@ from app.schemas.photo_recommend import PhotoRecommendRequest, PhotoRecommendRes
 logger = logging.getLogger("muro.photo_recommend")
 
 RESULT_COUNT = 5
+# Spotify에서 못 찾는 곡이 있어도 5곡이 채워지도록 더 뽑아 두는 여분
+SPARE_PICKS = 5
 LOG_CANDIDATES = 10
 
 
@@ -96,7 +98,7 @@ class PhotoRecommendService:
         if not ranked:
             logger.warning("곡풀 점수를 매기지 못함 (벡터 길이 불일치?), 폴백")
             return self._fallback()
-        picks = pick_scene_songs(ranked, RESULT_COUNT, rng=self._rng)
+        picks = pick_scene_songs(ranked, RESULT_COUNT + SPARE_PICKS, rng=self._rng)
         _log_picks(ranked, picks, scenes, reading.summary)
 
         songs = [replace(p.song.to_candidate(), score=p.score) for p in picks]
@@ -114,7 +116,7 @@ class PhotoRecommendService:
             rewritten_query="",
             tracks=[_to_track(c) for c in found[:RESULT_COUNT]],
             recommend_reason=photo_reason(
-                [p.song.genres[0] for p in picks if p.song.genres], reading.summary
+                [p.song.genres[0] for p in picks[:RESULT_COUNT] if p.song.genres], reading.summary
             ),
         )
 

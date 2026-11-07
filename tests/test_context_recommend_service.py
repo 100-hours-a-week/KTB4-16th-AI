@@ -352,3 +352,17 @@ async def test_taste_read_failure_does_not_fail_the_recommendation():
 
 def test_scene_dataclass_is_used_for_the_reason():
     assert isinstance(SCENES[0], Scene)
+
+
+async def test_five_tracks_are_still_returned_when_spotify_misses_some_picks():
+    """백엔드는 정확히 5곡만 받는다 — Spotify에서 못 찾은 곡이 있어도 여분 곡으로 5곡을 채운다."""
+    pool, songs = big_pool()
+    ranked = pool.rank_scenes([[1, 0, 0]], [[1, 0, 0]])
+    # 점수 상위 5곡은 Spotify에 없다 (뽑는 곡이 10곡이면 못 찾아도 최소 5곡은 남는다)
+    missing = {r.song.title for r in ranked[:5]}
+    found = [s for s in songs if s.title not in missing]
+
+    res = await _service(pool=pool, spotify=StubSpotify(found)).recommend(_req(limit=5))
+
+    assert len(res.tracks) == 5
+    assert not missing & {t.title for t in res.tracks}

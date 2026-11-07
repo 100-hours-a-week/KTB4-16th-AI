@@ -63,6 +63,8 @@ REFERENCE_COUNT = 3
 NEARBY_VECTOR_LIMIT = 20
 # 후보·최종곡을 로그로 남길 때 보여 줄 후보 수
 LOG_CANDIDATES = 10
+# Spotify에서 못 찾는 곡이 있어도 5곡이 채워지도록 더 뽑아 두는 여분 (백엔드는 정확히 5곡만 받는다)
+SPARE_PICKS = 5
 # 2026-10-02 팀 결정: 추천은 최대 5곡. 백엔드가 limit을 더 크게 보내도 5곡까지만 준다.
 MAX_TRACKS = 5
 
@@ -151,11 +153,12 @@ class ContextRecommendService:
 
         taste = await taste_genres(req.user_id, self._onboarding, self._records)
         limit = min(req.limit, MAX_TRACKS)
-        # 곡풀 곡은 Spotify ID를 확인한 뒤에야 알아서, 재추천 때 뺄 곡이 섞인 만큼 더 뽑아 둔다.
-        # 이미 보여 준 곡은 track_lookups에 있어 Spotify 호출은 늘지 않는다
+        # 곡풀 곡은 Spotify ID를 확인한 뒤에야 알아서, 재추천 때 뺄 곡이 섞인 만큼과 Spotify에서
+        # 못 찾을 곡을 위한 여분(SPARE_PICKS)을 더 뽑아 둔다. 확인한 곡은 track_lookups에 남아
+        # 다음부터 Spotify 호출이 늘지 않는다
         picks = pick_scene_songs(
             ranked,
-            limit + len(excluded),
+            limit + len(excluded) + SPARE_PICKS,
             taste,
             outside_position=limit - 1,
             rng=self._rng,

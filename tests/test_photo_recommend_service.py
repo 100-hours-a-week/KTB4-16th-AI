@@ -145,3 +145,15 @@ async def test_hub_weight_keeps_songs_that_score_high_everywhere_out_of_the_cand
     corrected = await _service(pool=pool, hub_weight=1.0).recommend(REQ)
 
     assert "허브곡" not in [t.title for t in corrected.tracks]
+
+
+async def test_five_tracks_are_still_returned_when_spotify_misses_some_picks():
+    pool = _pool(count=30)
+    ranked = pool.rank_scenes([[1, 0, 0]], [[1, 0, 0]])
+    missing = {r.song.title for r in ranked[:10:2]}  # 상위 후보의 일부는 Spotify에 없다
+    found = [s for s in pool._songs if s.title not in missing]
+
+    res = await _service(pool=pool, spotify=StubSpotify(found)).recommend(REQ)
+
+    assert len(res.tracks) == 5
+    assert not missing & {t.title for t in res.tracks}
