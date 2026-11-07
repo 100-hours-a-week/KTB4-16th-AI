@@ -19,22 +19,23 @@
 빼고 추천한다. 곡풀 곡은 Spotify ID를 확인한 뒤에야 알 수 있어서 그만큼 더 뽑아 둔다. 서버는
 상태를 들고 있지 않는다.
 
-응답의 recommendReason에는 곡을 고를 때 쓴 장면 문장 하나(5곡 중 가장 많은 곡이 맞은 장면)를 넣는다.
+응답의 recommendReason은 상황 값과 고른 곡의 장르로 만든 한 줄이다 (recommend_reason.py).
+장면 문장은 로그에만 남긴다 — 그대로 보여 줬더니 엉뚱한 문장이 나왔다.
 """
 
 import asyncio
 import logging
 import random
 import re
-from collections import Counter
 from dataclasses import dataclass, replace
 from datetime import datetime
 
 from app.clients.spotify_client import SpotifySearchClient
 from app.components.embedder import Embedder
+from app.components.recommend_reason import context_reason
 from app.components.reranker import TrackCandidate
 from app.components.scene_curator import Scene, SceneCurator
-from app.components.scene_picker import Pick, pick_scene_songs
+from app.components.scene_picker import MIN_TASTE_CANDIDATES, Pick, pick_scene_songs
 from app.components.song_curator import SongCandidate
 from app.components.song_mix import resolve_sources
 from app.components.song_pool import SongPool
@@ -174,7 +175,11 @@ class ContextRecommendService:
             rewritten_query=situation,
             recommendation_basis=basis,
             tracks=[_to_ranked_track(c) for c in kept],
-            recommend_reason=_reason(scenes, picks[:limit]),
+            recommend_reason=context_reason(
+                _when_phrase(req),
+                [p.song.genres[0] for p in picks[:limit] if p.song.genres],
+                taste if _taste_used(ranked, taste) else None,
+            ),
         )
 
     async def _scene_vectors(
@@ -287,14 +292,21 @@ def _situation_text(req: ContextRecommendRequest) -> str:
     return text
 
 
-def _reason(scenes: list[Scene], picks: list[Pick]) -> str | None:
-    """고른 곡들이 가장 많이 맞은 장면의 문장. 동률이면 점수가 높은 곡의 장면."""
-    if not picks:
-        return None
-    counts = Counter(p.scene_index for p in picks)
-    best_score = {i: max(p.score for p in picks if p.scene_index == i) for i in counts}
-    index = max(counts, key=lambda i: (counts[i], best_score[i]))
-    return scenes[index].scene if index < len(scenes) else None
+def _when_phrase(req: ContextRecommendRequest) -> str:
+    """추천 이유에 쓰는 상황 말 — "비 오는 겨울 평일 저녁". 모르는 날씨 값은 뺀다."""
+    t = req.local_time
+    daytype = "주말" if t.weekday() >= 5 else "평일"
+    weather = WEATHER_PHRASES.get(req.weather.condition.strip().upper())
+    parts = [weather, SEASONS[t.month], daytype, _time_bucket(t)]
+    return " ".join(p for p in parts if p)
+
+
+def _taste_used(ranked: list, taste: list[str]) -> bool:
+    """취향 장르로 실제로 걸렀는지 — scene_picker와 같은 기준(후보가 충분할 때만 거른다)."""
+    if not taste:
+        return False
+    wanted = set(taste)
+    return sum(1 for r in ranked if wanted & set(r.song.genres)) >= MIN_TASTE_CANDIDATES
 
 
 def _log_picks(

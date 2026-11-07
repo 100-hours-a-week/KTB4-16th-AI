@@ -44,7 +44,7 @@ async def test_recommends_five_pool_songs_with_a_scene_reason():
     assert res.mood_tags == []  # CLIP 태그를 뺐다
     assert len(res.tracks) == 5
     assert len({t.external_track_id for t in res.tracks}) == 5
-    assert res.recommend_reason in {s.scene for s in SCENES}
+    assert res.recommend_reason == "사진 분위기에 맞춰 발라드 위주로 골라봤어요."
 
 
 async def test_the_downloaded_photo_goes_to_the_scene_curator():
