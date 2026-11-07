@@ -41,3 +41,13 @@ def test_photo_reason():
         "사진 분위기에 맞춰 인디음악·포크/블루스 위주로 골라봤어요."
     )
     assert photo_reason([]) == "사진 분위기에 어울리는 곡으로 골라봤어요."
+
+
+def test_photo_reason_with_a_summary():
+    assert photo_reason(["인디음악"], "노을 지는 바닷가") == (
+        "노을 지는 바닷가 사진이라 인디음악 위주로 골라봤어요."
+    )
+    assert (
+        photo_reason([], "비 오는 카페 창가")
+        == "비 오는 카페 창가 사진이라 어울리는 곡으로 골라봤어요."
+    )

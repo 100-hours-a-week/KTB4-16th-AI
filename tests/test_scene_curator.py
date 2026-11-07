@@ -6,6 +6,7 @@ from app.components.scene_curator import (
     CONTEXT_SYSTEM,
     PHOTO_SYSTEM,
     SceneCurator,
+    parse_photo_summary,
     parse_scenes,
 )
 from app.exceptions import LLMError
@@ -77,9 +78,10 @@ async def test_for_context_asks_json_with_the_situation():
 async def test_for_photo_sends_the_photo_to_the_model():
     llm = ScriptedLLM(GOOD)
 
-    scenes = await SceneCurator(llm).for_photo("data:image/jpeg;base64,AAAA")
+    reading = await SceneCurator(llm).for_photo("data:image/jpeg;base64,AAAA")
 
-    assert len(scenes) == 3
+    assert len(reading.scenes) == 3
+    assert reading.summary == ""  # GOOD에는 photo 칸이 없다
     assert llm.calls[0]["system"] == PHOTO_SYSTEM
     assert llm.calls[0]["image_url"] == "data:image/jpeg;base64,AAAA"
     assert llm.calls[0]["json_mode"] is True
@@ -118,3 +120,41 @@ async def test_empty_situation_is_an_error_without_calling_the_llm():
     with pytest.raises(LLMError):
         await SceneCurator(llm).for_context("  ")
     assert llm.calls == []
+
+
+def _with_photo(photo) -> str:
+    return json.dumps(
+        {"photo": photo, "scenes": [_scene(1), _scene(2), _scene(3)]}, ensure_ascii=False
+    )
+
+
+async def test_for_photo_reads_the_photo_summary_from_the_same_answer():
+    llm = ScriptedLLM(_with_photo("노을 지는 바닷가"))
+
+    reading = await SceneCurator(llm).for_photo("data:image/jpeg;base64,AAAA")
+
+    assert reading.summary == "노을 지는 바닷가"
+    assert len(llm.calls) == 1
+    assert '"photo"' in PHOTO_SYSTEM
+
+
+@pytest.mark.parametrize(
+    ("photo", "expected"),
+    [
+        ("비 오는 카페 창가", "비 오는 카페 창가"),
+        ("  '노을 지는 바닷가'  ", "노을 지는 바닷가"),
+        ("눈 덮인 숲길 사진", "눈 덮인 숲길"),
+        ("바닷가에서 친구들이 웃으며 노을을 바라보고 있는 모습이다.", ""),
+        ("가" * 26, ""),
+        ("두 줄\n요약", ""),
+        ("", ""),
+        (None, ""),
+    ],
+)
+def test_parse_photo_summary_keeps_only_short_noun_phrases(photo, expected):
+    assert parse_photo_summary(_with_photo(photo)) == expected
+
+
+def test_parse_photo_summary_handles_broken_answers():
+    assert parse_photo_summary("깨진 응답") == ""
+    assert parse_photo_summary("[1, 2]") == ""

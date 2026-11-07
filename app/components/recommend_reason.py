@@ -7,7 +7,8 @@
 
   기능1: "비 오는 겨울 평일 저녁이라 발라드·R&B/Soul 위주로 골라봤어요.
           좋아하시는 장르(발라드)도 반영했어요."
-  기능3: "사진 분위기에 맞춰 인디음악·포크/블루스 위주로 골라봤어요."
+  기능3: "노을 지는 바닷가 사진이라 인디음악·포크/블루스 위주로 골라봤어요."
+         (사진 요약은 Gemma가 사진을 보고 쓴 명사구. 없으면 "사진 분위기에 맞춰 ...")
 """
 
 from collections import Counter
@@ -37,8 +38,12 @@ def context_reason(when: str, genres: list[str], taste: list[str] | None = None)
     return text
 
 
-def photo_reason(genres: list[str]) -> str:
+def photo_reason(genres: list[str], summary: str = "") -> str:
+    """summary는 사진에 보이는 것을 요약한 명사구 ("노을 지는 바닷가"). 비어 있으면 일반 문장."""
     picked = top_genres(genres)
+    head = f"{summary} 사진이라 " if summary else "사진 분위기에 맞춰 "
     if picked:
-        return f"사진 분위기에 맞춰 {'·'.join(picked)} 위주로 골라봤어요."
+        return f"{head}{'·'.join(picked)} 위주로 골라봤어요."
+    if summary:
+        return f"{head}어울리는 곡으로 골라봤어요."
     return "사진 분위기에 어울리는 곡으로 골라봤어요."

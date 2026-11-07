@@ -47,10 +47,14 @@ CONTEXT_SYSTEM = (
 
 PHOTO_SYSTEM = (
     "이 사진을 보고, 사진에 담긴 순간에 사람이 있을 법한 장면을 서로 다르게 3개 상상해. "
-    + _FORMAT
+    + _FORMAT.replace('{"scenes":', '{"photo": "...", "scenes":')
+    + "\n- photo: 사진에 실제로 보이는 장소·시간·분위기를 15자 안쪽의 명사구로 써"
+    + " (예: 노을 지는 바닷가, 비 오는 카페 창가). 마침표 없이, 보이지 않는 것은 쓰지 마."
     + "\n- 세 장면 모두 사진에 실제로 보이는 것(장소·날씨·분위기·사람)과 맞아야 해."
     + "\n- 사진에 보이지 않는 것을 지어내지 마."
 )
+# 사진 요약이 이보다 길거나 문장 꼴이면 버린다 (추천 이유 "~ 사진이라"에 붙여 쓰기 때문)
+MAX_SUMMARY_CHARS = 25
 PHOTO_PROMPT = "위 사진을 보고 장면을 만들어 줘."
 
 
@@ -59,6 +63,14 @@ class Scene:
     scene: str
     description: str
     lyric: str
+
+
+@dataclass(frozen=True)
+class PhotoReading:
+    """기능3 — 장면 3개와 사진에 보이는 것을 요약한 명사구(추천 이유용, 쓸 수 없으면 빈 문자열)."""
+
+    scenes: list[Scene]
+    summary: str = ""
 
 
 class SceneCurator:
@@ -73,15 +85,22 @@ class SceneCurator:
         """기능1 — 계절·요일·시간대·날씨·기온이 담긴 상황 문장으로."""
         if not situation.strip():
             raise LLMError("상황 설명이 없으면 장면을 만들 수 없어요.")
-        return await self._scenes(CONTEXT_SYSTEM, f"상황: {situation}")
+        scenes, _ = await self._scenes(CONTEXT_SYSTEM, f"상황: {situation}")
+        return scenes
 
-    async def for_photo(self, image_url: str) -> list[Scene]:
-        """기능3 — 사진을 모델이 직접 보고 (CLIP 태그 없이). image_url은 https 주소나 data: URL."""
+    async def for_photo(self, image_url: str) -> PhotoReading:
+        """기능3 — 사진을 모델이 직접 보고 (CLIP 태그 없이). image_url은 https 주소나 data: URL.
+
+        같은 요청에서 사진에 보이는 것을 요약한 명사구도 받는다 (호출이 늘지 않는다).
+        """
         if not image_url:
             raise LLMError("사진이 없으면 장면을 만들 수 없어요.")
-        return await self._scenes(PHOTO_SYSTEM, PHOTO_PROMPT, image_url)
+        scenes, text = await self._scenes(PHOTO_SYSTEM, PHOTO_PROMPT, image_url)
+        return PhotoReading(scenes, parse_photo_summary(text))
 
-    async def _scenes(self, system: str, prompt: str, image_url: str | None = None) -> list[Scene]:
+    async def _scenes(
+        self, system: str, prompt: str, image_url: str | None = None
+    ) -> tuple[list[Scene], str]:
         if not prompt.strip():
             raise LLMError("상황 설명이 없으면 장면을 만들 수 없어요.")
         last = "형식 불일치"
@@ -95,7 +114,7 @@ class SceneCurator:
             )
             scenes = parse_scenes(text)
             if scenes:
-                return scenes
+                return scenes, text
             logger.warning("장면 응답을 해석하지 못함, 다시 요청: %s", text[:120])
         raise LLMError(f"장면을 만들지 못했어요 ({last})")
 
@@ -119,3 +138,20 @@ def parse_scenes(text: str) -> list[Scene]:
         if scene and description and lyric:
             scenes.append(Scene(scene, description, lyric))
     return scenes[:SCENE_COUNT]
+
+
+def parse_photo_summary(text: str) -> str:
+    """사진 요약 명사구. 없거나, 너무 길거나, 문장 꼴(마침표·줄바꿈)이면 빈 문자열."""
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    if not match:
+        return ""
+    try:
+        summary = str(json.loads(match.group(0)).get("photo") or "")
+    except (ValueError, AttributeError):
+        return ""
+    summary = summary.strip().strip("\"'“”‘’").strip()
+    if summary.endswith("사진"):
+        summary = summary.removesuffix("사진").strip()
+    if not summary or len(summary) > MAX_SUMMARY_CHARS or any(c in summary for c in ".!?\n"):
+        return ""
+    return summary
