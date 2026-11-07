@@ -3,7 +3,7 @@
 
 import random
 
-from app.components.scene_curator import Scene
+from app.components.scene_curator import PhotoReading, Scene
 from app.components.song_pool import PoolSong, SongPool
 
 DIM = 3
@@ -34,9 +34,15 @@ class StubEmbedder:
 
 
 class StubSceneCurator:
-    def __init__(self, scenes: list[Scene] | None = None, error: Exception | None = None):
+    def __init__(
+        self,
+        scenes: list[Scene] | None = None,
+        error: Exception | None = None,
+        summary: str = "노을 지는 바닷가",
+    ):
         self.scenes = scenes if scenes is not None else SCENES
         self._error = error
+        self.summary = summary
         self.situations: list[str] = []
 
     async def for_context(self, situation: str) -> list[Scene]:
@@ -45,11 +51,11 @@ class StubSceneCurator:
             raise self._error
         return self.scenes
 
-    async def for_photo(self, image_url: str) -> list[Scene]:
+    async def for_photo(self, image_url: str) -> PhotoReading:
         self.situations.append(image_url)
         if self._error:
             raise self._error
-        return self.scenes
+        return PhotoReading(self.scenes, self.summary)
 
 
 SCENES = [

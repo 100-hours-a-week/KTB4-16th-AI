@@ -139,10 +139,40 @@ async def test_recommends_best_matching_songs_from_the_pool():
     assert res.rewritten_query.startswith("여름(8월)")
 
 
-async def test_recommend_reason_is_a_scene_sentence_used_for_picking():
-    res = await _service(pool=_small_pool()).recommend(_req())
+async def test_recommend_reason_is_built_from_the_situation_and_the_picked_genres():
+    """장면 문장이 아니라 상황 값(날씨·계절·평일/주말·시간대)과 고른 곡의 장르로 만든다."""
+    res = await _service(pool=_small_pool()).recommend(_req(limit=3))
 
-    assert res.recommend_reason in {s.scene for s in SCENES}
+    assert res.recommend_reason == "비 오는 여름 평일 저녁이라 발라드 위주로 골라봤어요."
+    assert all(s.scene not in res.recommend_reason for s in SCENES)
+
+
+async def test_recommend_reason_mentions_taste_only_when_the_taste_filter_was_used():
+    pool, songs = big_pool()
+    records = StubRecordSearch(genres={1: "발라드", 2: "발라드"})
+
+    async def onboarding(user_id):
+        return ["댄스"]
+
+    used = await _service(
+        pool=pool, records=records, onboarding=onboarding, spotify=StubSpotify(songs)
+    ).recommend(_req(limit=5))
+
+    async def rare(user_id):
+        return ["트로트"]  # 곡풀에 트로트 곡이 없어서 거르지 못한다
+
+    widened = await _service(pool=pool, onboarding=rare, spotify=StubSpotify(songs)).recommend(
+        _req(limit=5)
+    )
+
+    assert used.recommend_reason.endswith("좋아하시는 장르(발라드·댄스)도 반영했어요.")
+    assert "좋아하시는" not in widened.recommend_reason
+
+
+async def test_unknown_weather_is_left_out_of_the_reason():
+    res = await _service(pool=_small_pool()).recommend(_req(weather={"condition": "HAIL"}))
+
+    assert res.recommend_reason.startswith("여름 평일 저녁이라 ")
 
 
 async def test_same_artist_appears_once():

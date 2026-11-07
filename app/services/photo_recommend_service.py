@@ -24,12 +24,12 @@ CLIP은 기능4(자물쇠 저장)에서 사진 벡터와 장소 태그를 만들
 
 import logging
 import random
-from collections import Counter
 from dataclasses import replace
 
 from app.clients.image_fetcher import ImageFetcher, ImageFetchError
 from app.clients.spotify_client import SpotifySearchClient
 from app.components.embedder import Embedder
+from app.components.recommend_reason import photo_reason
 from app.components.reranker import TrackCandidate
 from app.components.scene_curator import Scene, SceneCurator
 from app.components.scene_picker import Pick, pick_scene_songs
@@ -78,7 +78,8 @@ class PhotoRecommendService:
             return self._fallback()
 
         try:
-            scenes = await self._scene_curator.for_photo(image)
+            reading = await self._scene_curator.for_photo(image)
+            scenes = reading.scenes
             vectors = await self._embedder.embed_batch(
                 [s.lyric for s in scenes] + [s.description for s in scenes]
             )
@@ -96,7 +97,7 @@ class PhotoRecommendService:
             logger.warning("곡풀 점수를 매기지 못함 (벡터 길이 불일치?), 폴백")
             return self._fallback()
         picks = pick_scene_songs(ranked, RESULT_COUNT, rng=self._rng)
-        _log_picks(ranked, picks, scenes)
+        _log_picks(ranked, picks, scenes, reading.summary)
 
         songs = [replace(p.song.to_candidate(), score=p.score) for p in picks]
         try:
@@ -112,24 +113,16 @@ class PhotoRecommendService:
             mood_tags=[],
             rewritten_query="",
             tracks=[_to_track(c) for c in found[:RESULT_COUNT]],
-            recommend_reason=_reason(scenes, picks),
+            recommend_reason=photo_reason(
+                [p.song.genres[0] for p in picks if p.song.genres], reading.summary
+            ),
         )
 
     def _fallback(self) -> PhotoRecommendResponse:
         return PhotoRecommendResponse(mood_tags=[], rewritten_query="", tracks=[], degraded=True)
 
 
-def _reason(scenes: list[Scene], picks: list[Pick]) -> str | None:
-    """고른 곡들이 가장 많이 맞은 장면의 문장. 동률이면 점수가 높은 곡의 장면."""
-    if not picks:
-        return None
-    counts = Counter(p.scene_index for p in picks)
-    best_score = {i: max(p.score for p in picks if p.scene_index == i) for i in counts}
-    index = max(counts, key=lambda i: (counts[i], best_score[i]))
-    return scenes[index].scene if index < len(scenes) else None
-
-
-def _log_picks(ranked: list, picks: list[Pick], scenes: list[Scene]) -> None:
+def _log_picks(ranked: list, picks: list[Pick], scenes: list[Scene], summary: str) -> None:
     """dev에서 후보와 최종 곡이 어떻게 갈렸는지 볼 수 있게 남긴다 (가사는 남기지 않는다)."""
     top = ", ".join(
         f"{r.song.artist}-{r.song.title}({r.score:.2f})" for r in ranked[:LOG_CANDIDATES]
@@ -137,7 +130,13 @@ def _log_picks(ranked: list, picks: list[Pick], scenes: list[Scene]) -> None:
     final = ", ".join(
         f"{p.song.artist}-{p.song.title}({p.score:.2f},장면{p.scene_index + 1})" for p in picks
     )
-    logger.info("사진 추천 장면=%s 상위후보=[%s] 최종=[%s]", [s.scene for s in scenes], top, final)
+    logger.info(
+        "사진 추천 요약=%s 장면=%s 상위후보=[%s] 최종=[%s]",
+        summary or "없음",
+        [s.scene for s in scenes],
+        top,
+        final,
+    )
 
 
 def _to_track(c: TrackCandidate) -> Track:

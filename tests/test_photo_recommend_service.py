@@ -44,7 +44,13 @@ async def test_recommends_five_pool_songs_with_a_scene_reason():
     assert res.mood_tags == []  # CLIP 태그를 뺐다
     assert len(res.tracks) == 5
     assert len({t.external_track_id for t in res.tracks}) == 5
-    assert res.recommend_reason in {s.scene for s in SCENES}
+    assert res.recommend_reason == "노을 지는 바닷가 사진이라 발라드 위주로 골라봤어요."
+
+
+async def test_reason_falls_back_when_the_photo_summary_is_missing():
+    res = await _service(pool=_pool(), curator=StubSceneCurator(summary="")).recommend(REQ)
+
+    assert res.recommend_reason == "사진 분위기에 맞춰 발라드 위주로 골라봤어요."
 
 
 async def test_the_downloaded_photo_goes_to_the_scene_curator():
