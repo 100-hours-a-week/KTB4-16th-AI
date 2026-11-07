@@ -24,12 +24,12 @@ CLIP은 기능4(자물쇠 저장)에서 사진 벡터와 장소 태그를 만들
 
 import logging
 import random
-from collections import Counter
 from dataclasses import replace
 
 from app.clients.image_fetcher import ImageFetcher, ImageFetchError
 from app.clients.spotify_client import SpotifySearchClient
 from app.components.embedder import Embedder
+from app.components.recommend_reason import photo_reason
 from app.components.reranker import TrackCandidate
 from app.components.scene_curator import Scene, SceneCurator
 from app.components.scene_picker import Pick, pick_scene_songs
@@ -112,21 +112,11 @@ class PhotoRecommendService:
             mood_tags=[],
             rewritten_query="",
             tracks=[_to_track(c) for c in found[:RESULT_COUNT]],
-            recommend_reason=_reason(scenes, picks),
+            recommend_reason=photo_reason([p.song.genres[0] for p in picks if p.song.genres]),
         )
 
     def _fallback(self) -> PhotoRecommendResponse:
         return PhotoRecommendResponse(mood_tags=[], rewritten_query="", tracks=[], degraded=True)
-
-
-def _reason(scenes: list[Scene], picks: list[Pick]) -> str | None:
-    """고른 곡들이 가장 많이 맞은 장면의 문장. 동률이면 점수가 높은 곡의 장면."""
-    if not picks:
-        return None
-    counts = Counter(p.scene_index for p in picks)
-    best_score = {i: max(p.score for p in picks if p.scene_index == i) for i in counts}
-    index = max(counts, key=lambda i: (counts[i], best_score[i]))
-    return scenes[index].scene if index < len(scenes) else None
 
 
 def _log_picks(ranked: list, picks: list[Pick], scenes: list[Scene]) -> None:
