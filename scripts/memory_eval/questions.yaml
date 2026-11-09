@@ -1,0 +1,75 @@
+# 기능5 기억 검색 정확도 측정용 질문 30개 (초안). 말투와 내용은 자유롭게 고쳐도 된다.
+#
+# - id: 질문 번호
+#   category: 유형 (결과표를 유형별로 나누는 데 쓴다)
+#   user: 가상 사용자 번호 (1~4). 질문은 이 사용자의 자물쇠 25건 안에서만 찾는다
+#   text: 질문 문장 — 실제로 사용자가 칠 법한 말로 고치면 측정이 더 정직해진다
+#   filter: 정답 기준 (사람이 읽는 뜻을 그대로 옮긴 것). 모두 만족하는 기록이 정답이다.
+#           질문 문장만 고치고 filter는 그대로 두면 정답은 그대로다.
+#   expect_none: true면 "정답이 없는 질문". 결과가 비어야 맞다.
+#
+# filter에 쓸 수 있는 것
+#   dong_prefix: "성수동"        법정동 이름이 이 글자로 시작
+#   near: "서울숲"               명소 사전의 그 명소 반경 안 (반경은 명소 유형별 값)
+#   region_prefix: "41"          법정동코드가 이 숫자로 시작 (서울 11, 경기 41, 부산 26, 제주 50)
+#   date_range: [시작, 끝]        기록한 날짜 (둘 다 포함, YYYY-MM-DD)
+#   months: [9, 10]              기록한 달 (해는 따지지 않음)
+#   weather: [RAIN, SHOWER]      기록 당시 날씨
+#   temp: [최저, 최고]            기록 당시 기온(섭씨)
+#   mood: [최저, 최고]            사용자가 입력한 기분 점수 (-50~50)
+#   song_mood: "잔잔한"           곡 무드 태그
+#   comment_gold: q-001          코멘트 의미 질문 — 임베딩 평가에서 사람이 정한 정답(eval/text_embedding/queries.jsonl)을 그대로 씀
+#
+# "오늘"은 2026-10-16으로 고정해서 측정한다 ("지난달" = 2026-09).
+
+# ---- 장소 (5) ----
+- {id: m-01, category: 장소, user: 1, text: 성수동에서 들었던 노래, filter: {dong_prefix: 성수동}}
+- {id: m-02, category: 장소, user: 1, text: 서울숲 근처에서 저장한 거, filter: {near: 서울숲}}
+- {id: m-03, category: 장소, user: 2, text: 홍대에서 들은 노래, filter: {near: 홍대}}
+- {id: m-04, category: 장소, user: 3, text: 경기도에서 남긴 기록, filter: {region_prefix: "41"}}
+- {id: m-05, category: 장소, user: 4, text: 판교에서 저장한 노래, filter: {near: 판교}}
+
+# ---- 기간 (3) ----
+- {id: m-06, category: 기간, user: 2, text: 지난달에 저장한 노래, filter: {date_range: [2026-09-01, 2026-09-30]}}
+- {id: m-07, category: 기간, user: 3, text: 올해 여름에 들은 노래, filter: {date_range: [2026-06-01, 2026-08-31]}}
+# 가을은 서비스 규칙(app/question_rules.yaml)대로 9~10월이다 (11월은 겨울). 사용자 감각과 다를 수 있어 팀 확인 필요.
+- {id: m-08, category: 기간, user: 4, text: 작년 가을에 남긴 기록, filter: {date_range: [2025-09-01, 2025-10-31]}}
+
+# ---- 날씨 (3) ----
+- {id: m-09, category: 날씨, user: 1, text: 비 오는 날 들은 노래, filter: {weather: [RAIN, RAIN_SNOW, SHOWER]}}
+- {id: m-10, category: 날씨, user: 2, text: 눈 오던 날 저장한 거, filter: {weather: [SNOW, RAIN_SNOW]}}
+- {id: m-11, category: 날씨, user: 4, text: 맑은 날 들은 노래, filter: {weather: [CLEAR]}}
+
+# ---- 계절·기온 (3) ----
+- {id: m-12, category: 계절·기온, user: 1, text: 가을에 들은 노래, filter: {months: [9, 10]}}
+- {id: m-13, category: 계절·기온, user: 3, text: 추웠던 날 저장한 거, filter: {temp: [-50, 5]}}
+- {id: m-14, category: 계절·기온, user: 4, text: 더운 날 들은 노래, filter: {temp: [26, 60]}}
+
+# ---- 기분 (2) ----
+- {id: m-15, category: 기분, user: 2, text: 기분이 안 좋았던 날, filter: {mood: [-50, -20]}}
+- {id: m-16, category: 기분, user: 4, text: 기분 좋았던 날 들은 노래, filter: {mood: [20, 50]}}
+
+# ---- 곡 무드 (2) ----
+- {id: m-17, category: 곡 무드, user: 1, text: 잔잔한 노래 들었던 날, filter: {song_mood: 잔잔한}}
+- {id: m-18, category: 곡 무드, user: 3, text: 신나는 노래 저장한 거, filter: {song_mood: 신나는}}
+
+# ---- 복합 조건 (3) ----
+- {id: m-19, category: 복합, user: 1, text: 성수동에서 비 오던 날, filter: {dong_prefix: 성수동, weather: [RAIN, RAIN_SNOW, SHOWER]}}
+- {id: m-20, category: 복합, user: 2, text: 지난달 맑은 날에 저장한 노래, filter: {date_range: [2026-09-01, 2026-09-30], weather: [CLEAR]}}
+- {id: m-21, category: 복합, user: 4, text: 가을에 기분 좋았던 날, filter: {months: [9, 10], mood: [20, 50]}}
+
+# ---- 코멘트 의미 (6) — 정답은 임베딩 평가에서 정한 것을 재사용 ----
+- {id: m-22, category: 코멘트 의미, user: 1, text: 울컥했던 순간, filter: {comment_gold: q-001}}
+- {id: m-23, category: 코멘트 의미, user: 3, text: 마음이 편안해졌던 날, filter: {comment_gold: q-004}}
+- {id: m-24, category: 코멘트 의미, user: 1, text: 퇴근길에 들은 노래, filter: {comment_gold: q-007}}
+- {id: m-25, category: 코멘트 의미, user: 3, text: 강아지랑 산책한 날, filter: {comment_gold: q-008}}
+- {id: m-26, category: 코멘트 의미, user: 3, text: 노을 보면서 감동받은 날, filter: {comment_gold: q-013}}
+- {id: m-27, category: 코멘트 의미, user: 1, text: 회사에서 잠깐 쉬었던 순간, filter: {comment_gold: q-016}}
+
+# ---- 정답 없음 (3) — 이 사용자에게는 해당하는 자물쇠가 없다. 결과가 비어야 맞다 ----
+# m-28·m-29는 조건 없이 코멘트 의미만으로 찾는 질문이다. 임베딩 평가에서 "비슷한 코멘트가 없다"고 정한 질문을
+# 그대로 썼다 (q-026, q-027). 유사도 기준값이 너무 낮으면 엉뚱한 결과가 나와 여기서 틀린다.
+# m-30은 조건 질문이다 (이 사용자에게 없는 지역).
+- {id: m-28, category: 정답 없음, user: 1, text: 시험 망쳐서 울었던 날, expect_none: true, filter: {}}
+- {id: m-29, category: 정답 없음, user: 2, text: 아이랑 놀이공원 갔던 날, expect_none: true, filter: {}}
+- {id: m-30, category: 정답 없음, user: 3, text: 부산에서 들은 노래, expect_none: true, filter: {region_prefix: "26"}}
