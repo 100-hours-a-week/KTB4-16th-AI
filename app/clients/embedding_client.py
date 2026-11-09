@@ -4,6 +4,7 @@ from typing import Protocol
 
 import httpx
 import openai
+from langsmith import traceable
 
 from app.clients.fake import fake_vector
 from app.exceptions import EmbeddingError
@@ -59,6 +60,7 @@ class LocalEmbeddingClient:
             transport=transport,
         )
 
+    @traceable(name="embedding_service", run_type="embedding")
     async def embed(self, texts: list[str]) -> list[list[float]]:
         vectors: list[list[float]] = []
         for start in range(0, len(texts), MAX_TEXTS_PER_REQUEST):

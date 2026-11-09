@@ -90,6 +90,72 @@ def test_llm_split_uses_separate_clients(monkeypatch):
         dependencies.get_clients.cache_clear()
 
 
+def _clients_with(monkeypatch, **env):
+    from app import dependencies
+    from app.config import get_settings
+
+    monkeypatch.setenv("AI_CLIENT_MODE", env.pop("AI_CLIENT_MODE", "real"))
+    for key, value in env.items():
+        monkeypatch.setenv(key, value)
+    get_settings.cache_clear()
+    dependencies.get_clients.cache_clear()
+    return dependencies.get_clients()
+
+
+def test_report_llm_is_local_gemma_with_claude_fallback_and_leaves_llm_general_alone(monkeypatch):
+    from app import dependencies
+    from app.clients.anthropic_client import AnthropicClient
+    from app.clients.llm_client import FallbackLLMClient, LocalLLMClient
+    from app.config import get_settings
+
+    try:
+        clients = _clients_with(
+            monkeypatch,
+            LLM_GENERAL_PROVIDER="anthropic",
+            LLM_REPORT_PROVIDER="local",
+            LOCAL_LLM_MODEL="gemma-3-12b",
+        )
+        assert isinstance(clients.llm_report, FallbackLLMClient)
+        assert isinstance(clients.llm_report.primary, LocalLLMClient)
+        assert isinstance(clients.llm_report.fallback, AnthropicClient)
+        assert clients.llm_report.fallback.model == "claude-haiku-5-5"
+        assert clients.llm_report_backup is clients.llm_report.fallback
+        # 기억 검색(질문 다시쓰기·한 줄 답변)이 쓰는 llm_general은 바뀌지 않는다
+        assert isinstance(clients.llm_general, AnthropicClient)
+    finally:
+        get_settings.cache_clear()
+        dependencies.get_clients.cache_clear()
+
+
+def test_report_llm_can_be_switched_back_to_claude_only(monkeypatch):
+    from app import dependencies
+    from app.clients.anthropic_client import AnthropicClient
+    from app.config import get_settings
+
+    try:
+        clients = _clients_with(monkeypatch, LLM_REPORT_PROVIDER="anthropic")
+        assert isinstance(clients.llm_report, AnthropicClient)
+        assert clients.llm_report.model == get_settings().llm_model
+        assert clients.llm_report_backup is None
+    finally:
+        get_settings.cache_clear()
+        dependencies.get_clients.cache_clear()
+
+
+def test_report_llm_is_fake_in_fake_mode(monkeypatch):
+    from app import dependencies
+    from app.clients.llm_client import FakeLLMClient
+    from app.config import get_settings
+
+    try:
+        clients = _clients_with(monkeypatch, AI_CLIENT_MODE="fake")
+        assert isinstance(clients.llm_report, FakeLLMClient)
+        assert clients.llm_report_backup is None
+    finally:
+        get_settings.cache_clear()
+        dependencies.get_clients.cache_clear()
+
+
 def test_delete_removes_pending_job_and_vectors(client, jobs, store, record_payload):
     client.post("/api/embeddings/generate", json=record_payload, headers=AUTH)
     store.rows[1029] = object()

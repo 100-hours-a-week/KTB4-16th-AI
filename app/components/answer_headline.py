@@ -13,6 +13,8 @@ LLM에는 질문에서 규칙이 읽어 낸 조건 이름(예: "홍대 근처", 
 import re
 from collections.abc import Sequence
 
+from langsmith import traceable
+
 from app.clients.llm_client import LLMClient
 
 PROMPT_VERSION = "memory-headline-v2"
@@ -43,6 +45,7 @@ class HeadlineWriter:
     def model(self) -> str:
         return self._llm.model
 
+    @traceable(name="headline_llm", run_type="llm")
     async def write(
         self, labels: Sequence[str], *, found: int, total: int, suggestions: int
     ) -> str | None:

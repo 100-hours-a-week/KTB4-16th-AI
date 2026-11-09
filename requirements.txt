@@ -1,3 +1,5 @@
+# 기억 검색 추적(LangSmith)
+langsmith>=0.14,<1
 fastapi>=0.141,<1
 uvicorn[standard]>=0.53,<1
 pydantic>=2.13,<3

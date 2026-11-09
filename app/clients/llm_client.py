@@ -1,11 +1,14 @@
 """LLM 인터페이스 — 구현체 교체 시 이 계약만 지키면 된다."""
 
 import json
+import logging
 from typing import Protocol
 
 import httpx
 
 from app.exceptions import LLMError
+
+logger = logging.getLogger("muro.llm")
 
 
 class LLMClient(Protocol):
@@ -90,6 +93,47 @@ class LocalLLMClient:
         if not text:
             raise LLMError("로컬 LLM 응답이 비어 있어요.")
         return text
+
+
+class FallbackLLMClient:
+    """primary(RunPod의 Gemma)를 먼저 부르고, LLMError가 나면 fallback(Claude)으로 넘긴다.
+
+    LLMError에는 연결 실패·타임아웃·5xx·인증 오류·빈 응답·주소 미설정이 들어 있다. 그 밖의 예외
+    (코드 버그 등)는 가리지 않고 그대로 낸다. 둘 다 실패하면 fallback의 LLMError가 나간다.
+    `model`은 primary의 이름이다 (호출마다 어느 쪽이 만들었는지는 로그로 남긴다).
+    """
+
+    def __init__(self, primary: LLMClient, fallback: LLMClient):
+        self.model = primary.model
+        self.primary = primary
+        self.fallback = fallback
+
+    async def complete(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        max_tokens: int = 1024,
+        json_mode: bool = False,
+        image_url: str | None = None,
+    ) -> str:
+        args = {
+            "system": system,
+            "prompt": prompt,
+            "max_tokens": max_tokens,
+            "json_mode": json_mode,
+            "image_url": image_url,
+        }
+        try:
+            return await self.primary.complete(**args)
+        except LLMError as e:
+            logger.warning(
+                "기본 LLM(%s) 실패, 대체 LLM(%s)으로 넘겨요: %s",
+                self.primary.model,
+                self.fallback.model,
+                e,
+            )
+        return await self.fallback.complete(**args)
 
 
 class FakeLLMClient:
