@@ -116,7 +116,7 @@ async def handle(payload: dict[str, Any]) -> None:
     record_lines = _build_record_lines(records, moods, photo_tags_by_record)
 
     clients = get_clients()
-    summarizer = ReportSummarizer(clients.llm_general)
+    summarizer = ReportSummarizer(clients.llm_report, clients.llm_report_backup)
     summary = await summarizer.summarize(
         record_lines, stats, photo_category_distribution, photo_axes
     )

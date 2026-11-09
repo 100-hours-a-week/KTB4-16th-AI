@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     # 기능1·3 장면 문장을 쓰는 LLM. 상용 LLM 없이 가는 것이 목표라 기본은 로컬이다.
     # "anthropic"으로 두면 Claude가 같은 일을 한다 (되돌리기용)
     llm_scene_provider: Literal["anthropic", "local"] = "local"
+    # 리포트 요약(AI 리캡)을 쓰는 LLM. 기본은 로컬 Gemma이고, 서버가 꺼져 있거나 실패하거나
+    # 글이 형식 검사를 못 넘으면 llm_fallback_model(Claude)로 넘긴다.
+    # "anthropic"으로 두면 Claude(llm_model)만 쓴다 (되돌리기용)
+    llm_report_provider: Literal["anthropic", "local"] = "local"
+    llm_fallback_model: str = "claude-haiku-5-5"
     # 곡 점수에서 (곡의 허브 값 × 이 값)을 뺀다. 0이면 허브 보정 없음.
     # 곡풀 파일의 곡마다 hub 칸이 있어야 효과가 있다
     hub_weight: float = 0.5
