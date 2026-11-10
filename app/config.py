@@ -128,9 +128,10 @@ class Settings(BaseSettings):
     memory_search_display_count: int = 5
     # 제안(일부만 맞는 자물쇠) 토글을 열면 보이는 최대 건수
     memory_search_suggestion_count: int = 3
-    # 답변 앞머리 문장(질문한 조건 + 결과 유무, 건수 없음)을 LLM이 쓴다. 꺼 두면 템플릿 문장.
+    # 답변 앞머리 문장(질문한 조건 + 결과 유무, 건수 없음)을 LLM이 쓴다(기본 켬). 끄면 템플릿 문장.
+    # 켜 둬도 LLM이 못 쓰면(시간 초과·검증 실패·둘 다 실패) 템플릿 문장으로 대신한다.
     # LLM에는 조건 이름과 결과 유무만 보낸다 (질문 원문·곡·장소·코멘트·건수는 보내지 않음)
-    memory_answer_llm_enabled: bool = False
+    memory_answer_llm_enabled: bool = True
     memory_answer_llm_timeout_seconds: float = 8.0  # 넘기면 템플릿 문장으로 대신한다
 
     # CLIP 이미지 임베딩 — Replicate openai/clip (clip-vit-large-patch14)

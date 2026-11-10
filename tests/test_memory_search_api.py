@@ -15,6 +15,8 @@ def _fixed_min_similarity(monkeypatch):
     """이 파일의 가짜 유사도(0.5~0.9)는 기준값 0.40을 전제로 짠 값이다.
     기본 기준값은 임베딩 모델에 따라 바뀌므로(KURE 0.65) 여기서는 고정한다."""
     monkeypatch.setenv("MEMORY_SEARCH_MIN_SIMILARITY", "0.40")
+    # 이 파일은 템플릿 앞머리 문장의 모양을 확인한다. 기본값은 LLM이 쓰는 것이라 여기서는 끈다
+    monkeypatch.setenv("MEMORY_ANSWER_LLM_ENABLED", "false")
     get_settings.cache_clear()
     yield
     get_settings.cache_clear()

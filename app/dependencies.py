@@ -492,7 +492,7 @@ async def get_memory_search_service(
         condition_candidates=s.memory_search_condition_candidates,
         display_count=s.memory_search_display_count,
         suggestion_count=s.memory_search_suggestion_count,
-        # 답변 앞머리 문장 — 꺼 두면(기본) 템플릿 문장. 로컬 Gemma가 쓰고(llm_headline_provider),
+        # 답변 앞머리 문장 — 기본은 LLM(로컬 Gemma, llm_headline_provider)이 쓰고 끄면 템플릿 문장.
         # LLM에는 조건 이름과 결과 유무만 보낸다
         headline_writer=(
             HeadlineWriter(get_clients().llm_headline) if s.memory_answer_llm_enabled else None
