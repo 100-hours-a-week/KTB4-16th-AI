@@ -3,6 +3,10 @@ import os
 # 테스트는 항상 가짜 클라이언트·고정 토큰으로 돈다 (app import 전에 설정)
 os.environ["AI_CLIENT_MODE"] = "fake"
 os.environ["INTERNAL_TOKEN"] = "test-token"
+# 개발자 PC의 .env에 LangSmith 추적이 켜져 있어도 테스트는 추적을 올리지 않는다.
+# 앱은 .env의 LANGSMITH_* 값을 환경변수로 옮기지만 이미 있는 값은 덮어쓰지 않으므로 여기서 막는다
+os.environ["LANGSMITH_TRACING"] = "false"
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
 
 from typing import Any  # noqa: E402
 
