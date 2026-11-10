@@ -89,3 +89,44 @@ async def test_fallback_does_not_hide_unexpected_errors_from_the_primary():
     with pytest.raises(KeyError):
         await FallbackLLMClient(primary, fallback).complete(system="s", prompt="p")
     assert fallback.calls == []
+
+
+# ---- 기억 검색 답변 앞머리: Gemma가 먼저, 호출이 실패하면 Claude ----------------------------
+
+
+async def test_headline_is_written_by_gemma_and_claude_is_not_called_when_it_works():
+    from app.components.answer_headline import HeadlineWriter
+
+    primary = StubLLM("gemma", answer="홍대 근처에서 저장한 자물쇠를 찾았어요.")
+    fallback = StubLLM("haiku", answer="하이쿠 글")
+    writer = HeadlineWriter(FallbackLLMClient(primary, fallback))
+
+    text = await writer.write(["홍대 근처"], found=2, total=2, suggestions=0)
+
+    assert text == "홍대 근처에서 저장한 자물쇠를 찾았어요."
+    assert len(fallback.calls) == 0
+
+
+async def test_headline_is_written_by_claude_when_the_gemma_call_fails():
+    from app.components.answer_headline import HeadlineWriter
+
+    primary = StubLLM("gemma", error=LLMError("서버 꺼짐"))
+    fallback = StubLLM("haiku", answer="홍대 근처에서 저장한 자물쇠를 찾았어요.")
+    writer = HeadlineWriter(FallbackLLMClient(primary, fallback))
+
+    text = await writer.write(["홍대 근처"], found=2, total=2, suggestions=0)
+
+    assert text == "홍대 근처에서 저장한 자물쇠를 찾았어요."
+    # Claude에도 Gemma와 같은 최소 정보(조건 이름·결과 유무)만 간다
+    assert fallback.calls[0]["prompt"] == "질문한 조건: 홍대 근처\n조건에 모두 맞는 자물쇠: 있음"
+
+
+async def test_headline_raises_when_both_fail_so_the_service_falls_back_to_the_template():
+    from app.components.answer_headline import HeadlineWriter
+
+    primary = StubLLM("gemma", error=LLMError("서버 꺼짐"))
+    fallback = StubLLM("haiku", error=LLMError("Claude도 실패"))
+    writer = HeadlineWriter(FallbackLLMClient(primary, fallback))
+
+    with pytest.raises(LLMError):
+        await writer.write(["홍대 근처"], found=2, total=2, suggestions=0)
