@@ -156,6 +156,93 @@ def test_report_llm_is_fake_in_fake_mode(monkeypatch):
         dependencies.get_clients.cache_clear()
 
 
+def test_headline_llm_is_local_gemma_with_claude_fallback_and_leaves_llm_general_alone(monkeypatch):
+    from app import dependencies
+    from app.clients.anthropic_client import AnthropicClient
+    from app.clients.llm_client import FallbackLLMClient, LocalLLMClient
+    from app.config import get_settings
+
+    try:
+        clients = _clients_with(
+            monkeypatch,
+            LLM_GENERAL_PROVIDER="anthropic",
+            LLM_HEADLINE_PROVIDER="local",
+            LOCAL_LLM_MODEL="gemma-3-12b",
+        )
+        assert isinstance(clients.llm_headline, FallbackLLMClient)
+        assert isinstance(clients.llm_headline.primary, LocalLLMClient)
+        assert clients.llm_headline.model == "gemma-3-12b"
+        assert isinstance(clients.llm_headline.fallback, AnthropicClient)
+        assert clients.llm_headline.fallback.model == "claude-haiku-5-5"
+        # 질문 다시쓰기가 쓰는 llm_general은 바뀌지 않는다
+        assert isinstance(clients.llm_general, AnthropicClient)
+    finally:
+        get_settings.cache_clear()
+        dependencies.get_clients.cache_clear()
+
+
+def test_headline_llm_can_be_switched_back_to_claude(monkeypatch):
+    from app import dependencies
+    from app.clients.anthropic_client import AnthropicClient
+    from app.config import get_settings
+
+    try:
+        clients = _clients_with(monkeypatch, LLM_HEADLINE_PROVIDER="anthropic")
+        assert isinstance(clients.llm_headline, AnthropicClient)
+        assert clients.llm_headline.model == get_settings().llm_model
+    finally:
+        get_settings.cache_clear()
+        dependencies.get_clients.cache_clear()
+
+
+def test_headline_llm_is_fake_in_fake_mode(monkeypatch):
+    from app import dependencies
+    from app.clients.llm_client import FakeLLMClient
+    from app.config import get_settings
+
+    try:
+        clients = _clients_with(monkeypatch, AI_CLIENT_MODE="fake")
+        assert isinstance(clients.llm_headline, FakeLLMClient)
+    finally:
+        get_settings.cache_clear()
+        dependencies.get_clients.cache_clear()
+
+
+async def test_memory_search_headline_is_written_by_gemma_by_default_not_claude(monkeypatch):
+    """아무 설정도 안 해도 앞머리는 LLM(Gemma)이 쓴다 — MEMORY_ANSWER_LLM_ENABLED를 주지 않는다."""
+    from app import dependencies
+    from app.config import get_settings
+
+    monkeypatch.delenv("MEMORY_ANSWER_LLM_ENABLED", raising=False)
+    try:
+        _clients_with(
+            monkeypatch,
+            LLM_GENERAL_PROVIDER="anthropic",
+            LLM_HEADLINE_PROVIDER="local",
+            LOCAL_LLM_MODEL="gemma-3-12b",
+        )
+        assert get_settings().memory_answer_llm_enabled is True
+        service = await dependencies.get_memory_search_service(search=object(), records=object())
+        assert service._headline_writer is not None
+        assert service._headline_writer.model == "gemma-3-12b"
+    finally:
+        get_settings.cache_clear()
+        dependencies.get_clients.cache_clear()
+
+
+async def test_memory_search_headline_is_template_when_llm_is_off(monkeypatch):
+    from app import dependencies
+    from app.config import get_settings
+
+    try:
+        _clients_with(monkeypatch, MEMORY_ANSWER_LLM_ENABLED="false")
+        service = await dependencies.get_memory_search_service(search=object(), records=object())
+        assert service._headline_writer is None
+    finally:
+        get_settings.cache_clear()
+        dependencies.get_clients.cache_clear()
+
+
 def test_delete_removes_pending_job_and_vectors(client, jobs, store, record_payload):
     client.post("/api/embeddings/generate", json=record_payload, headers=AUTH)
     store.rows[1029] = object()

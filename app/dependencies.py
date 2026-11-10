@@ -100,9 +100,12 @@ class Clients:
     # 기능1·3 상황·사진 → 장면 문장 (곡은 곡풀에서 고르니 곡 지식이 필요 없다) — 로컬 Gemma
     llm_scene: LLMClient
     # 리포트 요약(AI 리캡) — 로컬 Gemma 먼저, 실패하면 Claude.
-    # llm_general과 따로 둔 이유: llm_general은 기억 검색(질문 다시쓰기·한 줄 답변)도 쓰므로
+    # llm_general과 따로 둔 이유: llm_general은 기억 검색의 질문 다시쓰기도 쓰므로
     # 거기까지 바꾸지 않으려는 것이다
     llm_report: LLMClient
+    # 기억 검색 답변 앞머리 문장 — 로컬 Gemma 먼저, 호출이 실패하면 Claude.
+    # 둘 다 못 쓰거나 시간 안에 못 쓰면 코드가 템플릿 문장으로 대신한다
+    llm_headline: LLMClient
     embedding: EmbeddingClient
     clip: ClipClient
     backend: ReportBackendClient
@@ -139,18 +142,20 @@ def get_clients() -> Clients:
             llm_general=FakeLLMClient(),
             llm_scene=FakeLLMClient(),
             llm_report=FakeLLMClient(),
+            llm_headline=FakeLLMClient(),
             embedding=FakeEmbeddingClient(dim=s.text_vector_dim),
             clip=FakeClipClient(dim=s.clip_embedding_dim),
             backend=FakeBackendClient(),
             spotify_search=FakeSpotifySearchClient(),
             spotify_playlist=FakeSpotifyPlaylistClient(),
         )
-    llm_report = _build_report_llm(s)
+    llm_report = _build_local_first_llm(s, s.llm_report_provider)
     return Clients(
         llm_knowledge=_build_llm(s.llm_knowledge_provider),
         llm_general=_build_llm(s.llm_general_provider),
         llm_scene=_build_llm(s.llm_scene_provider),
         llm_report=llm_report,
+        llm_headline=_build_local_first_llm(s, s.llm_headline_provider),
         llm_report_backup=(
             llm_report.fallback if isinstance(llm_report, FallbackLLMClient) else None
         ),
@@ -202,9 +207,9 @@ def _build_anthropic(s: Settings, model: str) -> AnthropicClient:
     )
 
 
-def _build_report_llm(s: Settings) -> LLMClient:
+def _build_local_first_llm(s: Settings, provider: str) -> LLMClient:
     # 로컬 Gemma가 기본이고, 서버가 꺼져 있는 등 호출이 실패하면 Claude(llm_fallback_model)로 넘긴다
-    if s.llm_report_provider == "local":
+    if provider == "local":
         return FallbackLLMClient(
             primary=_build_llm("local"),
             fallback=_build_anthropic(s, s.llm_fallback_model),
@@ -487,9 +492,10 @@ async def get_memory_search_service(
         condition_candidates=s.memory_search_condition_candidates,
         display_count=s.memory_search_display_count,
         suggestion_count=s.memory_search_suggestion_count,
-        # 답변 앞머리 문장 — 꺼 두면(기본) 템플릿 문장. LLM에는 조건 이름과 결과 유무만 보낸다
+        # 답변 앞머리 문장 — 기본은 LLM(로컬 Gemma, llm_headline_provider)이 쓰고 끄면 템플릿 문장.
+        # LLM에는 조건 이름과 결과 유무만 보낸다
         headline_writer=(
-            HeadlineWriter(get_clients().llm_general) if s.memory_answer_llm_enabled else None
+            HeadlineWriter(get_clients().llm_headline) if s.memory_answer_llm_enabled else None
         ),
         headline_timeout=s.memory_answer_llm_timeout_seconds,
         aliases=get_artist_alias_source(),

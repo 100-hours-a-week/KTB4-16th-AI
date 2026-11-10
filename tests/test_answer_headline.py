@@ -2,6 +2,7 @@ import pytest
 
 from app.components.answer_headline import (
     MAX_LENGTH,
+    PROMPT_VERSION,
     SYSTEM_PROMPT,
     HeadlineWriter,
     build_prompt,
@@ -42,6 +43,14 @@ def test_prompt_never_contains_a_count(found, total, suggestions):
     prompt = build_prompt(["가을"], found=found, total=total, suggestions=suggestions)
 
     assert not any(ch.isdigit() for ch in prompt)
+
+
+def test_system_prompt_asks_for_a_warm_sentimental_tone_without_adding_facts():
+    """말투는 감성적이지만, LLM이 받는 정보(조건 이름·결과 유무)에 없는 사실은 더하지 않는다."""
+    assert PROMPT_VERSION == "memory-headline-v3"
+    assert "따뜻하고 감성적인 존댓말" in SYSTEM_PROMPT
+    assert "베끼지 않는다" in SYSTEM_PROMPT  # 예시를 그대로 쓰지 않게
+    assert "사실을 더하지는 않는다" in SYSTEM_PROMPT
 
 
 def test_system_prompt_forbids_inventing_facts_listing_records_and_counts():

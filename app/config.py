@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     # "anthropic"으로 두면 Claude(llm_model)만 쓴다 (되돌리기용)
     llm_report_provider: Literal["anthropic", "local"] = "local"
     llm_fallback_model: str = "claude-haiku-5-5"
+    # 기억 검색 답변 앞머리 문장을 쓰는 LLM (memory_answer_llm_enabled가 켜졌을 때만 쓴다).
+    # 기본은 로컬 Gemma이고, 서버가 꺼져 있는 등 호출이 실패하면 llm_fallback_model(Claude)로 넘긴다
+    # (이때 Claude에도 조건 이름과 결과 유무만 간다). 시간을 넘기거나
+    # (memory_answer_llm_timeout_seconds) 글이 검증을 못 넘으면 Claude로 넘기지 않고
+    # 템플릿 문장으로 대신한다.
+    # "anthropic"으로 두면 Claude(llm_model)만 쓴다 (되돌리기용)
+    llm_headline_provider: Literal["anthropic", "local"] = "local"
     # 곡 점수에서 (곡의 허브 값 × 이 값)을 뺀다. 0이면 허브 보정 없음.
     # 곡풀 파일의 곡마다 hub 칸이 있어야 효과가 있다
     hub_weight: float = 0.5
@@ -121,9 +128,10 @@ class Settings(BaseSettings):
     memory_search_display_count: int = 5
     # 제안(일부만 맞는 자물쇠) 토글을 열면 보이는 최대 건수
     memory_search_suggestion_count: int = 3
-    # 답변 앞머리 문장(질문한 조건 + 결과 유무, 건수 없음)을 LLM이 쓴다. 꺼 두면 템플릿 문장.
+    # 답변 앞머리 문장(질문한 조건 + 결과 유무, 건수 없음)을 LLM이 쓴다(기본 켬). 끄면 템플릿 문장.
+    # 켜 둬도 LLM이 못 쓰면(시간 초과·검증 실패·둘 다 실패) 템플릿 문장으로 대신한다.
     # LLM에는 조건 이름과 결과 유무만 보낸다 (질문 원문·곡·장소·코멘트·건수는 보내지 않음)
-    memory_answer_llm_enabled: bool = False
+    memory_answer_llm_enabled: bool = True
     memory_answer_llm_timeout_seconds: float = 8.0  # 넘기면 템플릿 문장으로 대신한다
 
     # CLIP 이미지 임베딩 — Replicate openai/clip (clip-vit-large-patch14)
