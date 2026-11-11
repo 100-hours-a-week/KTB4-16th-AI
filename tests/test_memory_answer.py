@@ -1,9 +1,11 @@
 from app.components.memory_answer import (
     NO_RESULT_TEXT,
     compose_answer,
+    corrected_name_notices,
     template_headline,
     unknown_place_notices,
 )
+from app.components.query_conditions import Condition
 
 # ---- 앞머리 문장 (LLM이 못 쓸 때의 템플릿) -----------------------------------
 
@@ -128,3 +130,18 @@ def test_topic_particle_follows_the_last_letter():
 
 def test_no_places_means_no_notices():
     assert unknown_place_notices(found=[], missing=[]) == []
+
+
+# ---- 오타를 고쳐 찾은 이름 안내 ------------------------------------------------
+
+
+def test_corrected_names_are_told_after_the_answer():
+    artist = Condition(
+        "artist", "가수 NewJeans", names=("NewJeans",), corrections=(("뉴진즈", "NewJeans"),)
+    )
+    title = Condition("title", "곡 여행", names=("여행",), corrections=(("여헹", "여행"),))
+
+    assert corrected_name_notices([artist, title]) == [
+        "'뉴진즈'는 'NewJeans'의, '여헹'은 '여행'의 오타로 보고 찾았어요."
+    ]
+    assert corrected_name_notices([Condition("season", "가을")]) == []

@@ -8,6 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 
 from fastapi import Depends, Header
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +21,8 @@ from app.clients.embedding_client import (
     LocalEmbeddingClient,
     OpenAIEmbeddingClient,
 )
-from app.clients.llm_client import FakeLLMClient, LLMClient, LocalLLMClient
+from app.clients.image_fetcher import ImageFetcher
+from app.clients.llm_client import FakeLLMClient, FallbackLLMClient, LLMClient, LocalLLMClient
 from app.clients.spotify_client import (
     FakeSpotifyPlaylistClient,
     FakeSpotifySearchClient,
@@ -41,15 +43,17 @@ from app.components.moderation_model import (
     ModerationModel,
     load_onnx_model,
 )
+from app.components.music_genre_assigner import parse_preferred
 from app.components.query_rewriter import QueryRewriter
 from app.components.question_generator import QuestionGenerator
 from app.components.question_parser import QuestionParser
 from app.components.reranker import Reranker
 from app.components.saved_song_pool import SavedSongPool
-from app.components.song_curator import SongCurator
+from app.components.scene_curator import SceneCurator
 from app.components.song_pool import SongPool, load_song_pool
 from app.components.tag_vector_file import PrecomputedVectors, read_vectors_file
 from app.components.tag_version import compute_tag_version
+from app.components.taste_genres import OnboardingReader, no_onboarding
 from app.components.vector_search import MemoryVectorSearch, RecordSearch, VectorSearch
 from app.config import Settings, get_settings
 from app.db import mysql, postgres
@@ -93,11 +97,22 @@ class Clients:
     llm_knowledge: LLMClient
     # 언어 변환만 필요한 작업 (리라이팅, 요약, 답변, 클러스터 이름)
     llm_general: LLMClient
+    # 기능1·3 상황·사진 → 장면 문장 (곡은 곡풀에서 고르니 곡 지식이 필요 없다) — 로컬 Gemma
+    llm_scene: LLMClient
+    # 리포트 요약(AI 리캡) — 로컬 Gemma 먼저, 실패하면 Claude.
+    # llm_general과 따로 둔 이유: llm_general은 기억 검색의 질문 다시쓰기도 쓰므로
+    # 거기까지 바꾸지 않으려는 것이다
+    llm_report: LLMClient
+    # 기억 검색 답변 앞머리 문장 — 로컬 Gemma 먼저, 호출이 실패하면 Claude.
+    # 둘 다 못 쓰거나 시간 안에 못 쓰면 코드가 템플릿 문장으로 대신한다
+    llm_headline: LLMClient
     embedding: EmbeddingClient
     clip: ClipClient
     backend: ReportBackendClient
     spotify_search: SpotifySearchClient
     spotify_playlist: SpotifyPlaylistClient
+    # 요약 글이 형식 검사를 못 넘으면 다시 쓰게 할 LLM (llm_report의 대체 Claude)
+    llm_report_backup: LLMClient | None = None
 
 
 def _build_embedding_client(s: Settings) -> EmbeddingClient:
@@ -125,15 +140,25 @@ def get_clients() -> Clients:
         return Clients(
             llm_knowledge=FakeLLMClient(),
             llm_general=FakeLLMClient(),
+            llm_scene=FakeLLMClient(),
+            llm_report=FakeLLMClient(),
+            llm_headline=FakeLLMClient(),
             embedding=FakeEmbeddingClient(dim=s.text_vector_dim),
             clip=FakeClipClient(dim=s.clip_embedding_dim),
             backend=FakeBackendClient(),
             spotify_search=FakeSpotifySearchClient(),
             spotify_playlist=FakeSpotifyPlaylistClient(),
         )
+    llm_report = _build_local_first_llm(s, s.llm_report_provider)
     return Clients(
         llm_knowledge=_build_llm(s.llm_knowledge_provider),
         llm_general=_build_llm(s.llm_general_provider),
+        llm_scene=_build_llm(s.llm_scene_provider),
+        llm_report=llm_report,
+        llm_headline=_build_local_first_llm(s, s.llm_headline_provider),
+        llm_report_backup=(
+            llm_report.fallback if isinstance(llm_report, FallbackLLMClient) else None
+        ),
         embedding=_build_embedding_client(s),
         clip=ReplicateClipClient(
             api_token=s.replicate_api_token,
@@ -164,13 +189,32 @@ def get_clients() -> Clients:
 def _build_llm(provider: str) -> LLMClient:
     s = get_settings()
     if provider == "local":
-        return LocalLLMClient(url=s.local_llm_url, model=s.local_llm_model)
+        return LocalLLMClient(
+            url=s.local_llm_url,
+            model=s.local_llm_model,
+            api_key=s.local_llm_api_key,
+            timeout=s.local_llm_timeout_seconds,
+        )
+    return _build_anthropic(s, s.llm_model)
+
+
+def _build_anthropic(s: Settings, model: str) -> AnthropicClient:
     return AnthropicClient(
         api_key=s.anthropic_api_key,
-        model=s.llm_model,
+        model=model,
         timeout=s.external_timeout_seconds,
         max_retries=s.external_max_retries,
     )
+
+
+def _build_local_first_llm(s: Settings, provider: str) -> LLMClient:
+    # 로컬 Gemma가 기본이고, 서버가 꺼져 있는 등 호출이 실패하면 Claude(llm_fallback_model)로 넘긴다
+    if provider == "local":
+        return FallbackLLMClient(
+            primary=_build_llm("local"),
+            fallback=_build_anthropic(s, s.llm_fallback_model),
+        )
+    return _build_llm("anthropic")
 
 
 async def get_job_repository(
@@ -270,9 +314,34 @@ def get_query_rewriter() -> QueryRewriter:
     return QueryRewriter(get_clients().llm_general)
 
 
-def get_song_curator() -> SongCurator:
-    # 실제 존재하는 곡·가수를 지목해야 하므로 곡 지식이 있는 LLM을 쓴다
-    return SongCurator(get_clients().llm_knowledge)
+def get_image_fetcher() -> ImageFetcher:
+    return ImageFetcher()
+
+
+def get_scene_curator() -> SceneCurator:
+    # 곡은 곡풀에서 벡터로 고르므로 곡 지식이 필요 없다 — 로컬 Gemma가 장면 문장만 쓴다
+    return SceneCurator(get_clients().llm_scene)
+
+
+class _DbOnboardingGenres:
+    """백엔드 MySQL(읽기 전용)의 users.preferred_genres — 한 사용자의 온보딩 선호 장르."""
+
+    async def __call__(self, user_id: int) -> list[str]:
+        async with mysql.get_sessionmaker()() as mysql_session:
+            row = (
+                await mysql_session.execute(
+                    text("SELECT preferred_genres FROM users WHERE user_id = :user_id"),
+                    {"user_id": user_id},
+                )
+            ).first()
+        return parse_preferred(row.preferred_genres) if row else []
+
+
+def get_onboarding_reader() -> OnboardingReader:
+    s = get_settings()
+    if s.ai_client_mode == "fake" or not s.backend_mysql_url:
+        return no_onboarding
+    return _DbOnboardingGenres()
 
 
 def get_reranker() -> Reranker:
@@ -423,9 +492,10 @@ async def get_memory_search_service(
         condition_candidates=s.memory_search_condition_candidates,
         display_count=s.memory_search_display_count,
         suggestion_count=s.memory_search_suggestion_count,
-        # 답변 앞머리 문장 — 꺼 두면(기본) 템플릿 문장. LLM에는 조건 이름과 결과 유무만 보낸다
+        # 답변 앞머리 문장 — 기본은 LLM(로컬 Gemma, llm_headline_provider)이 쓰고 끄면 템플릿 문장.
+        # LLM에는 조건 이름과 결과 유무만 보낸다
         headline_writer=(
-            HeadlineWriter(get_clients().llm_general) if s.memory_answer_llm_enabled else None
+            HeadlineWriter(get_clients().llm_headline) if s.memory_answer_llm_enabled else None
         ),
         headline_timeout=s.memory_answer_llm_timeout_seconds,
         aliases=get_artist_alias_source(),

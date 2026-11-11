@@ -77,7 +77,7 @@ def test_zero_count_or_no_match_returns_empty():
     assert pool.pick(("발라드",), ("잔잔한",), count=3) == []
 
 
-def test_load_skips_songs_without_moods_and_handles_broken_file(tmp_path):
+def test_load_keeps_songs_without_moods_and_handles_broken_file(tmp_path):
     good = tmp_path / "pool.json"
     good.write_text(
         json.dumps(
@@ -90,7 +90,8 @@ def test_load_skips_songs_without_moods_and_handles_broken_file(tmp_path):
                         "moods": ["잔잔한"],
                         "popularity": 50,
                     },
-                    {"artist": "B", "title": "2", "genres": ["발라드"], "moods": []},
+                    {"artist": "B", "title": "2", "genres": ["발라드"]},
+                    {"artist": "C", "title": "3", "genres": []},
                 ]
             }
         ),
@@ -101,14 +102,14 @@ def test_load_skips_songs_without_moods_and_handles_broken_file(tmp_path):
 
     pool = load_song_pool(good)
 
-    assert pool is not None and len(pool) == 1
+    assert pool is not None and len(pool) == 2
     assert load_song_pool(broken) is None
     assert load_song_pool(tmp_path / "없음.json") is None
 
 
 def test_downloaded_pool_uses_only_known_vocab():
     """빌드 때 HF에서 받은 곡 풀이 있으면 어휘가 맞는지 본다 (공개 레포에는 파일이 없다)."""
-    from app.components.music_tags import GENRE_VOCAB, MOOD_VOCAB
+    from app.components.music_tags import MUSIC_GENRE_GROUPS
 
     path = Path(get_settings().song_pool_path)
     if not path.exists():
@@ -116,9 +117,7 @@ def test_downloaded_pool_uses_only_known_vocab():
     data = json.loads(path.read_text(encoding="utf-8"))
     assert len(data["songs"]) > 500
     for s in data["songs"]:
-        assert set(s["genres"]) <= set(GENRE_VOCAB), s
-        assert set(s["moods"]) <= set(MOOD_VOCAB), s
-        assert 0 <= s["popularity"] <= 100
+        assert set(s["genres"]) <= set(MUSIC_GENRE_GROUPS), s
 
 
 # ── by_genre (기능6 곡 대결용, 2026-10-16) ─────────────────────────────
@@ -191,6 +190,32 @@ def test_vector_with_another_dimension_is_ignored_not_an_error():
     assert len(picked) == 2
 
 
+def test_load_reads_lyric_embedding(tmp_path):
+    path = tmp_path / "pool.json"
+    path.write_text(
+        json.dumps(
+            {
+                "songs": [
+                    {
+                        "artist": "A",
+                        "title": "1",
+                        "genre": "발라드",
+                        "genres": ["발라드"],
+                        "lyric_embedding": [0.6, 0.8],
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    pool = load_song_pool(path)
+
+    assert pool is not None and pool.by_genre("발라드")[0].embedding.tolist() == pytest.approx(
+        [0.6, 0.8]
+    )
+
+
 def test_load_reads_description_embedding_when_present(tmp_path):
     path = tmp_path / "pool.json"
     path.write_text(
@@ -214,4 +239,7 @@ def test_load_reads_description_embedding_when_present(tmp_path):
     pool = load_song_pool(path)
 
     assert pool is not None
-    assert [s.embedding for s in pool._songs] == [(0.5, 0.5), None]
+    assert [None if s.embedding is None else s.embedding.tolist() for s in pool._songs] == [
+        [0.5, 0.5],
+        None,
+    ]

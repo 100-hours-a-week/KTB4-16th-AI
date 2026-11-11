@@ -3,13 +3,19 @@
 백엔드 흐름: 단어 필터(욕설 단어 ** 가리기, 스팸 차단) → 이 API → 결과에 따라 전송.
 장애(503)·타임아웃이면 백엔드는 막는 쪽(fail-safe)으로 처리한다 (위키 모델 API 설계 6-2).
 모델은 욕 없이 기분 나쁜 말(모욕·혐오·성희롱·협박)을 잡는 역할이고, 유해/정상 이진 판정만 한다.
+"ㅋㅋ", "ㅇ" 같은 아주 짧은 입력은 모델이 판단할 근거가 없어서 규칙으로 먼저 통과시킨다
+(short_text_rule.py).
 """
 
 from starlette.concurrency import run_in_threadpool
 
 from app.components.moderation_model import ModerationModel
+from app.components.short_text_rule import skip_model
 from app.exceptions import ModelUnavailableError
 from app.schemas.moderation import ModerationCheckRequest, ModerationCheckResponse
+
+# 모델 없이 규칙만으로 판정했을 때 응답에 적는 버전
+RULE_VERSION = "short-text-rule"
 
 
 class ModerationService:
@@ -18,6 +24,15 @@ class ModerationService:
         self._threshold = threshold
 
     async def check(self, req: ModerationCheckRequest) -> ModerationCheckResponse:
+        if skip_model(req.text):
+            # 모델 파일이 없어도 짧은 입력은 판정한다 — 백엔드가 503을 막는 쪽으로 처리해서
+            return ModerationCheckResponse(
+                request_id=req.request_id,
+                is_toxic=False,
+                confidence=0.0,
+                category=None,
+                model_version=self._model.version if self._model else RULE_VERSION,
+            )
         if self._model is None:
             raise ModelUnavailableError("모더레이션 모델 파일이 없어요.")
         # 추론은 CPU 작업(수 ms)이라 이벤트 루프를 막지 않게 스레드에서 돌린다

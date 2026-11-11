@@ -21,9 +21,14 @@ from app.config import get_settings
 from app.dependencies import verify_internal_token
 from app.exceptions import register_exception_handlers
 from app.monitoring import setup_metrics
+from app.observability import explicit_app_env, is_dev_env, setup_langsmith
 
 
 def create_app() -> FastAPI:
+    # LangSmith가 환경변수를 처음 읽기 전에, .env의 LANGSMITH_* 값을 환경변수로 옮기고
+    # 프로젝트 이름(APP_ENV 기반)과 개인정보 정책(운영에서는 입력·출력 숨김 강제)을 적용한다
+    settings = get_settings()
+    setup_langsmith(dev=is_dev_env(settings), app_env=explicit_app_env(settings))
     app = FastAPI(title="Muro AI Gateway", version="0.1.0")
     register_exception_handlers(app)
 

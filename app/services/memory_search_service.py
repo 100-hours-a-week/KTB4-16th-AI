@@ -30,6 +30,8 @@ import logging
 from collections.abc import Callable, Sequence
 from datetime import date, datetime, timedelta, timezone
 
+from langsmith import traceable
+
 from app.components.answer_headline import HeadlineWriter
 from app.components.condition_scoring import (
     ConditionWeights,
@@ -42,6 +44,7 @@ from app.components.condition_scoring import (
 from app.components.embedder import Embedder
 from app.components.memory_answer import (
     compose_answer,
+    corrected_name_notices,
     template_headline,
     unknown_place_notices,
 )
@@ -116,6 +119,7 @@ class MemorySearchService:
         self._today = today
         self._aliases = aliases  # 없으면 저장된 이름 그대로만 가수를 찾는다
 
+    @traceable(name="memory_search", run_type="chain")
     async def search(self, req: MemorySearchRequest) -> MemorySearchResponse:
         conditions = (
             self._parser.parse(req.query_text, self._today(), await self._lexicon(req.user_id))
@@ -140,9 +144,13 @@ class MemorySearchService:
             # 걸러지고 남은 조건이 없으면 일반 검색
             asked = conditions
             conditions = resolve_conditions(asked, rows)
-            notices = unknown_place_notices(
-                found=kept_place_words(conditions), missing=dropped_place_words(asked, conditions)
-            )
+            notices = [
+                *corrected_name_notices(conditions),
+                *unknown_place_notices(
+                    found=kept_place_words(conditions),
+                    missing=dropped_place_words(asked, conditions),
+                ),
+            ]
             if conditions:
                 return await self._search_with_conditions(
                     req, conditions, rows, query_vector, comment_hits, music_hits, notices

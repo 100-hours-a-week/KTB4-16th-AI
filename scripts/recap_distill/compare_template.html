@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="ko">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RECAP 요약 비교</title>
+<style>
+body{font-family:-apple-system,"Apple SD Gothic Neo",sans-serif;max-width:860px;margin:0 auto;
+padding:0 16px 40px;color:#222;line-height:1.6}
+#bar{position:sticky;top:0;background:#fff;border-bottom:1px solid #ddd;padding:10px 0;z-index:5}
+#bar button{margin-right:8px;padding:6px 12px;font-size:14px}
+section{margin:16px 0;padding:12px 14px;border:1px solid #ddd;border-radius:8px}
+section.done{background:#f3faf4;border-color:#b6dfba}
+h3{margin:0 0 6px}small{font-weight:normal;color:#777}
+details{margin:4px 0 10px;font-size:13px;color:#666}
+pre{white-space:pre-wrap;margin:6px 0;font-family:inherit;font-size:13px}
+.text{margin:6px 0;padding:8px 10px;background:#fafafa;border-radius:6px}
+.text b{margin-right:6px}
+label.opt{display:inline-block;margin:6px 16px 0 0;font-size:15px}
+.hint{font-size:12px;color:#999}
+#result{margin:12px 0;padding:10px 12px;background:#fff8e1;border-radius:8px;display:none}
+</style>
+<div id="bar">
+  <b id="progress"></b>
+  <button onclick="showResult()">결과 보기</button>
+  <button onclick="exportJson()">선택 내보내기</button>
+  <button onclick="resetAll()">선택 모두 지우기</button>
+  <span class="hint">어느 쪽이 어느 버전인지는 "결과 보기"를 누르기 전까지 가려져 있어요.
+  선택은 이 브라우저에 자동 저장됩니다.</span>
+</div>
+<p>카드마다 <b>A와 B</b> 중 더 마음에 드는 쪽(더 감성적이고 덜 나열식인 쪽)을 고르세요.
+비슷하면 "비슷함"을 고릅니다. 입력은 전부 가짜 데이터이고, 곡 분위기와 날씨가 서로 맞지 않는
+경우가 있어요. 글이 입력과 어긋나는지는 입력을 펼쳐 보고 확인하세요.</p>
+<p id="note" class="hint"></p>
+<div id="result"></div>
+<div id="cards"></div>
+<script>
+const DATA = __DATA__;
+if (DATA.note) document.getElementById("note").textContent = DATA.note;
+const KEY = "recap_compare_choice_" + DATA.pair.join("_");
+let choice = {};
+try { choice = JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) {}
+
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(choice)); } catch (e) {}
+  updateBar();
+}
+function updateBar() {
+  const done = DATA.items.filter(i => choice[i.id]).length;
+  document.getElementById("progress").textContent = "선택 " + done + " / " + DATA.items.length;
+  document.querySelectorAll("section").forEach(s => {
+    s.classList.toggle("done", !!choice[s.dataset.id]);
+  });
+}
+function makeText(tag, text) {
+  const box = document.createElement("div");
+  box.className = "text";
+  const label = document.createElement("b");
+  label.textContent = tag;
+  box.appendChild(label);
+  box.appendChild(document.createTextNode(text));
+  return box;
+}
+function makeCard(item, index) {
+  const section = document.createElement("section");
+  section.dataset.id = item.id;
+  const title = document.createElement("h3");
+  title.textContent = (index + 1) + ". ";
+  const small = document.createElement("small");
+  small.textContent = item.id;
+  title.appendChild(small);
+  section.appendChild(title);
+  const details = document.createElement("details");
+  const summary = document.createElement("summary");
+  summary.textContent = "입력 보기 (프롬프트에 들어간 가짜 월간 기록)";
+  const pre = document.createElement("pre");
+  pre.textContent = item.input;
+  details.appendChild(summary);
+  details.appendChild(pre);
+  section.appendChild(details);
+  section.appendChild(makeText("A", item.a));
+  section.appendChild(makeText("B", item.b));
+  [["A", "A가 더 좋음"], ["same", "비슷함"], ["B", "B가 더 좋음"]].forEach(pair => {
+    const label = document.createElement("label");
+    label.className = "opt";
+    const input = document.createElement("input");
+    input.type = "radio";
+    input.name = "c-" + item.id;
+    input.checked = choice[item.id] === pair[0];
+    input.onchange = () => { choice[item.id] = pair[0]; save(); };
+    label.appendChild(input);
+    label.appendChild(document.createTextNode(" " + pair[1]));
+    section.appendChild(label);
+  });
+  return section;
+}
+function tally() {
+  const count = { same: 0, none: 0 };
+  DATA.pair.forEach(name => { count[name] = 0; });
+  DATA.items.forEach(i => {
+    const c = choice[i.id];
+    if (!c) count.none++;
+    else if (c === "same") count.same++;
+    else {
+      const aIs = DATA.a_is[i.id];
+      const other = aIs === DATA.pair[0] ? DATA.pair[1] : DATA.pair[0];
+      count[c === "A" ? aIs : other]++;
+    }
+  });
+  return count;
+}
+function showResult() {
+  const c = tally();
+  const box = document.getElementById("result");
+  box.style.display = "block";
+  box.textContent = DATA.pair[1] + " 선택 " + c[DATA.pair[1]] + "건 · " + DATA.pair[0] +
+    " 선택 " + c[DATA.pair[0]] + "건 · 비슷함 " + c.same + "건 · 아직 안 고른 것 " + c.none + "건";
+}
+function exportJson() {
+  const doc = { tally: tally(), choice: choice, a_is: DATA.a_is };
+  const blob = new Blob([JSON.stringify(doc, null, 1) + "\n"], { type: "application/json" });
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "recap_compare_choice.json";
+  link.click();
+}
+function resetAll() {
+  if (!confirm("고른 것을 모두 지울까요?")) return;
+  try { localStorage.removeItem(KEY); } catch (e) {}
+  location.reload();
+}
+const cards = document.getElementById("cards");
+DATA.items.forEach((item, index) => cards.appendChild(makeCard(item, index)));
+updateBar();
+</script>
+</html>

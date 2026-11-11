@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 토큰은 빌드 시크릿으로만 넘겨서 이미지 레이어에 남지 않는다 (--secret id=hf_token).
 # 토큰이 없으면 모델 없이 빌드되고, 서버는 뜨지만 모더레이션 판정만 503을 낸다.
 ARG MODERATION_MODEL_REPO=dionypark/mulo-moderation-kcelectra
-ARG MODERATION_MODEL_REVISION=v1-stage3
+ARG MODERATION_MODEL_REVISION=v2-stage7
 RUN --mount=type=secret,id=hf_token \
     mkdir -p /models/moderation && \
     if [ -s /run/secrets/hf_token ]; then \
@@ -29,17 +29,18 @@ RUN --mount=type=secret,id=hf_token \
       echo "hf_token 없음: 모더레이션 모델 없이 빌드"; \
     fi
 
-# 기능3 곡 풀(곡별 장르·무드·설명)도 비공개 HF 데이터 저장소에서 받는다 — 공개 레포에 두지 않는다.
-# 곡 풀을 고치면 HF에 새 태그(pool-v2 ...)를 올리고 아래 태그를 바꿔 커밋한다.
+# 기능1·3 곡 풀(곡명·가수·장르·벡터)도 비공개 HF 데이터 저장소에서 받는다 — 공개 레포에 두지 않는다.
+# 곡 풀을 고치면 HF에 새 태그를 올리고 아래 값을 바꿔 커밋한다.
 # 없으면 곡 풀 없이 빌드되고, 사진 추천은 LLM 곡만으로 동작한다.
-ARG SONG_POOL_REPO=dionypark/mulo-song-pool
-ARG SONG_POOL_REVISION=pool-v3
+ARG SONG_POOL_REPO=dionypark/mulo-melon-pool
+ARG SONG_POOL_REVISION=main
+ARG SONG_POOL_FILE=melon_pool_desc.json
 RUN --mount=type=secret,id=hf_token \
     mkdir -p /models/song_pool && \
     if [ -s /run/secrets/hf_token ]; then \
       curl -fsSL -H "Authorization: Bearer $(cat /run/secrets/hf_token)" \
         -o /models/song_pool/song_pool.json \
-        "https://huggingface.co/datasets/${SONG_POOL_REPO}/resolve/${SONG_POOL_REVISION}/song_pool.json"; \
+        "https://huggingface.co/datasets/${SONG_POOL_REPO}/resolve/${SONG_POOL_REVISION}/${SONG_POOL_FILE}"; \
     else \
       echo "hf_token 없음: 곡 풀 없이 빌드"; \
     fi

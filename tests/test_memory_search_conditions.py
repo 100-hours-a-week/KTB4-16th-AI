@@ -931,3 +931,17 @@ async def test_alias_lookup_failure_falls_back_to_the_stored_names(parser):
     res = await service.search(_request("RESCENE 노래 들었던 거 뭐 있었지"))
 
     assert sorted(m.record_id for m in res.records) == [1, 2]
+
+
+async def test_typo_of_an_artist_still_finds_the_records_and_says_so(parser):
+    aliases = FakeAliases({"rescene": ["리센느"], "iu": ["아이유"]})
+    service = _service(parser, FakeVectorSearch(), _english_stored_world(), aliases=aliases)
+
+    res = await service.search(_request("리센노 노래 들었던 거 뭐 있었지"))
+
+    assert sorted(m.record_id for m in res.records) == [1, 2]
+    assert res.answer.splitlines() == [
+        "가수 RESCENE 조건에 맞는 자물쇠를 찾았어요.",
+        "",
+        "'리센노'는 'RESCENE'의 오타로 보고 찾았어요.",
+    ]

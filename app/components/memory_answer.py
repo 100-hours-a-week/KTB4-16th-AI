@@ -6,8 +6,8 @@
 문장에는 아래 둘만 들어간다.
 
 1. 앞머리 — 질문한 조건과 결과 유무(있음·없음·많아서 일부만). **건수 숫자는 쓰지 않는다** (건수는
-   프론트가 records.length로 보여준다). LLM이 쓰고(answer_headline), 실패하거나 숫자가 섞이면 이
-   모듈의 템플릿(template_headline)으로 대신한다.
+   프론트가 records.length로 보여준다). LLM이 따뜻하고 감성적인 말투로 쓰고(answer_headline),
+   실패하거나 숫자가 섞이면 이 모듈의 템플릿(template_headline)으로 대신한다.
 2. 안내 — 사전에 없는 장소 때문에 적용하지 못한 조건 등. 코드가 정한 문장을 그대로 붙인다.
 
 문장에 자물쇠 하나하나의 날짜·장소·곡이 들어가지 않으므로, 대화를 저장해 두고 나중에 자물쇠를
@@ -15,6 +15,8 @@
 """
 
 from collections.abc import Sequence
+
+from app.components.query_conditions import Condition
 
 NO_RESULT_TEXT = "찾으시는 자물쇠가 없어요. 다른 말로 다시 물어봐 주세요."
 UNKNOWN_PLACE_HINT = "동이나 구 이름(예: 성수동, 성동구)으로 물어보시면 더 정확하게 찾을 수 있어요."
@@ -73,6 +75,17 @@ def unknown_place_notices(found: Sequence[str], missing: Sequence[str]) -> list[
             f"위치 조건은 적용하지 못했어요. {UNKNOWN_PLACE_HINT}"
         )
     return notices
+
+
+def corrected_name_notices(conditions: Sequence[Condition]) -> list[str]:
+    """오타를 고쳐 찾은 가수·곡명 안내 ("'뉴진즈'는 '뉴진스'의 오타로 보고 찾았어요.").
+
+    영어 이름 뒤에 붙일 조사(로·으로)는 글자로 정할 수 없어서 "의"로 잇는다."""
+    fixes = [pair for cond in conditions for pair in cond.corrections]
+    if not fixes:
+        return []
+    said = ", ".join(f"'{typed}'{_topic(typed)} '{name}'의" for typed, name in fixes)
+    return [f"{said} 오타로 보고 찾았어요."]
 
 
 def _quoted(words: Sequence[str]) -> str:

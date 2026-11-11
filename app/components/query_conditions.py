@@ -49,3 +49,5 @@ class Condition:
     high: float | None = None
     # region 전용. 약칭("수원", "공주")처럼 일반 낱말과 겹칠 수 있는 이름이면 False
     reliable: bool = True
+    # artist·title 전용. 오타를 고쳐 찾은 이름의 (질문에 친 글자, 찾은 이름) — 안내 문장에 쓴다
+    corrections: tuple[tuple[str, str], ...] = ()

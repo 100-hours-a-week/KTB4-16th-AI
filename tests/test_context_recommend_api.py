@@ -15,11 +15,8 @@ class EmptyRecordSearch:
     async def similar_by_comment(self, user_id, query_vector, limit):
         return []
 
-    async def music_vectors(self, user_id, limit):
-        return []
-
-    async def music_vectors_for_records(self, user_id, record_ids):
-        return []
+    async def genres_by_record(self, user_id):
+        return {}
 
 
 def _client() -> TestClient:

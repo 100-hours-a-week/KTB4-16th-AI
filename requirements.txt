@@ -1,7 +1,11 @@
+# 기억 검색 추적(LangSmith)
+langsmith>=0.14,<1
 fastapi>=0.141,<1
 uvicorn[standard]>=0.53,<1
 pydantic>=2.13,<3
 pydantic-settings>=2.15,<3
+# .env의 LangSmith 설정을 환경변수로 옮긴다 (app/observability.py)
+python-dotenv>=1.0,<2
 sqlalchemy[asyncio]>=2.0.54,<2.1
 asyncpg>=0.31,<1
 aiomysql>=0.2,<1

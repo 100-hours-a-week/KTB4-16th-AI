@@ -46,9 +46,30 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     llm_model: str = "claude-sonnet-5"
 
-    # 로컬 LLM (V2, RunPod) — 구현 예정
+    # 로컬 LLM (RunPod에서 직접 서빙하는 Gemma-3-12B, OpenAI 호환 API)
+    #   url은 /v1/chat/completions까지 포함한 전체 주소 (LOCAL_LLM_URL)
     local_llm_url: str = ""
     local_llm_model: str = ""
+    local_llm_api_key: str = ""
+    local_llm_timeout_seconds: float = 60.0
+    # 기능1·3 장면 문장을 쓰는 LLM. 상용 LLM 없이 가는 것이 목표라 기본은 로컬이다.
+    # "anthropic"으로 두면 Claude가 같은 일을 한다 (되돌리기용)
+    llm_scene_provider: Literal["anthropic", "local"] = "local"
+    # 리포트 요약(AI 리캡)을 쓰는 LLM. 기본은 로컬 Gemma이고, 서버가 꺼져 있거나 실패하거나
+    # 글이 형식 검사를 못 넘으면 llm_fallback_model(Claude)로 넘긴다.
+    # "anthropic"으로 두면 Claude(llm_model)만 쓴다 (되돌리기용)
+    llm_report_provider: Literal["anthropic", "local"] = "local"
+    llm_fallback_model: str = "claude-haiku-5-5"
+    # 기억 검색 답변 앞머리 문장을 쓰는 LLM (memory_answer_llm_enabled가 켜졌을 때만 쓴다).
+    # 기본은 로컬 Gemma이고, 서버가 꺼져 있는 등 호출이 실패하면 llm_fallback_model(Claude)로 넘긴다
+    # (이때 Claude에도 조건 이름과 결과 유무만 간다). 시간을 넘기거나
+    # (memory_answer_llm_timeout_seconds) 글이 검증을 못 넘으면 Claude로 넘기지 않고
+    # 템플릿 문장으로 대신한다.
+    # "anthropic"으로 두면 Claude(llm_model)만 쓴다 (되돌리기용)
+    llm_headline_provider: Literal["anthropic", "local"] = "local"
+    # 곡 점수에서 (곡의 허브 값 × 이 값)을 뺀다. 0이면 허브 보정 없음.
+    # 곡풀 파일의 곡마다 hub 칸이 있어야 효과가 있다
+    hub_weight: float = 0.5
 
     # 텍스트 임베딩 (코멘트·음악 무드 텍스트·검색 질문). V2부터 KURE-v1(자체 서빙)이 기본이다.
     # "openai"는 예전 방식(1536차원)이라, 벡터 칸이 1024차원인 지금은 되돌리기용으로만 남겨 둔다
@@ -107,9 +128,10 @@ class Settings(BaseSettings):
     memory_search_display_count: int = 5
     # 제안(일부만 맞는 자물쇠) 토글을 열면 보이는 최대 건수
     memory_search_suggestion_count: int = 3
-    # 답변 앞머리 문장(질문한 조건 + 결과 유무, 건수 없음)을 LLM이 쓴다. 꺼 두면 템플릿 문장.
+    # 답변 앞머리 문장(질문한 조건 + 결과 유무, 건수 없음)을 LLM이 쓴다(기본 켬). 끄면 템플릿 문장.
+    # 켜 둬도 LLM이 못 쓰면(시간 초과·검증 실패·둘 다 실패) 템플릿 문장으로 대신한다.
     # LLM에는 조건 이름과 결과 유무만 보낸다 (질문 원문·곡·장소·코멘트·건수는 보내지 않음)
-    memory_answer_llm_enabled: bool = False
+    memory_answer_llm_enabled: bool = True
     memory_answer_llm_timeout_seconds: float = 8.0  # 넘기면 템플릿 문장으로 대신한다
 
     # CLIP 이미지 임베딩 — Replicate openai/clip (clip-vit-large-patch14)
@@ -125,33 +147,36 @@ class Settings(BaseSettings):
     spotify_service_refresh_token: str = ""
 
     # 기능1·3 추천 5곡 중 곡 풀에서 채울 곡 수. 0이면 예전처럼 LLM 곡만.
-    # 곡 풀을 쓰면 LLM에게는 song_pool_llm_count곡만 받는다 (Spotify 탈락 대비 여유분 포함)
-    # 5곡 중 4곡은 DB(저장된 곡 + TJ 곡 풀), Claude 곡은 1곡 — Claude가 매번 같은 곡
-    # (실측: 20개 상황에서 "적재 - 별 보러 가자"가 80곡 중 9번)을 내서 몫을 줄였다.
-    # Claude에게는 Spotify 탈락 몫까지 3곡을 받는다.
-    song_pool_count: int = 4
-    song_pool_llm_count: int = 3
-    # 곡 풀 몫 중 몇 곡을 "사용자들이 저장한 곡"(track_moods)에서 가져올지. 나머지는 TJ 곡 풀.
-    # 1로 둔 이유: 오픈 직후엔 저장된 곡이 적어서 다 거기서 뽑으면 같은 곡만 돌 수 있다.
-    # 저장 곡이 쌓이면 올려 가며 실측한다. 0이면 TJ 곡 풀만 사용.
-    song_pool_saved_count: int = 1
+    # 5곡 모두 곡 풀에서 고른다 — Claude가 매번 같은 곡
+    # (실측: 20개 상황에서 "적재 - 별 보러 가자"가 80곡 중 9번)을 내서 곡 추천에서 뺐다.
+    # Claude는 상황 장르·무드·분위기 문장만 쓴다. song_pool_llm_count를 올리면 곡도 받는다.
+    song_pool_count: int = 5
+    song_pool_llm_count: int = 0
+    # 곡 풀 몫 중 몇 곡을 "사용자들이 저장한 곡"(track_moods)에서 가져올지 (하한).
+    # 저장된 곡은 설명을 만들지 않으므로 끈다. song_pool_saved_max까지 0이어야 후보에서 빠진다.
+    song_pool_saved_count: int = 0
     # 저장된 곡은 DB 몫 안에서 곡 풀과 같은 점수로 겨룬다 (db_picker). song_pool_saved_count는 최소
     # 곡 수(하한), 이 값은 최대 곡 수(상한). 점수 = 태그 가중치·태그 점수 + 벡터 가중치·벡터 유사도.
     # 가중치는 감으로 둔 초기값 — 같은 상황 세트로 비교해 정한다
-    song_pool_saved_max: int = 2
+    song_pool_saved_max: int = 0
     rerank_tag_weight: float = 0.5
     rerank_vector_weight: float = 0.5
+    # 자물쇠 저장 때 Claude로 곡 설명·장르·무드를 만들지. 끄면 새 곡은 track_moods에 안 쌓이고
+    # 곡 벡터 없이 저장된다 (취향 벡터·기능5 곡 검색·장르 통계에서 그 곡이 빠진다)
+    song_description_enabled: bool = False
     # 곡 풀 파일 — Docker 빌드 때 비공개 HF 저장소에서 받아 둔다(공개 레포에 두지 않음).
     # 로컬에서 쓰려면 HF에서 받아 SONG_POOL_PATH로 지정
     song_pool_path: str = "/app/models/song_pool/song_pool.json"
 
     # 기능6 모더레이션 모델 (KcELECTRA ONNX) — Docker 빌드 때 HF 비공개 저장소에서 받아 둔다
     moderation_model_dir: str = "/app/models/moderation"
-    moderation_model_version: str = "kcelectra-v1-stage3"
-    # 유해 확률이 이 값 이상이면 유해. 0.5였는데 정상 채팅이 막힌다는 이야기가 있어 0.9로 올렸다
-    # (2026-10-20). 지난 실험에서 올려도 오탐은 크게 안 줄고 놓침(욕 통과)만 늘었으니, 욕이 너무
-    # 통과하면 다시 내린다. 환경변수 MODERATION_THRESHOLD로도 바꿀 수 있다
-    moderation_threshold: float = 0.9
+    moderation_model_version: str = "kcelectra-v2-stage7"
+    # 유해 확률이 이 값 이상이면 유해. 0.5 → 0.9(2026-10-20)로 올렸다가,
+    # 짧은 말·변형 데이터로 다시 학습한 stage7 모델(서비스용 검증셋 기준 0.55~0.6이 최적,
+    # 오탐률 3% 이하)로 바꾸면서 0.6으로 내렸다 (2026-11-03).
+    # 욕이 너무 통과하면 내리고 정상 채팅이 막히면 올린다.
+    # 환경변수 MODERATION_THRESHOLD로도 바꿀 수 있다
+    moderation_threshold: float = 0.6
     moderation_threads: int = 2
 
     # 기능6 오늘의 질문 — 최근 며칠치 자물쇠로 장르별 통계를 낼지, 최대 몇 건까지 볼지

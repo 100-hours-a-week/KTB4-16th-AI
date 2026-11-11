@@ -12,7 +12,19 @@ class AnthropicClient:
             api_key=api_key, timeout=timeout, max_retries=max_retries
         )
 
-    async def complete(self, *, system: str, prompt: str, max_tokens: int = 1024) -> str:
+    async def complete(
+        self,
+        *,
+        system: str,
+        prompt: str,
+        max_tokens: int = 1024,
+        json_mode: bool = False,
+        image_url: str | None = None,
+    ) -> str:
+        if image_url:
+            raise LLMError(
+                "이 LLM 어댑터는 사진 입력을 지원하지 않아요 (LLM_SCENE_PROVIDER=local 사용)."
+            )
         try:
             res = await self._client.messages.create(
                 model=self.model,
