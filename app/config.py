@@ -130,9 +130,15 @@ class Settings(BaseSettings):
     memory_search_suggestion_count: int = 3
     # 답변 앞머리 문장(질문한 조건 + 결과 유무, 건수 없음)을 LLM이 쓴다(기본 켬). 끄면 템플릿 문장.
     # 켜 둬도 LLM이 못 쓰면(시간 초과·검증 실패·둘 다 실패) 템플릿 문장으로 대신한다.
-    # LLM에는 조건 이름과 결과 유무만 보낸다 (질문 원문·곡·장소·코멘트·건수는 보내지 않음)
+    # LLM에는 조건 이름과 결과 유무를 보내고 (질문 원문·코멘트·건수는 보내지 않음),
+    # memory_answer_records_enabled가 켜져 있으면 로컬 Gemma에만 찾은 자물쇠의 값도 보낸다
     memory_answer_llm_enabled: bool = True
     memory_answer_llm_timeout_seconds: float = 8.0  # 넘기면 템플릿 문장으로 대신한다
+    # 로컬 Gemma가 조건에 모두 맞게 찾은 자물쇠 위 몇 건의 값(월·동네·날씨·곡명·가수)을 받아
+    # 그것으로 문장을 쓴다(RAG, 기본 켬). 끄면 조건 이름과 결과 유무만 보낸다.
+    # Claude에는 켜 둬도 기록 값을 보내지 않는다.
+    # 문장에 기록 값이 들어가므로 백엔드가 저장하는 채팅에도 그 값이 남는다
+    memory_answer_records_enabled: bool = True
 
     # CLIP 이미지 임베딩 — Replicate openai/clip (clip-vit-large-patch14)
     # V2에 RunPod 직접 서빙으로 교체 예정. 모델이 바뀌면 차원 변경 → 전체 재임베딩
