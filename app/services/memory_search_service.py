@@ -13,8 +13,8 @@
 
 응답은 ID만 준다: records는 recordId만, suggestedRecords는 recordId와 matchedConditions만.
 카드 정보는 백엔드가 recordId로 자기 DB에서 만든다. 답변 문장에는 자물쇠 목록도, 건수 숫자도
-넣지 않는다 — 건수는 프론트가 records.length로 보여준다. 문장은 앞머리(질문한 조건 + 결과 유무,
-LLM 또는 템플릿) + 안내로 이뤄진다.
+넣지 않는다 — 건수는 프론트가 records.length로 보여준다. 문장은 앞머리(질문한 조건 + 결과 유무 +
+찾은 자물쇠 위 몇 건의 값을 LLM이 쓰거나 템플릿) + 안내로 이뤄진다.
 
 장소는 좌표로 비교하되, 좌표로 비교할 수 없으면 코멘트에서 그 이름을 찾는다:
   사전에 없는 장소("광교산") → 코멘트에 그 글자가 있는 기록 / 사전에 있어도 반경 안에 내 기록이
@@ -32,7 +32,12 @@ from datetime import date, datetime, timedelta, timezone
 
 from langsmith import traceable
 
-from app.components.answer_headline import HeadlineWriter
+from app.components.answer_headline import (
+    MAX_RECORDS,
+    HeadlineWriter,
+    RecordFacts,
+    facts_from_row,
+)
 from app.components.condition_scoring import (
     ConditionWeights,
     dropped_place_words,
@@ -309,6 +314,8 @@ class MemorySearchService:
             total=len(ranking.exact),
             suggestions=len(suggestions),
             llm_labels=[_llm_label(c) for c in conditions],
+            # 문장의 근거가 되는 값: 조건에 모두 맞는 자물쇠 위 몇 건 (이미 읽어 둔 값을 쓴다)
+            records=_record_facts(matched, rows) if self._headline_writer is not None else (),
         )
         return MemorySearchResponse(
             answer=compose_answer(headline, notices=notices),
@@ -329,11 +336,13 @@ class MemorySearchService:
         total: int,
         suggestions: int,
         llm_labels: Sequence[str] | None = None,
+        records: Sequence[RecordFacts] = (),
     ) -> str:
         """앞머리 문장. LLM이 쓰되 못 쓰면(꺼짐·실패·시간 초과·검증 실패) 템플릿으로 대신한다.
 
         labels는 템플릿 문장(코드)에 쓰는 조건 이름이고, llm_labels는 LLM에 보내는 조건 이름이다.
-        가수·곡명은 사용자의 음악 정보라서 LLM에는 이름 대신 "가수"·"곡명"만 보낸다.
+        조건의 가수·곡명은 이름 대신 "가수"·"곡명"만 보낸다. records는 찾은 자물쇠의 값이고,
+        글쓴이(HeadlineWriter)가 로컬 Gemma일 때만 그 LLM에 보낸다 (Claude에는 보내지 않는다).
         """
         fallback = template_headline(labels, found=found, total=total, suggestions=suggestions)
         if self._headline_writer is None or (found == 0 and suggestions == 0):
@@ -345,6 +354,7 @@ class MemorySearchService:
                     found=found,
                     total=total,
                     suggestions=suggestions,
+                    records=records,
                 ),
                 timeout=self._headline_timeout,
             )
@@ -355,6 +365,17 @@ class MemorySearchService:
             logger.warning("기억 검색 앞머리 LLM 응답이 기준에 안 맞아 템플릿 문장으로 대신")
             return fallback
         return text
+
+
+def _record_facts(matched: Sequence, rows: Sequence[ConditionRow]) -> list[RecordFacts]:
+    """결과로 보내는 자물쇠 중 위에서부터 몇 건의 값 — 문장을 쓰는 LLM의 근거다.
+
+    조건 점수 때문에 이미 읽어 둔 행(rows)에서 뽑으므로 DB를 더 읽지 않는다.
+    행이 없는 자물쇠(읽는 범위 밖의 오래된 기록)는 건너뛴다.
+    """
+    by_id = {row.record_id: row for row in rows}
+    ids = [item.record_id for item in matched[:MAX_RECORDS]]
+    return [facts_from_row(by_id[record_id]) for record_id in ids if record_id in by_id]
 
 
 def _llm_label(cond: Condition) -> str:
