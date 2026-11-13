@@ -3,8 +3,10 @@
 질문 하나에 A·B 답이 반반 갈려야 서로 다른 답을 고른 사람끼리 매칭이 된다. 그래서
 사실 퀴즈("아이유 대표곡은?")가 아니라 정답이 없는 취향 질문만 만든다.
 
-LLM이 아무 곡이나 지어내지 않도록 우리 사용자들이 실제로 많이 저장한 가수·무드·장소·
-날씨 통계를 재료로 준다. 통계가 비어 있으면(초반, 데이터 적음) 장르 일반 지식으로 만든다.
+질문은 "맑은 날 듣는 노래는? | 신나는 댄스곡 | 잔잔한 어쿠스틱"처럼 상황·듣는 방식에
+대한 것으로 만들고, 가수·곡끼리 붙이는 대결은 만들지 않는다(v2). 우리 사용자들이 실제로
+많이 저장한 장르·무드·장소·날씨 통계를 재료로 준다. 통계가 비어 있으면(초반, 데이터
+적음) 일반 지식으로 만든다.
 """
 
 import re
@@ -13,7 +15,7 @@ from app.clients.llm_client import LLMClient
 from app.components.music_tags import COMMON_GROUP
 from app.db.repositories.balance_stats_repository import GenreStats
 
-PROMPT_VERSION = "balance-question-v1"
+PROMPT_VERSION = "balance-question-v2"
 QUESTION_MAX_LEN = 50
 OPTION_MAX_LEN = 20
 
@@ -24,10 +26,17 @@ SYSTEM_PROMPT = f"""너는 음악 취향 투표 앱 MULO의 '오늘의 질문'�
 - 정답이 없는 취향 질문만 만든다. 사실 퀴즈(누구의 대표곡은?, 몇 년 발매?)는 만들지 않는다.
 - A와 B가 반반 갈릴 만큼 비슷하게 매력적이어야 한다. 한쪽이 뻔히 이기는 질문은 만들지 않는다.
 - 음악을 듣는 상황·감정·취향에 대한 질문으로 만든다. 채팅을 시작하기 좋은 가벼운 주제로.
+- 가수끼리, 곡끼리 붙이는 대결 질문은 만들지 않는다. 선택지는 노래 스타일·듣는 방식·상황으로.
 - 특정 집단 비하, 정치, 종교, 성적인 주제, 외모 평가는 다루지 않는다.
-- 가수 이름은 '재료'에 나온 가수만 쓴다. 재료에 없는 가수나 곡 제목은 지어내지 않는다.
+- 가수 이름이나 곡 제목은 쓰지 않는다. 재료는 사용자들이 어떤 상황·분위기에서 듣는지 참고만 한다.
 - 질문은 {QUESTION_MAX_LEN}자 이내, 선택지는 각각 {OPTION_MAX_LEN}자 이내로 짧게.
 - 서로 겹치지 않는 질문을 만든다.
+
+예시:
+맑고 밝은 날 듣는 노래는? | 신나는 댄스곡 | 잔잔한 어쿠스틱
+노래 들을 때 더 중요한 건? | 가사 | 멜로디
+슬플 때 듣는 음악은? | 더 슬픈 노래 | 억지로 밝은 노래
+비 오는 밤 이어폰 속 노래는? | 발라드 | 로파이·재즈
 
 출력 형식(한 줄에 질문 하나, 다른 말은 붙이지 않는다):
 <질문> | <선택지 A> | <선택지 B>"""
@@ -63,7 +72,6 @@ def _build_prompt(music_genre: str, stats: GenreStats, count: int) -> str:
         lines.append(f"재료 (최근 사용자들이 저장한 음악 기록 {stats.record_count}건 집계):")
         lines += [
             _stat_line("장르별 저장 수", stats.genre_counts),
-            _stat_line("많이 저장된 가수", stats.top_artists),
             _stat_line("많이 붙은 무드", stats.top_moods),
             _stat_line("많이 저장된 장소", stats.top_places),
             _stat_line("많이 저장된 날씨", stats.top_weathers),

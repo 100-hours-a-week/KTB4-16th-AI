@@ -8,11 +8,16 @@ popularity(TJ 노래방 차트에 오른 개월 수, 0~100)로 맞춘다. 유튜
 
 곡 풀이 그 장르에서 너무 얇으면(쓸 수 있는 짝이 없음) None을 돌려주고, 그러면
 balance_daily_worker가 기존 LLM 취향 질문으로 넘어간다.
+
+공통 그룹은 곡 대결을 만들지 않는다. 곡 풀의 "공통"은 13개 장르에 안 맞는 곡(디즈니·
+애니 OST 등 15곡)이 모이는 칸이라, 모든 사용자가 같이 보는 질문이 그 곡끼리의 대결이
+되어 버린다. 공통 그룹은 "밝은 날엔 어떤 노래?" 같은 취향 질문으로 간다.
 """
 
 import random
 from dataclasses import dataclass
 
+from app.components.music_tags import COMMON_GROUP
 from app.components.song_pool import PoolSong, SongPool
 
 PROMPT_VERSION = "song-battle-v1"
@@ -45,7 +50,9 @@ def generate_battle(
     used_pairs: set[frozenset[str]],
     rng: random.Random | None = None,
 ) -> SongBattle | None:
-    """체급이 비슷하고 최근에 안 쓴 두 곡을 뽑는다. 쓸 짝이 없으면 None."""
+    """체급이 비슷하고 최근에 안 쓴 두 곡을 뽑는다. 쓸 짝이 없거나 공통 그룹이면 None."""
+    if genre == COMMON_GROUP:
+        return None
     rng = rng or random.Random()
     songs = sorted(pool.by_genre(genre), key=lambda s: s.popularity)
     pairs = [
