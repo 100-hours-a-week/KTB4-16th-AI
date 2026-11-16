@@ -18,8 +18,10 @@ on:
 env:
   SERVICE: ai
   MIG_NAME: mulo-v2-ai-mig
+  # Terraform이 만든 인스턴스 템플릿 이름은 이 접두사 뒤에 숫자(생성 시각)가 붙는다.
+  TF_TEMPLATE_PREFIX: mulo-v2-ai-
   MIG_FLAG: "--zone=asia-northeast3-a"
-  MAX_SURGE: "1"
+  MAX_SURGE: "2"
   MAX_UNAVAILABLE: "0"
   REPLACEMENT_METHOD: substitute
 
@@ -142,27 +144,39 @@ jobs:
             echo "$MIG_NAME 의 현재 인스턴스 템플릿을 찾을 수 없습니다."
             exit 1
           fi
+          # 새 템플릿의 바탕은 Terraform이 관리하는 가장 최근 템플릿이다. 부팅 스크립트, 종료 스크립트,
+          # Alloy(로그 수집) 같은 인프라 설정은 Terraform이 갱신하므로 CD가 현재 MIG 템플릿을 그대로 복제하면
+          # 이 변경이 영영 반영되지 않는다. 못 찾으면 현재 템플릿(PREV)을 바탕으로 쓴다.
+          BASE=$(gcloud compute instance-templates list \
+            --filter="name ~ ^${TF_TEMPLATE_PREFIX}[0-9]+\$" \
+            --sort-by="~creationTimestamp" --limit=1 --format="value(name)")
+          if [ -z "$BASE" ]; then
+            echo "::warning::Terraform 템플릿(${TF_TEMPLATE_PREFIX}*)을 찾지 못해 현재 템플릿($PREV)을 바탕으로 만듭니다."
+            BASE="$PREV"
+          fi
+          echo "현재 MIG 템플릿: $PREV, 새 템플릿의 바탕: $BASE"
           SAFE=$(echo "$TAG" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9\n' '-' | sed 's/-*$//')
           echo "PREV_TEMPLATE=$PREV" >> "$GITHUB_ENV"
+          echo "BASE_TEMPLATE=$BASE" >> "$GITHUB_ENV"
           echo "NEW_TEMPLATE=${SERVICE}-tpl-${SAFE}-${{ github.run_number }}" >> "$GITHUB_ENV"
 
-      # 현재 템플릿을 그대로 복제하고 이미지 태그 메타데이터(app-image-tag)만 바꾼 새 템플릿을 만든다.
+      # 바탕 템플릿(Terraform의 최신 템플릿)을 그대로 복제하고 이미지 태그 메타데이터(app-image-tag)만 바꾼 새 템플릿을 만든다.
       # gcloud compute instance-templates create에는 기존 템플릿을 복사하는 옵션이 없어서
-      # 현재 템플릿을 읽어 메타데이터만 바꾼 뒤 Compute API로 새 템플릿을 만든다.
-      # 이미지 경로(app-image), 부팅 스크립트, env 시크릿 이름 등 나머지는 그대로다.
+      # 바탕 템플릿을 읽어 메타데이터만 바꾼 뒤 Compute API로 새 템플릿을 만든다.
+      # 부팅 스크립트, Alloy 설정, 이미지 경로(app-image), env 시크릿 이름 등 나머지는 바탕 템플릿 그대로다.
       # VM은 부팅할 때 app-image:app-image-tag 이미지를 받아서 실행한다.
       - name: Create instance template
         run: |
           python3 - <<'PY'
           import json, os, subprocess, sys, time, urllib.error, urllib.request
 
-          prev_name, new_name, tag = os.environ["PREV_TEMPLATE"], os.environ["NEW_TEMPLATE"], os.environ["TAG"]
+          base_name, new_name, tag = os.environ["BASE_TEMPLATE"], os.environ["NEW_TEMPLATE"], os.environ["TAG"]
 
           def gcloud(*args):
               return subprocess.check_output(["gcloud", *args], text=True).strip()
 
           project = gcloud("config", "get-value", "project")
-          body = json.loads(gcloud("compute", "instance-templates", "describe", prev_name, "--format=json"))
+          body = json.loads(gcloud("compute", "instance-templates", "describe", base_name, "--format=json"))
           for key in ("id", "kind", "selfLink", "selfLinkWithId", "creationTimestamp"):
               body.pop(key, None)
           body["name"] = new_name
@@ -195,25 +209,41 @@ jobs:
           print(f"새 템플릿 {new_name} 생성 완료 (app-image-tag={tag})")
           PY
 
-      # 새 템플릿이 태그만 바뀌고 나머지 설정은 그대로인지 확인한다. 아니면 교체를 시작하지 않는다.
+      # 새 템플릿이 바탕 템플릿과 태그만 다른지 확인한다. 아니면 교체를 시작하지 않는다.
+      # 현재 MIG 템플릿(PREV)과 달라지는 설정은 로그에 남겨서 이번 교체로 바뀌는 인프라 설정을 확인할 수 있게 한다.
       - name: Verify instance template
         run: |
+          gcloud compute instance-templates describe "$BASE_TEMPLATE" --format=json > base.json
           gcloud compute instance-templates describe "$PREV_TEMPLATE" --format=json > prev.json
           gcloud compute instance-templates describe "$NEW_TEMPLATE" --format=json > new.json
           python3 - <<'PY'
           import json, os, sys
-          def meta(f):
-              items = json.load(open(f))["properties"]["metadata"].get("items", [])
-              return {i["key"]: i["value"] for i in items}
-          prev, new = meta("prev.json"), meta("new.json")
-          diff = sorted(k for k in set(prev) | set(new) if prev.get(k) != new.get(k))
-          print("바뀐 메타데이터 키:", diff)
+          def load(f):
+              return json.load(open(f))["properties"]
+          def meta(props):
+              return {i["key"]: i["value"] for i in props["metadata"].get("items", [])}
+          base, prev, new = load("base.json"), load("prev.json"), load("new.json")
+          base_m, prev_m, new_m = meta(base), meta(prev), meta(new)
+          diff = sorted(k for k in set(base_m) | set(new_m) if base_m.get(k) != new_m.get(k))
+          print("바탕 템플릿 대비 바뀐 메타데이터 키:", diff)
           if any(k != "app-image-tag" for k in diff):
               sys.exit("태그 외의 설정이 달라졌습니다. 새 템플릿을 확인하세요.")
-          if new.get("app-image-tag") != os.environ["TAG"]:
+          if new_m.get("app-image-tag") != os.environ["TAG"]:
               sys.exit("새 템플릿의 app-image-tag가 배포할 태그와 다릅니다.")
-          if not new.get("startup-script") or not new.get("app-image"):
+          if not new_m.get("startup-script") or not new_m.get("app-image"):
               sys.exit("새 템플릿에 부팅 스크립트나 app-image가 없습니다.")
+          # 머신 타입, 디스크, 서비스 계정, 네트워크가 바탕과 같은지도 확인한다.
+          for key in ("machineType", "serviceAccounts", "networkInterfaces"):
+              if json.dumps(base.get(key), sort_keys=True) != json.dumps(new.get(key), sort_keys=True):
+                  sys.exit(f"{key} 설정이 바탕 템플릿과 다릅니다.")
+          # 현재 MIG 템플릿과의 차이 (참고)
+          prev_diff = sorted(k for k in set(prev_m) | set(new_m) if prev_m.get(k) != new_m.get(k))
+          print("현재 MIG 템플릿 대비 바뀌는 메타데이터 키(참고):", prev_diff)
+          for key in ("machineType",):
+              if prev.get(key) != new.get(key):
+                  print(f"참고: {key} 변경 {prev.get(key)} -> {new.get(key)}")
+          if "startup-script" in prev_diff:
+              print("참고: 부팅 스크립트가 바탕 템플릿(Terraform)의 최신 버전으로 바뀝니다.")
           print("새 템플릿 확인 완료")
           PY
 
@@ -229,16 +259,45 @@ jobs:
             --max-surge="$MAX_SURGE" \
             --max-unavailable="$MAX_UNAVAILABLE"
 
-      # 모든 VM이 새 템플릿으로 교체되고 헬스체크를 통과할 때까지 기다린다.
-      - name: Wait until all instances are updated
+      # 새 템플릿의 VM이 목표 대수만큼 RUNNING + HEALTHY가 되면 배포를 끝낸다.
+      # 이 시점에 서비스는 이미 새 버전만 받는다. 옛 VM은 connection draining(최대 300초)을 거쳐 MIG가 알아서 지우므로
+      # (--version-target-reached, --stable은 이 삭제까지 기다려서 배포가 6~7분 길어진다) 삭제는 기다리지 않는다.
+      # 시간 안에 못 되면 실패하고, 아래 롤백 단계가 이전 템플릿으로 되돌린다.
+      - name: Wait until new instances are healthy
+        env:
+          WAIT_TIMEOUT_SEC: "1200"
         run: |
-          gcloud compute instance-groups managed wait-until "$MIG_NAME" $MIG_FLAG \
-            --version-target-reached --timeout=1800
+          python3 - <<'PY'
+          import json, os, subprocess, sys, time
 
-      - name: Wait until the group is stable
-        run: |
-          gcloud compute instance-groups managed wait-until "$MIG_NAME" $MIG_FLAG \
-            --stable --timeout=600
+          mig, flag, tpl = os.environ["MIG_NAME"], os.environ["MIG_FLAG"], os.environ["NEW_TEMPLATE"]
+          deadline = time.time() + int(os.environ["WAIT_TIMEOUT_SEC"])
+
+          def gcloud(*args):
+              return subprocess.check_output(["gcloud", *args], text=True).strip()
+
+          while True:
+              target = int(gcloud("compute", "instance-groups", "managed", "describe", mig, flag, "--format=value(targetSize)"))
+              items = json.loads(gcloud("compute", "instance-groups", "managed", "list-instances", mig, flag, "--format=json"))
+              ready, new_total, old_total = 0, 0, 0
+              for i in items:
+                  if i.get("version", {}).get("instanceTemplate", "").rsplit("/", 1)[-1] == tpl:
+                      new_total += 1
+                      healthy = any(h.get("detailedHealthState") == "HEALTHY" for h in i.get("instanceHealth", []))
+                      if i.get("instanceStatus") == "RUNNING" and i.get("currentAction") == "NONE" and healthy:
+                          ready += 1
+                  else:
+                      old_total += 1
+              print(f"새 템플릿 VM: 정상 {ready}/{target} (새 템플릿 VM 전체 {new_total}), 옛 템플릿 VM {old_total}대 남음")
+              if ready >= target:
+                  print("새 VM이 목표 대수만큼 정상입니다. 남은 옛 VM은 connection draining 뒤 MIG가 삭제합니다.")
+                  break
+              if time.time() > deadline:
+                  for i in items:
+                      print(i.get("name"), i.get("currentAction"), i.get("instanceStatus"), i.get("lastAttempt", {}).get("errors", ""))
+                  sys.exit("제한 시간 안에 새 VM이 정상이 되지 않았습니다.")
+              time.sleep(15)
+          PY
 
       # 교체 도중 실패하면 이전 템플릿으로 되돌린다. (교체를 시작한 경우에만)
       - name: Rollback to previous template
