@@ -212,8 +212,14 @@ class Settings(BaseSettings):
     backend_photo_table: str = "record_photos"
     backend_photo_record_column: str = "record_id"
     backend_photo_key_column: str = "image_url"
-    # 사진 GCS 버킷. 비우면 사진 키를 그대로 URL로 쓴다 (키가 이미 https URL인 경우)
+    # 사진 저장소 — gcs(기본, 지금 GCP 운영 그대로) 또는 s3. 서명 URL을 어느 쪽으로 만들지 고른다
+    photo_storage_provider: Literal["gcs", "s3"] = "gcs"
+    # 사진 GCS 버킷 (gcs일 때만 씀). 비우면 사진 키를 그대로 URL로 쓴다 (키가 이미 https URL인 경우)
     gcs_photo_bucket: str = ""
+    # 사진 S3 버킷·리전 (s3일 때만 씀). 비우면 gcs와 같이 https URL인 키만 그대로 쓴다.
+    # 자격 증명은 설정에 두지 않는다 — boto3 기본 체인(노드 IAM 역할)을 쓴다
+    s3_photo_bucket: str = ""
+    aws_region: str = ""
     # 서명 URL 유효시간 — 임베딩 큐가 재시도해도 끝날 만큼 넉넉히
     photo_signed_url_minutes: int = 120
 

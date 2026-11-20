@@ -73,7 +73,13 @@ async def handle(payload: dict[str, Any]) -> None:
     if not s.backend_mysql_url:
         logger.warning("백엔드 DB 설정 없음 — 자물쇠 동기화 건너뜀")
         return
-    signer = build_photo_signer(s.gcs_photo_bucket, s.photo_signed_url_minutes)
+    signer = build_photo_signer(
+        s.photo_storage_provider,
+        gcs_bucket=s.gcs_photo_bucket,
+        s3_bucket=s.s3_photo_bucket,
+        region=s.aws_region,
+        minutes=s.photo_signed_url_minutes,
+    )
     async with mysql.get_sessionmaker()() as my, get_sessionmaker()() as pg:
         await sync(
             BackendRecordReader(my),
