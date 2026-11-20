@@ -31,7 +31,9 @@ async def test_prompt_includes_stats_and_genre():
     questions = await QuestionGenerator(llm).generate("인디음악", stats, count=1)
     assert questions == [("비 오는 날 인디는?", "잔나비", "검정치마")]
     assert "'인디음악' 장르" in llm.last_prompt
-    assert "잔나비(5)" in llm.last_prompt and "성수동(3)" in llm.last_prompt
+    assert "성수동(3)" in llm.last_prompt
+    # 가수끼리 대결 질문이 나오지 않게 가수 이름은 재료로 주지 않는다
+    assert "잔나비" not in llm.last_prompt
 
 
 async def test_prompt_without_stats_asks_for_general_questions():

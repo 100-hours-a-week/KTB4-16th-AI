@@ -67,3 +67,10 @@ def test_a_and_b_are_never_the_same_song():
     pool = SongPool([_song("A", "1", popularity=50)])
 
     assert generate_battle("댄스", pool, used_pairs=set(), rng=random.Random(0)) is None
+
+
+def test_common_group_never_gets_a_song_battle():
+    # 곡 풀의 "공통"은 13개 장르에 안 맞는 곡 칸이라, 공통 그룹은 취향 질문으로 보낸다
+    pool = SongPool([_song("A", "1", genre="공통"), _song("B", "2", genre="공통")])
+
+    assert generate_battle("공통", pool, used_pairs=set(), rng=random.Random(0)) is None

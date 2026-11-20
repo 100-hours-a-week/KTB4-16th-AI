@@ -243,6 +243,64 @@ async def test_memory_search_headline_is_template_when_llm_is_off(monkeypatch):
         dependencies.get_clients.cache_clear()
 
 
+async def test_memory_search_gives_record_values_only_to_local_gemma_not_to_claude(monkeypatch):
+    from app import dependencies
+    from app.clients.anthropic_client import AnthropicClient
+    from app.clients.llm_client import LocalLLMClient
+    from app.config import get_settings
+
+    monkeypatch.delenv("MEMORY_ANSWER_RECORDS_ENABLED", raising=False)
+    try:
+        _clients_with(
+            monkeypatch,
+            LLM_GENERAL_PROVIDER="anthropic",
+            LLM_HEADLINE_PROVIDER="local",
+            LOCAL_LLM_MODEL="gemma-3-12b",
+        )
+        service = await dependencies.get_memory_search_service(search=object(), records=object())
+        writer = service._headline_writer
+        assert writer._grounded is True  # 기본은 기록 값을 쓴다
+        assert isinstance(writer._llm, LocalLLMClient)  # 기록 값은 이쪽만 받는다
+        assert isinstance(writer._fallback, AnthropicClient)  # 폴백은 조건 이름만 받는다
+    finally:
+        get_settings.cache_clear()
+        dependencies.get_clients.cache_clear()
+
+
+async def test_memory_search_record_values_can_be_turned_off(monkeypatch):
+    from app import dependencies
+    from app.config import get_settings
+
+    try:
+        _clients_with(
+            monkeypatch,
+            LLM_HEADLINE_PROVIDER="local",
+            MEMORY_ANSWER_RECORDS_ENABLED="false",
+        )
+        service = await dependencies.get_memory_search_service(search=object(), records=object())
+        writer = service._headline_writer
+        assert writer._grounded is False
+        assert writer._fallback is not None  # 폴백은 그대로 유지된다
+    finally:
+        get_settings.cache_clear()
+        dependencies.get_clients.cache_clear()
+
+
+async def test_memory_search_never_gives_record_values_to_claude_only_setup(monkeypatch):
+    from app import dependencies
+    from app.config import get_settings
+
+    try:
+        _clients_with(monkeypatch, LLM_HEADLINE_PROVIDER="anthropic")
+        service = await dependencies.get_memory_search_service(search=object(), records=object())
+        writer = service._headline_writer
+        assert writer._grounded is False  # Claude만 쓰면 켜 둬도 기록 값은 보내지 않는다
+        assert writer._fallback is None
+    finally:
+        get_settings.cache_clear()
+        dependencies.get_clients.cache_clear()
+
+
 def test_delete_removes_pending_job_and_vectors(client, jobs, store, record_payload):
     client.post("/api/embeddings/generate", json=record_payload, headers=AUTH)
     store.rows[1029] = object()

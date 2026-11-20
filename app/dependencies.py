@@ -217,6 +217,17 @@ def _build_local_first_llm(s: Settings, provider: str) -> LLMClient:
     return _build_llm("anthropic")
 
 
+def _build_headline_writer(s: Settings) -> HeadlineWriter:
+    llm = get_clients().llm_headline
+    if isinstance(llm, FallbackLLMClient) and isinstance(llm.primary, LocalLLMClient):
+        # 기록 값은 자체 서버의 Gemma만 받는다. 호출이 실패해 Claude로 넘어가면 기록 값 없이 쓴다
+        return HeadlineWriter(
+            llm.primary, fallback=llm.fallback, grounded=s.memory_answer_records_enabled
+        )
+    # Claude만 쓰거나 가짜 클라이언트일 때는 기록 값을 보내지 않는다
+    return HeadlineWriter(llm)
+
+
 async def get_job_repository(
     session: AsyncSession = Depends(get_session),
 ) -> AsyncIterator[JobRepository]:
@@ -493,10 +504,8 @@ async def get_memory_search_service(
         display_count=s.memory_search_display_count,
         suggestion_count=s.memory_search_suggestion_count,
         # 답변 앞머리 문장 — 기본은 LLM(로컬 Gemma, llm_headline_provider)이 쓰고 끄면 템플릿 문장.
-        # LLM에는 조건 이름과 결과 유무만 보낸다
-        headline_writer=(
-            HeadlineWriter(get_clients().llm_headline) if s.memory_answer_llm_enabled else None
-        ),
+        # 로컬 Gemma는 찾은 자물쇠의 값도 받고(RAG), Claude 폴백에는 조건 이름과 결과 유무만 간다
+        headline_writer=_build_headline_writer(s) if s.memory_answer_llm_enabled else None,
         headline_timeout=s.memory_answer_llm_timeout_seconds,
         aliases=get_artist_alias_source(),
     )

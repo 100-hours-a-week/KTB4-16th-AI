@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 import pytest
 
-from app.components.answer_headline import HeadlineWriter, build_prompt
+from app.components.answer_headline import SYSTEM_PROMPT, HeadlineWriter, build_prompt
 from app.components.memory_answer import NO_RESULT_TEXT
 from app.components.question_parser import QuestionParser
 from app.db.repositories.memory_record_repository import TrackName
@@ -820,6 +820,77 @@ async def test_llm_headline_is_followed_by_the_notice_written_by_code(parser):
     lines = res.answer.splitlines()
     assert lines[0] == "가을에 저장하신 자물쇠를 찾았어요."
     assert lines[-1].startswith("'북한산'은 아직 모르는 장소라서 위치 조건은 적용하지 못했어요.")
+
+
+# ---- 앞머리를 쓰는 LLM이 찾은 자물쇠의 값을 받을 때 (RAG) --------------------------
+
+
+def _grounded_service(parser, llm, records, **overrides):
+    return _service(
+        parser,
+        _search(),
+        records,
+        headline_writer=HeadlineWriter(llm, grounded=True),
+        **overrides,
+    )
+
+
+async def test_gemma_receives_the_values_of_the_found_record_and_nothing_else(parser):
+    rows, details = _world()
+    rows[0] = make_row(
+        1,
+        created_at=datetime(2026, 10, 3, 9, 0),
+        dong_name="성수동1가",
+        track_title="밤편지",
+        artist_name="아이유",
+        comment="혼자 걸었던 날",
+        **SEOUL_FOREST,
+    )
+    llm = StubLLM("10월 성수동1가에서 남긴 '밤편지' 기억을 찾았어요.")
+    service = _grounded_service(parser, llm, FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("가을에 서울숲에서 들었던 노래 뭐지?"))
+
+    assert res.answer.splitlines()[0] == "10월 성수동1가에서 남긴 '밤편지' 기억을 찾았어요."
+    (call,) = llm.calls
+    assert call["prompt"].splitlines() == [
+        "질문한 조건: 서울숲 근처, 가을",
+        "조건에 모두 맞는 자물쇠: 있음",
+        "일부만 맞는 자물쇠: 있음 (화면에 따로 보여줌)",
+        "조건에 맞게 찾은 자물쇠의 값 (위에서부터 순서대로):",
+        "- 10월 / 동네 성수동1가 / 날씨 맑음 / 곡 '밤편지' / 가수 아이유",
+    ]
+    # 제안으로 나가는 자물쇠(2·3번)·그 밖의 자물쇠·코멘트·질문 원문은 보내지 않는다
+    for private in ("성수동2가", "반포동", "서교동", "혼자 걸었던", "들었던 노래"):
+        assert private not in call["prompt"]
+
+
+async def test_sentence_with_a_title_that_was_not_found_is_replaced_by_the_template(parser):
+    rows, details = _world()
+    llm = StubLLM("10월 성수동1가에서 남긴 '사랑비' 기억을 찾았어요.")
+    service = _grounded_service(parser, llm, FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    res = await service.search(_request("가을에 서울숲에서 들었던 노래 뭐지?"))
+
+    assert res.answer.splitlines()[0] == "서울숲 근처, 가을 조건에 맞는 자물쇠를 찾았어요."
+    assert [m.record_id for m in res.records] == [1]  # 검색 결과는 그대로
+
+
+async def test_gemma_gets_no_values_when_only_partial_matches_exist(parser):
+    """모두 맞는 자물쇠가 없으면 근거로 삼을 기록이 없다 — 제안 기록의 값은 보내지 않는다."""
+    rows, details = _forest_world(autumn=0, spring=2)
+    llm = StubLLM("가을 서울숲 조건에 모두 맞는 자물쇠는 없어요.")
+    service = _grounded_service(parser, llm, FakeMemoryRecords({USER: details}, {USER: rows}))
+
+    await service.search(_request("가을에 서울숲에서 들은 노래"))
+
+    (call,) = llm.calls
+    assert call["system"] == SYSTEM_PROMPT
+    assert call["prompt"].splitlines() == [
+        "질문한 조건: 서울숲 근처, 가을",
+        "조건에 모두 맞는 자물쇠: 없음",
+        "일부만 맞는 자물쇠: 있음 (화면에 따로 보여줌)",
+    ]
 
 
 # ---- 제안(suggestedRecords): 토글을 열면 보이는 최대 3건 ----------------------
