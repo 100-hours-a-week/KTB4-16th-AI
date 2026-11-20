@@ -26,3 +26,5 @@ tokenizers>=0.20,<1
 numpy>=1.26,<3
 # 기능4 동기화: 자물쇠 사진 GCS 서명 URL
 google-cloud-storage>=2.18,<4
+# 기능4 동기화: 자물쇠 사진 S3 사전 서명 URL (PHOTO_STORAGE_PROVIDER=s3)
+boto3>=1.35,<2
