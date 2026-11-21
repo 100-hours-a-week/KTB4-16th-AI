@@ -140,9 +140,16 @@ class Settings(BaseSettings):
     # 문장에 기록 값이 들어가므로 백엔드가 저장하는 채팅에도 그 값이 남는다
     memory_answer_records_enabled: bool = True
 
-    # CLIP 이미지 임베딩 — Replicate openai/clip (clip-vit-large-patch14)
-    # V2에 RunPod 직접 서빙으로 교체 예정. 모델이 바뀌면 차원 변경 → 전체 재임베딩
+    # CLIP 이미지 임베딩 — clip-vit-large-patch14 (768차원)
+    #   replicate(기본): Replicate openai/clip API
+    #   runpod: RunPod Pod에서 직접 띄운 CLIP 서버 (scripts/clip_server/clip_server.py)
+    # 두 쪽 모두 같은 모델이라 저장된 벡터를 다시 만들 필요가 없다. 모델이 바뀌면 전체 재임베딩
+    clip_provider: Literal["replicate", "runpod"] = "replicate"
     replicate_api_token: str = ""
+    # runpod일 때만 씀. 주소는 https://<PodID>-8001.proxy.runpod.net,
+    # 키는 CLIP 서버를 켤 때 넣은 CLIP_API_KEY
+    clip_server_url: str = ""
+    clip_api_key: str = ""
     clip_model: str = "openai/clip"
     clip_embedding_dim: int = 768
 

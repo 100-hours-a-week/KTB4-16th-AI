@@ -14,7 +14,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.clients.anthropic_client import AnthropicClient
 from app.clients.backend_client import BackendClient, FakeBackendClient, ReportBackendClient
-from app.clients.clip_client import ClipClient, FakeClipClient, ReplicateClipClient
+from app.clients.clip_client import (
+    ClipClient,
+    FakeClipClient,
+    ReplicateClipClient,
+    RunPodClipClient,
+)
 from app.clients.embedding_client import (
     EmbeddingClient,
     FakeEmbeddingClient,
@@ -115,6 +120,26 @@ class Clients:
     llm_report_backup: LLMClient | None = None
 
 
+def _build_clip_client(s: Settings) -> ClipClient:
+    # CLIP_PROVIDER로 고른다. 기본 replicate는 예전과 같다
+    if s.clip_provider == "runpod":
+        return RunPodClipClient(
+            base_url=s.clip_server_url,
+            api_key=s.clip_api_key,
+            model=s.clip_model,
+            dim=s.clip_embedding_dim,
+            timeout=s.external_timeout_seconds,
+            max_retries=s.external_max_retries,
+        )
+    return ReplicateClipClient(
+        api_token=s.replicate_api_token,
+        model=s.clip_model,
+        dim=s.clip_embedding_dim,
+        timeout=s.external_timeout_seconds,
+        max_retries=s.external_max_retries,
+    )
+
+
 def _build_embedding_client(s: Settings) -> EmbeddingClient:
     if s.text_embedding_provider == "openai":
         return OpenAIEmbeddingClient(
@@ -160,13 +185,7 @@ def get_clients() -> Clients:
             llm_report.fallback if isinstance(llm_report, FallbackLLMClient) else None
         ),
         embedding=_build_embedding_client(s),
-        clip=ReplicateClipClient(
-            api_token=s.replicate_api_token,
-            model=s.clip_model,
-            dim=s.clip_embedding_dim,
-            timeout=s.external_timeout_seconds,
-            max_retries=s.external_max_retries,
-        ),
+        clip=_build_clip_client(s),
         backend=BackendClient(
             base_url=s.backend_internal_url,
             internal_token=s.internal_token,
