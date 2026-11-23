@@ -95,10 +95,13 @@ jobs:
     # 워크플로우 권한 정의
     permissions:
       contents: write      # Git 태그, Release 생성
-      id-token: write      # GCP Workload Identity와 통신하기 위한 OIDC 토큰 발행 권한
+      id-token: write      # GitHub OIDC 토큰으로 AWS 역할을 맡기 위한 권한
       
     env:
-      IMAGE_BASE: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/${{ secrets.PROJECT_REPOSITORY }}/${{ secrets.IMAGE_NAME }}
+      AWS_REGION: ap-northeast-2
+      # 키를 저장하지 않고 GitHub OIDC로 맡는 ECR push 전용 역할(Terraform 관리). main 브랜치에서만 맡을 수 있다.
+      AWS_ROLE_ARN: arn:aws:iam::840255883218:role/mulo-v3-prod-gha-ecr-push-ai
+      IMAGE_BASE: 840255883218.dkr.ecr.ap-northeast-2.amazonaws.com/mulo-v3-prod/ai
     
     steps:
       # 1. 코드 체크아웃
@@ -164,23 +167,16 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      # Phase 3: OIDC를 이용한 서비스 계정 인증
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
+      # GitHub OIDC로 AWS 역할을 맡는다 (장기 키 없음)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
-          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.SERVICE_ACCOUNT }}
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      # Phase 4: gcloud 명령어 사용 준비
-      - name: Set up gcloud
-        uses: google-github-actions/setup-gcloud@v3
-        
-
-      # Phase 5: Docker가 GCP 인증 정보를 사용하도록 연결
-      - name: Configure Docker authentication
-        run: |
-            gcloud auth configure-docker "${{ secrets.GCP_REGION }}-docker.pkg.dev" --quiet
+      # Docker가 ECR에 로그인하도록 한다
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
 
       - name: Release AI image
         env:
