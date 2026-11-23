@@ -1,14 +1,8 @@
 name: AI CI dev
 
-# develop 브랜치 전용 CI. PR 검증, push 시 개발 이미지 릴리즈까지만 한다.
-# 개발 서버 배포는 cd-dev.yml이 이 워크플로가 성공하면 이어서 한다.
+# develop 브랜치 PR 검증만 한다.
+# 개발 환경(GCP 개발 VM)이 없어져서 개발 이미지 릴리즈와 개발 배포(cd-dev)는 없앴다. (2026-11-23)
 on:
-  push:
-    branches:
-      - develop
-    paths-ignore:
-      - "docs/**"
-      - "**.md"
   pull_request:
     branches:
       - develop
@@ -82,105 +76,4 @@ jobs:
         with:
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
           title: "AI CI dev pull_request"
-          status: ${{ job.status }}
-
-  push-ci:
-    if: github.event_name == 'push'
-    concurrency:
-      group: ai-develop-release
-      cancel-in-progress: false
-    name: AI CI dev release
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-      id-token: write
-
-    env:
-      IMAGE_BASE: ${{ secrets.GCP_REGION }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID_Develop }}/${{ secrets.PROJECT_REPOSITORY }}/${{ secrets.IMAGE_NAME }}
-
-    steps:
-      # 1. 코드 체크아웃
-      - name: Checkout code
-        uses: actions/checkout@v7
-        with:
-          # semantic-release가 Git 태그 및 히스토리를 분석해야 하므로 0 유지 필수
-          fetch-depth: 0
-
-      # 2. Python 환경 설정
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      # 3. 애플리케이션 의존성 설치
-      - name: Install dependencies
-        run: python -m pip install -r requirements-dev.txt
-
-      # 4. 컴파일
-      - name: Check Python syntax
-        run: python -m compileall .
-
-      # 7. 테스트 실행 중 커버리지 측정
-      - name: Run tests with coverage
-        env:
-          OPENAI_API_KEY: ci-test
-        run: coverage run -m pytest
-
-      # 8. 커버리지 60% 미만이면 여기서 실패
-      - name: Coverage verification
-        run: |
-          coverage report --fail-under=60
-          coverage xml
-
-      - name: Upload coverage report
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.xml
-          retention-days: 7
-
-      # 5. Node.js 설정
-      - name: Set up Node.js
-        uses: actions/setup-node@v7
-        with:
-          node-version: "24"
-          package-manager-cache: false
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v3
-        with:
-          project_id: ${{ secrets.GCP_PROJECT_ID_Develop }}
-          workload_identity_provider: ${{ secrets.WORKLOAD_IDENTITY_PROVIDER_Develop }}
-          service_account: ${{ secrets.SERVICE_ACCOUNT_Develop }}
-
-      - name: Set up gcloud
-        uses: google-github-actions/setup-gcloud@v3
-
-      - name: Configure Docker authentication
-        run: |
-          gcloud auth configure-docker "${{ secrets.GCP_REGION }}-docker.pkg.dev" --quiet
-
-      - name: Release ai image
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          HF_TOKEN_KURE: ${{ secrets.HF_TOKEN_KURE }}
-          GITHUB_TOKEN: ${{ secrets.GIT_TOKEN }}
-        run: |
-          cp release.config.develop.json .releaserc.json
-          npx --yes \
-            --package=semantic-release@25 \
-            --package=@semantic-release/exec@7 \
-            semantic-release
-
-      - name: Notify result
-        if: ${{ always() }}
-        uses: ./.github/actions/notify-discord
-        with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK }}
-          title: "AI CI dev release"
           status: ${{ job.status }}
