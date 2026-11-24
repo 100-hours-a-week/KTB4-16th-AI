@@ -20,7 +20,7 @@ on:
 env:
   SERVICE: ai
   KUBE_REPO: 100-hours-a-week/16-mulo-kube
-  VALUES_FILE: mulo/ai/chart/values.yaml
+  VALUES_FILE: ai/chart/values.yaml
 
 jobs:
   # ============================================================
